@@ -1,9 +1,10 @@
 # ── Competition Data: NEVER commit (Official Rules §14 — Sponsor owns it) ──
-journal/
-data/
-reports/
-state/
-ops/state/
+/journal/
+/data/
+/reports/
+/state/
+/targets/
+/ops/state/
 ops/KILL
 ops/GO_LIVE
 *.journal.jsonl
