@@ -1,0 +1,14 @@
+[package]
+name = "susq-enr"
+description = "Election-night results pollers: CA SoS JSON, Clarity/Scytl ENR, dedupe + cross-checks"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true
