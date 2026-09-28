@@ -1,0 +1,102 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/core",
+    "crates/contracts",
+    "crates/journal",
+    "crates/platform",
+    "crates/gateway",
+    "crates/book",
+    "crates/oms",
+    "crates/risk",
+    "crates/strategies",
+    "crates/targets",
+    "crates/bus",
+    "crates/enr",
+    "crates/live",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+repository = "https://github.com/KarthikSubramanian07/Susquatch"
+authors = ["Karthik Subramanian <winnerkarthik07@gmail.com>"]
+
+[workspace.dependencies]
+# internal
+susq-core = { path = "crates/core" }
+susq-contracts = { path = "crates/contracts" }
+susq-journal = { path = "crates/journal" }
+susq-platform = { path = "crates/platform" }
+susq-gateway = { path = "crates/gateway" }
+susq-book = { path = "crates/book" }
+susq-oms = { path = "crates/oms" }
+susq-risk = { path = "crates/risk" }
+susq-strategies = { path = "crates/strategies" }
+susq-targets = { path = "crates/targets" }
+susq-bus = { path = "crates/bus" }
+susq-enr = { path = "crates/enr" }
+
+# async / runtime
+tokio = { version = "1.53", features = ["full"] }
+tokio-util = "0.7"
+futures = "0.3"
+async-trait = "0.1"
+bytes = "1.12"
+
+# http / ws / bus
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "gzip", "query"] }
+tokio-tungstenite = { version = "0.30", features = ["rustls-tls-webpki-roots"] }
+async-nats = "0.50"
+axum = "0.8"
+url = "2.5"
+
+# serde / schema
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_with = "3.24"
+prost = "0.14"
+prost-build = "0.14"
+pbjson = "0.9"
+pbjson-build = "0.9"
+pbjson-types = "0.9"
+toml = "1.1"
+
+# misc
+thiserror = "2.0"
+anyhow = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+uuid = { version = "1.26", features = ["v4", "v5", "serde"] }
+sha2 = "0.11"
+hex = "0.4"
+chrono = { version = "0.4", features = ["serde"] }
+chrono-tz = "0.10"
+parking_lot = "0.12"
+clap = { version = "4.6", features = ["derive", "env"] }
+metrics = "0.24"
+metrics-exporter-prometheus = { version = "0.18", default-features = false, features = ["http-listener"] }
+fs2 = "0.4"
+rand = "0.10"
+
+# test
+proptest = "1.11"
+tempfile = "3.27"
+wiremock = "0.6"
+insta = { version = "1.48", features = ["json"] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+unused_must_use = "deny"
+
+[workspace.lints.clippy]
+unwrap_used = "warn"
+dbg_macro = "deny"
+todo = "warn"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+debug = "line-tables-only"

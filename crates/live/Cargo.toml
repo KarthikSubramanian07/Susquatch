@@ -1,0 +1,18 @@
+[package]
+name = "susq-live"
+description = "The live trading process: wires platform, gateway, oms, risk, strategies, bus"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "susq-live"
+path = "src/main.rs"
+
+[dependencies]
+
+[lints]
+workspace = true

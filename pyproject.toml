@@ -1,0 +1,77 @@
+[project]
+name = "susquatch"
+version = "0.1.0"
+description = "Research, calibration, collectors, reports and the Oct-1 bridge for Susquatch"
+readme = "README.md"
+license = "MIT"
+authors = [{ name = "Karthik Subramanian", email = "winnerkarthik07@gmail.com" }]
+requires-python = ">=3.13"
+dependencies = [
+    "httpx>=0.28",
+    "websockets>=15",
+    "pydantic>=2.10",
+    "protobuf>=6.30",
+    "numpy>=2.2",
+    "scipy>=1.15",
+    "polars>=1.20",
+    "pyarrow>=19",
+    "nats-py>=2.9",
+    "starlette>=0.46",
+    "uvicorn>=0.34",
+    "typer>=0.15",
+    "pyyaml>=6.0",
+    "tzdata>=2025.1",
+    "python-dotenv>=1.0",
+    "orjson>=3.10",
+]
+
+[project.scripts]
+susq = "susq.cli:app"
+susq-mock = "susq.mock.server:main"
+susq-bridge = "susq_bridge.cli:app"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.25",
+    "hypothesis>=6.120",
+    "respx>=0.22",
+    "ruff>=0.9",
+    "mypy>=1.14",
+    "types-pyyaml",
+    "types-protobuf",
+]
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["py/susq", "bridge_py/susq_bridge"]
+
+[tool.pytest.ini_options]
+testpaths = ["py/tests", "bridge_py/tests", "contracts/tests"]
+asyncio_mode = "auto"
+addopts = "-q --strict-markers"
+markers = [
+    "live: hits the real Super Market API (needs SUSQ_API_KEY); never runs in CI",
+    "slow: long-running simulation or replay",
+]
+
+[tool.ruff]
+line-length = 110
+target-version = "py313"
+extend-exclude = ["py/susq/contracts/gen", "contracts/gen"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF", "S", "PT", "DTZ", "N"]
+ignore = ["S101", "RUF001", "RUF002", "RUF003"]
+
+[tool.ruff.lint.per-file-ignores]
+"*/tests/*" = ["S", "DTZ"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+ignore_missing_imports = true
+exclude = ["gen/"]
