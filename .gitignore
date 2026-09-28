@@ -1,0 +1,60 @@
+# ── Competition Data: NEVER commit (Official Rules §14 — Sponsor owns it) ──
+journal/
+data/
+reports/
+state/
+ops/state/
+ops/KILL
+ops/GO_LIVE
+*.journal.jsonl
+*.parquet
+*.sqlite
+*.sqlite-*
+*.db
+
+# Official docs snapshots are fetched, not vendored (see scripts/fetch_api_docs.py)
+brief/api/official/
+
+# Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+.dev.vars
+
+# Rust
+target/
+
+# C++
+build/
+cmake-build-*/
+compile_commands.json
+.cache/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+*.egg-info/
+dist/
+*.so
+.coverage
+htmlcov/
+
+# Node / Cloudflare
+node_modules/
+.wrangler/
+.dashboard-dist/
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp

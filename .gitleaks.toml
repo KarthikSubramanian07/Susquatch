@@ -1,0 +1,30 @@
+title = "susquatch gitleaks config"
+
+[extend]
+useDefault = true
+
+# Super Market API keys are opaque bearer tokens; catch anything assigned to our env names.
+[[rules]]
+id = "susq-api-key-assignment"
+description = "Super Market API key assigned in a file"
+regex = '''(?i)(SUSQ_API_KEY|SUPERMARKET_API_KEY|X-API-Key)\s*[:=]\s*['"]?[A-Za-z0-9_\-\.]{16,}'''
+tags = ["key", "supermarket"]
+
+[[rules]]
+id = "cloudflare-api-token"
+description = "Cloudflare API token"
+regex = '''(?i)CLOUDFLARE_API_TOKEN\s*[:=]\s*['"]?[A-Za-z0-9_\-]{30,}'''
+tags = ["key", "cloudflare"]
+
+[allowlist]
+description = "fixtures and examples"
+paths = [
+  '''\.env\.example$''',
+  '''contracts/fixtures/.*''',
+  '''py/tests/fixtures/.*''',
+]
+regexes = [
+  '''Kalshi/Polymarket''',
+  '''sk_test_[A-Za-z0-9]+''',
+  '''mock-key-[A-Za-z0-9\-]+''',
+]

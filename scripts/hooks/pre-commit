@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Installed by `make hooks`. Blocks secrets and obviously-broken commits.
+set -euo pipefail
+root="$(git rev-parse --show-toplevel)"
+cd "$root"
+
+if command -v gitleaks >/dev/null; then
+  gitleaks git --staged --no-banner --redact --config .gitleaks.toml
+else
+  echo "pre-commit: gitleaks not installed (brew install gitleaks) — refusing to commit" >&2
+  exit 1
+fi
+
+# Competition Data must never be staged, whatever .gitignore says.
+if git diff --cached --name-only | grep -E '^(journal|data|reports|state)/|\.journal\.jsonl$' >/dev/null; then
+  echo "pre-commit: Competition Data path staged (journal/ data/ reports/ state/). Aborting." >&2
+  exit 1
+fi
+
+staged_py=$(git diff --cached --name-only --diff-filter=ACM -- '*.py' || true)
+if [[ -n "$staged_py" ]] && command -v uv >/dev/null; then
+  uv run --quiet ruff check $staged_py
+  uv run --quiet ruff format --check $staged_py
+fi
+if git diff --cached --name-only | grep -q '\.rs$'; then
+  cargo fmt --all -- --check
+fi
