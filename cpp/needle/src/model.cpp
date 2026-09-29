@@ -261,7 +261,9 @@ IngestStatus NeedleModel::Ingest(const susq::v1::CountyResult& result, bool is_c
       if (!result.batch_id().empty()) seen_batches_.insert(result.batch_id());
       return count(IngestStatus::kUnchanged);
     }
-    if (regressed && !is_correction) return count(IngestStatus::kRegression);
+    if (regressed && !(is_correction || result.is_correction())) {
+      return count(IngestStatus::kRegression);
+    }
     *sit = totals;
   } else {
     type.sources.push_back(totals);

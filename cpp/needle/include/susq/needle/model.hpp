@@ -96,9 +96,9 @@ class NeedleModel {
   /// unknown races, non-finite numbers).
   explicit NeedleModel(const susq::v1::NeedlePrior& prior, NeedleParams params = {});
 
-  /// Stores one cumulative county result. Corrections (lower totals) are accepted only with
-  /// `is_correction`; the susq.v1 contract has no correction flag yet, so the bus path passes
-  /// false. Call Recompute() afterwards (IngestBatch does both).
+  /// Stores one cumulative county result. Corrections (lower totals) are accepted only when the
+  /// result carries `is_correction` (set by enr once a decrease is confirmed) or the caller passes
+  /// `is_correction` explicitly (replays); any other decrease is counted as a regression and ignored.
   IngestStatus Ingest(const susq::v1::CountyResult& result, bool is_correction = false);
 
   /// Ingests every result of a batch, then recomputes. Returns the number accepted.

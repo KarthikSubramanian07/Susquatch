@@ -40,7 +40,8 @@
       "source": "ca_sos",
       "voteType": "VOTE_TYPE_ELECTION_DAY",
       "totalVotes": "18446744073709551615",
-      "batchId": "max-u64"
+      "batchId": "max-u64",
+      "isCorrection": true
     }
   ]
 }
