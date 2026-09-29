@@ -64,6 +64,15 @@ uv sync --group models
 uv run --group models python -c "from susq_models import sim; print(sim.default_config().regions)"
 ```
 
+Other components use the module through two versioned surfaces:
+
+- The research facade (`py/susq/models/facade.py`) switches to C++ automatically through
+  `SIM_API_VERSION` and `TOURNEY_API_VERSION` 1.
+- The replay tooling calls `susq_models.needle.Needle`, whose `load_prior(bytes)` and
+  `ingest(bytes) -> bytes` take serialized `susq.v1` protobufs.
+
+See `docs/MODELS.md` §4.
+
 Standalone: `uv pip install ./cpp`. uv rebuilds when any `*.cpp`, `*.hpp`, CMake file or `.proto`
 changes (`[tool.uv] cache-keys`).
 
