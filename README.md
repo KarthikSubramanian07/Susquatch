@@ -141,7 +141,7 @@ touched the real API yet, because that needs a participant key, and the whole sy
 
 | Piece | State | Tests |
 |---|---|---|
-| Contracts (protobuf → Rust / C++ / Python) | ✅ byte-identical golden round-trips | 18 + 5 + 17 |
+| Contracts (protobuf → Rust / C++ / Python) | ✅ byte-identical golden round-trips | 19 Py · 4 Rust (each walks every fixture) · 19 C++ |
 | Python platform client + mock exchange + paper broker | ✅ | part of 609 Python |
 | Oct 1 bridge (gateway, OMS, risk, lease, racer, sniper, `measure-day1`, first trade) | ✅ paper-verified | part of 609 Python |
 | `rust-live` (13 crates, `susq-live`) | ✅ paper-verified, also against the Python mock | 416 Rust |
