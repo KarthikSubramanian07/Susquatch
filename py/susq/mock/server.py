@@ -118,7 +118,7 @@ class MockExchange:
         self.config = config
         self.clock = Clock(config.frozen_now)
         self.faults = config.faults
-        self.rate = RateWindow()
+        self.rate = RateWindow(lambda: self.clock.now().timestamp())
         self.hub = PhoenixHub(self._resolve_token, self.clock.now)
         self.reset(config.seed)
 
