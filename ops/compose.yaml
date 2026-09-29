@@ -11,7 +11,7 @@
 # The bridge and rust-live may both run: the trader lease guarantees only one of them ever places orders.
 #
 # Paths are relative to the project directory (the checkout). Nothing is published to the internet:
-# Docker-published ports bypass ufw, so only 127.0.0.1 metrics ports exist (reach them over an SSH tunnel).
+# Docker-published ports bypass ufw, so nothing is published; health/metrics stay inside each container.
 #
 # CPU priority: the host is 2 OCPU, shared with another project. cpu_shares (cgroup v2 cpu.weight) only
 # matter under contention, and then the trading path wins: rust-live/bridge 4096, needle/nats 3072,
@@ -80,10 +80,14 @@ services:
       context: .
       dockerfile: ops/docker/rust.Dockerfile
       args: { GIT_SHA: "${SUSQ_GIT_SHA:-unknown}" }
+    # `susq-live run`, plus `--election` on Nov 3-4 (SUSQ_LIVE_FLAGS=--election in .env): the results pollers run
+    # inside rust-live and publish county batches on NATS for the needle.
+    entrypoint: ["/bin/sh", "-c", "exec susq-live run $${SUSQ_LIVE_FLAGS:-}"]
     environment:
       <<: *susq-env
-      SUSQ_METRICS_ADDR: 0.0.0.0:9101
-    ports: ["127.0.0.1:9101:9101"]
+      # rust-live refuses non-loopback metrics addresses: /healthz and /metrics stay inside the container
+      # (docker compose exec rust-live curl -s 127.0.0.1:9101/metrics).
+      SUSQ_METRICS_ADDR: 127.0.0.1:9101
     depends_on:
       nats: { condition: service_healthy }
     healthcheck:
@@ -142,7 +146,6 @@ services:
     environment:
       <<: *susq-env
       SUSQ_METRICS_ADDR: 0.0.0.0:9102
-    ports: ["127.0.0.1:9102:9102"]
     depends_on:
       nats: { condition: service_healthy }
     healthcheck:
