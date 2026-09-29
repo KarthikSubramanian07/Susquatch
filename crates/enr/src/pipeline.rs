@@ -238,6 +238,8 @@ impl Pipeline {
                         race_id: r.race_id.clone(),
                         county_fips: r.county_fips.clone(),
                     });
+                    // Tell downstream (needle) this decrease is a confirmed correction, not a regression.
+                    r.is_correction = true;
                 }
             }
 
@@ -519,6 +521,12 @@ mod tests {
         assert_eq!(out.accepted.len(), 1);
         assert!(matches!(out.events[0], PipelineEvent::CorrectionApplied { .. }));
         assert_eq!(p.stats().corrections_applied, 1);
+        assert!(
+            out.accepted[0].is_correction,
+            "confirmed decrease must be flagged for the needle"
+        );
+        let out = p.ingest(vec![result("a", "13121", VoteType::Mail, 95, 50)]); // normal growth again
+        assert!(!out.accepted[0].is_correction);
     }
 
     #[test]

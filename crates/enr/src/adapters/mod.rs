@@ -109,6 +109,7 @@ impl AdapterContext {
             precincts_reporting: precincts.0,
             precincts_total: precincts.1,
             batch_id: String::new(),
+            is_correction: false,
         }
     }
 }

@@ -153,6 +153,17 @@ TEST_F(Ingestion, IgnoresRegressionsUnlessCorrections) {
   EXPECT_NEAR(m.Counties()[0].reported_votes, 400.0, 1e-9);
 }
 
+TEST_F(Ingestion, AcceptsDecreasesFlaggedAsCorrectionsOnTheWire) {
+  // The bus path: enr sets CountyResult.is_correction once a decrease is confirmed.
+  NeedleModel m(prior_);
+  EXPECT_EQ(m.Ingest(Result("2026-SEN-OH", "39049", susq::v1::VOTE_TYPE_MAIL, 300, 150, "b1")), IngestStatus::kAccepted);
+  auto flagged = Result("2026-SEN-OH", "39049", susq::v1::VOTE_TYPE_MAIL, 250, 150, "b2");
+  flagged.set_is_correction(true);
+  EXPECT_EQ(m.Ingest(flagged), IngestStatus::kAccepted);
+  m.Recompute();
+  EXPECT_NEAR(m.Counties()[0].reported_votes, 400.0, 1e-9);
+}
+
 TEST_F(Ingestion, TakesTheMostCompleteSource) {
   NeedleModel m(prior_);
   m.Ingest(Result("2026-SEN-OH", "39049", susq::v1::VOTE_TYPE_MAIL, 300, 150, "a1", "clarity:OH"));
