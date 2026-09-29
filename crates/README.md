@@ -45,10 +45,10 @@ without anyone being paged.
 | [`oms`](oms) | Order state machine, deterministic idempotency keys (cross-language test vector), fsynced write-ahead intents, reconcile, restart recovery, positions. |
 | [`risk`](risk) | Pre-trade caps (order, market, cluster, gross, glitch), locked legs, self-cross guard, tournament and time gates; loss-per-hour, reject-rate and bus-error breakers. |
 | [`gateway`](gateway) | The only write path: kill, lease, mode, freeze, time gate, risk, write-ahead, journal, send with same-key retries. The AIMD rate limiter with a reserved write budget, and the paper broker. |
-| [`targets`](targets) | Reads `targets/current.json`, verifies schema, pointer and content hashes, validity and age, and fails safe to "no new exposure". |
+| [`targets`](targets) | Reads `targets/current.json`, verifies schema, pointer and content hashes, validity and age, and fails safe to "no new exposure". Also reads the live fair feed `state/fair_live.json` (header + fair, rewritten about every 15 s by the research scheduler) for the sniper and market maker. |
 | [`bus`](bus) | NATS client (`enr.county_results`, `needle.*`, `ops.kill`), message validation, and the needle watchdog. |
 | [`strategies`](strategies) | Constraints racer, sniper, market maker, scenario executor, election-night executor. Each is a pure function from a snapshot to intents. |
-| [`live`](live) | The `susq-live` binary and the engine loop that ties it all together. |
+| [`live`](live) | The `susq-live` binary and the engine loop that ties it all together. With `--election` it also runs the `enr` pollers and publishes their batches on `enr.county_results`. |
 | [`contracts`](contracts) | Generated `susq.v1` types (owned by the contracts branch). |
 | [`enr`](enr) | Election-night results pollers (owned by the election-night branch). |
 
@@ -85,6 +85,7 @@ strategy.decide(snapshot) ─► OrderBundle
 | 7 | **Hard time gate.** No order at or after 16:55Z on Nov 4. Every order expires by then (GTD). A one-shot cancel-all fires at the gate. | `core::calendar`, `risk`, `oms::prepare`, `Engine` | `calendar` tests, session `everything_is_cancelled_at_the_last_order_gate` |
 | 8 | **No accepted order breaches a cap.** Exposure counts every live order as filled. Reducing risk is always allowed, except on locked legs. | `risk::limits` | `accepted_bundles_respect_every_cap` proptest (2 000 cases) |
 | 9 | **Stale targets stop new exposure.** Targets failing any schema, hash, age or validity check keep the last good file but block increases. | `targets` | targets tests and proptest, session `stale_targets_stop_new_exposure_until_fresh_ones_arrive` |
+| 9b | **Stale fair values are never traded on.** A fair quote older than `[fair].stale_after_s` (judged from the file's `produced_at_ns`) makes the sniper and market maker cancel what they built on it and stop. A malformed fair file is refused; the last good values keep ageing. Both strategies also block a market whose book is more than `mapping_error_pts` from fair. | `targets::fair`, `Engine::refresh_fair`, `sniper`, `market_maker` | fair reader tests, session `fresh_fair_feeds_the_sniper_and_a_stale_feed_stops_it`, `stale_fair_cancels_market_maker_quotes`, `a_malformed_fair_file_is_refused_and_the_old_values_age_out` |
 | 10 | **A silent or garbled needle stops election-night trading.** Silence, a seq gap, out-of-order or stale data mark it unhealthy. Needle-derived orders are cancelled, and trading resumes only after N consecutive healthy messages. | `bus::watchdog`, `bus::monitor`, `Engine::handle_needle`, `en_executor` | watchdog proptest, NATS integration tests (skipped without `nats-server`) |
 | 11 | **Only valid prices exist.** A `Pips` value is always on tick and inside [0.005, 0.995], and the JSON we send equals the exact decimal. | `core::price` | price proptests |
 | 12 | **The API key never leaves the process.** It lives in the Authorization header only, has a redacted `Debug`, and is scrubbed from the journal. | `core::secret`, `journal::scrub`, `SuperMarket` | `never_writes_the_api_key`, `places_an_order_with_auth_and_exact_body` |
@@ -96,6 +97,7 @@ strategy.decide(snapshot) ─► OrderBundle
 cargo test --workspace                       # everything (NATS tests skip without nats-server)
 cargo run -p susq-live -- lease              # show the trader lease (no API key needed)
 cargo run -p susq-live -- paper-run          # trade on paper against live books (needs SUSQ_API_KEY)
+cargo run -p susq-live -- run --election     # election night: also poll results sites → NATS enr.county_results
 cargo run -p susq-live -- smoke --exchange 381   # place + cancel one contract through every gate
 cargo run -p susq-live -- cancel-all         # needs the lease
 ```
