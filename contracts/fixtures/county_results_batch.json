@@ -1,0 +1,46 @@
+{
+  "header": {
+    "schemaVersion": 1,
+    "producedAtNs": "1791475200000000000",
+    "producer": {
+      "name": "rust-live",
+      "gitSha": "0123456789ab"
+    },
+    "seq": "42"
+  },
+  "results": [
+    {
+      "raceId": "2026-SEN-OH-S",
+      "state": "OH",
+      "countyFips": "39049",
+      "source": "clarity:OH",
+      "sourceTsNs": "1791475200000000000",
+      "observedAtNs": "1791475200001500000",
+      "voteType": "VOTE_TYPE_MAIL",
+      "votes": [
+        {
+          "candidate": "Sherrod Brown",
+          "party": "DEM",
+          "votes": "301234"
+        },
+        {
+          "candidate": "Jon Husted",
+          "party": "REP",
+          "votes": "188765"
+        }
+      ],
+      "totalVotes": "489999",
+      "precinctsTotal": 853,
+      "batchId": "OH-39049-0001"
+    },
+    {
+      "raceId": "2026-HOUSE-CA-13",
+      "state": "CA",
+      "countyFips": "06099",
+      "source": "ca_sos",
+      "voteType": "VOTE_TYPE_ELECTION_DAY",
+      "totalVotes": "18446744073709551615",
+      "batchId": "max-u64"
+    }
+  ]
+}

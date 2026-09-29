@@ -1,0 +1,12 @@
+{
+  "header": {
+    "schemaVersion": 1,
+    "producedAtNs": "1791475200000000000",
+    "producer": {
+      "name": "python-scheduler",
+      "gitSha": "0123456789ab"
+    },
+    "seq": "1"
+  },
+  "contentSha256": "97cf72d06f41c40ac58f3bb55a0df6be204b487a27f54114b1eb0eafbc6b237c"
+}

@@ -1,0 +1,85 @@
+{
+  "header": {
+    "schemaVersion": 1,
+    "producedAtNs": "1791475200000000000",
+    "producer": {
+      "name": "python-scheduler",
+      "gitSha": "0123456789ab"
+    },
+    "seq": "7"
+  },
+  "tournamentSlug": "midterm-elections",
+  "validUntilNs": "1791604800000000000",
+  "inputs": [
+    {
+      "name": "kalshi_mids",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "asOfNs": "1791475140000000000"
+    },
+    {
+      "name": "polls",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "asOfNs": "1791471600000000000"
+    }
+  ],
+  "fair": [
+    {
+      "exchangeId": "381",
+      "marketId": "381",
+      "pYes": 0.86,
+      "pLo": 0.8,
+      "pHi": 0.91,
+      "source": "0.8*kalshi+0.2*sim"
+    },
+    {
+      "exchangeId": "382",
+      "marketId": "382",
+      "source": "edge:zero"
+    },
+    {
+      "exchangeId": "383",
+      "marketId": "383",
+      "pYes": 1.0,
+      "pLo": 1.0,
+      "pHi": 1.0,
+      "source": "edge:one"
+    }
+  ],
+  "positions": [
+    {
+      "exchangeId": "210",
+      "marketId": "210",
+      "targetQty": "-4321",
+      "maxEntryPrice": 0.345,
+      "locked": true,
+      "tranche": "T1",
+      "cluster": "state:ME",
+      "rationale": "R holds Maine (Collins)"
+    },
+    {
+      "exchangeId": "211",
+      "marketId": "211",
+      "targetQty": "987",
+      "maxEntryPrice": 0.12,
+      "tranche": "T2",
+      "cluster": "national",
+      "rationale": "idiosyncratic leg \u2014 tie hygiene \u2713"
+    }
+  ],
+  "clusters": [
+    {
+      "cluster": "national",
+      "maxGrossFrac": 0.25
+    }
+  ],
+  "tourney": {
+    "pFirst": 0.031,
+    "pTop3": 0.08,
+    "fieldSize": 2150,
+    "thresholdTP50": 17.5,
+    "thresholdTP90": 41.0,
+    "scenario": "S-R-beats-polls-d7"
+  },
+  "notes": "fixture",
+  "contentSha256": "e6622703165a5b1053203496cc2a40f3fb0402abcb268ad39bc54b783745e438"
+}

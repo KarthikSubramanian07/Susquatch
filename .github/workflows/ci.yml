@@ -48,3 +48,19 @@ jobs:
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run pytest -m "not live"
+      - name: Install protoc (pinned to the gencode version, protoc 36.2)
+        run: |
+          curl -sSfL -o /tmp/protoc.zip https://github.com/protocolbuffers/protobuf/releases/download/v36.2/protoc-36.2-linux-x86_64.zip
+          sudo unzip -q -o /tmp/protoc.zip -d /usr/local bin/protoc 'include/*'
+      - name: Contracts are in sync with the schema
+        run: make contracts-check
+
+  cpp:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build libprotobuf-dev protobuf-compiler libgtest-dev
+      - run: cmake -S cpp -B build/cpp -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+      - run: cmake --build build/cpp
+      - run: ctest --test-dir build/cpp --output-on-failure

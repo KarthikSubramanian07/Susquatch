@@ -1,0 +1,17 @@
+{
+  "intentId": "racer:rel-9:1791475200",
+  "idempotencyKey": "5c2e1b9e-0f7c-5b8e-9a51-2f4a6e0c7d11",
+  "strategy": "racer",
+  "exchangeId": "381",
+  "side": "SIDE_NO",
+  "action": "ACTION_BUY",
+  "quantity": "37",
+  "pricePips": 1450,
+  "expirationNs": "1791475230000000000",
+  "tournamentId": "t-uuid",
+  "state": "INTENT_STATE_UNKNOWN",
+  "createdAtNs": "1791475200000000000",
+  "updatedAtNs": "1791475201000000000",
+  "lastErrorCode": "ORDER_STATUS_UNKNOWN",
+  "attempts": 2
+}

@@ -19,8 +19,8 @@ fi
 
 staged_py=$(git diff --cached --name-only --diff-filter=ACM -- '*.py' || true)
 if [[ -n "$staged_py" ]] && command -v uv >/dev/null; then
-  uv run --quiet ruff check $staged_py
-  uv run --quiet ruff format --check $staged_py
+  uv run --quiet ruff check --force-exclude $staged_py
+  uv run --quiet ruff format --check --force-exclude $staged_py
 fi
 if git diff --cached --name-only | grep -q '\.rs$'; then
   cargo fmt --all -- --check

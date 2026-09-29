@@ -10,7 +10,7 @@ dependencies = [
     "httpx>=0.28",
     "websockets>=15",
     "pydantic>=2.10",
-    "protobuf>=6.30",
+    "protobuf>=7.36",
     "numpy>=2.2",
     "scipy>=1.15",
     "polars>=1.20",
@@ -61,7 +61,7 @@ markers = [
 [tool.ruff]
 line-length = 110
 target-version = "py313"
-extend-exclude = ["py/susq/contracts/gen", "contracts/gen"]
+extend-exclude = ["py/susq/v1"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF", "S", "PT", "DTZ", "N"]
@@ -74,4 +74,4 @@ ignore = ["S101", "RUF001", "RUF002", "RUF003"]
 python_version = "3.13"
 strict = true
 ignore_missing_imports = true
-exclude = ["gen/"]
+exclude = ["py/susq/v1/"]

@@ -21,6 +21,7 @@ description = "fixtures and examples"
 paths = [
   '''\.env\.example$''',
   '''contracts/fixtures/.*''',
+  '''contracts/tools/make_fixtures\.py''',
   '''py/tests/fixtures/.*''',
 ]
 regexes = [

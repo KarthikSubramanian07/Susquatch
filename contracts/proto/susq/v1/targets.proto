@@ -1,0 +1,67 @@
+syntax = "proto3";
+
+package susq.v1;
+
+import "susq/v1/common.proto";
+
+// targets/targets-<utc_ts>-<hash8>.json, written by Python, read by rust-live.
+// content_sha256 = hex(sha256(deterministic binary encoding of this message with content_sha256 = ""))
+message TargetFile {
+  Header header = 1;
+  string tournament_slug = 2;
+  int64 valid_until_ns = 3;          // reader rejects after this, independent of max-age config
+  repeated InputHash inputs = 4;     // provenance of every input that fed the run
+  repeated FairValue fair = 5;
+  repeated TargetPosition positions = 6;
+  repeated ClusterLimit clusters = 7;
+  TourneyEstimate tourney = 8;
+  string notes = 9;                  // human-readable run summary
+  string content_sha256 = 15;
+}
+
+message InputHash {
+  string name = 1;     // "kalshi_mids", "polymarket_mids", "polls", "leaderboard", ...
+  string sha256 = 2;
+  int64 as_of_ns = 3;
+}
+
+message FairValue {
+  string exchange_id = 1;
+  string market_id = 2;
+  double p_yes = 3;    // in [0,1]
+  double p_lo = 4;     // 80% band
+  double p_hi = 5;
+  string source = 6;   // "0.8*kalshi+0.2*sim", ...
+}
+
+message TargetPosition {
+  string exchange_id = 1;
+  string market_id = 2;
+  int64 target_qty = 3;          // signed: +YES shares, -NO shares
+  double max_entry_price = 4;    // YES-space price cap for buys (NO buys use 1 - this as floor)
+  bool locked = 5;               // strategies may not sell a locked leg
+  string tranche = 6;            // "T1", "T2", ...
+  string cluster = 7;
+  string rationale = 8;
+}
+
+message ClusterLimit {
+  string cluster = 1;            // "national", "region:midwest", "state:OH", "house"
+  double max_gross_frac = 2;     // of equity
+}
+
+message TourneyEstimate {
+  double p_first = 1;
+  double p_top3 = 2;
+  uint32 field_size = 3;
+  double threshold_t_p50 = 4;    // fitted winning multiple T
+  double threshold_t_p90 = 5;
+  string scenario = 6;           // selected scenario id
+}
+
+// targets/current.json — atomic pointer to the active file.
+message TargetPointer {
+  Header header = 1;
+  string file = 2;               // relative file name in targets/
+  string content_sha256 = 3;
+}

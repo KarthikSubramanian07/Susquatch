@@ -1,0 +1,8 @@
+{
+  "holder": "bridge",
+  "host": "oci-a1",
+  "pid": 4242,
+  "acquiredAtNs": "1791475200000000000",
+  "expiresAtNs": "1791475230000000000",
+  "epoch": "3"
+}

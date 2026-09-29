@@ -1,0 +1,41 @@
+// Susquatch shared contracts — the ONLY place cross-process types are defined.
+// Generated into Rust (prost + pbjson), C++ (protobuf) and Python (protobuf).
+// Files use the proto3 canonical JSON mapping; the bus uses binary protobuf.
+//
+// Evolution rules: never renumber or reuse a field; add fields, don't change types;
+// bump SCHEMA_VERSION_CURRENT only for semantic breaks (readers reject unknown majors).
+syntax = "proto3";
+
+package susq.v1;
+
+enum SchemaVersion {
+  SCHEMA_VERSION_UNSPECIFIED = 0;
+  SCHEMA_VERSION_CURRENT = 1;
+}
+
+// Who produced a message or file.
+message Producer {
+  string name = 1;     // e.g. "python-scheduler", "needle", "rust-live", "bridge"
+  string git_sha = 2;  // short or full commit of the producing build
+}
+
+// Every message and file carries this header (LANGUAGES_AND_BOUNDARIES §One shared format).
+message Header {
+  uint32 schema_version = 1;  // == SCHEMA_VERSION_CURRENT for readers of this build
+  int64 produced_at_ns = 2;   // UTC nanoseconds since the Unix epoch
+  Producer producer = 3;
+  uint64 seq = 4;             // strictly increasing per (producer, stream)
+}
+
+// YES-space side as the platform uses it.
+enum Side {
+  SIDE_UNSPECIFIED = 0;
+  SIDE_YES = 1;
+  SIDE_NO = 2;
+}
+
+enum Action {
+  ACTION_UNSPECIFIED = 0;
+  ACTION_BUY = 1;
+  ACTION_SELL = 2;
+}

@@ -1,0 +1,11 @@
+{
+  "header": {
+    "schemaVersion": 1,
+    "producedAtNs": "1791475200000000000",
+    "producer": {
+      "name": "rust-live",
+      "gitSha": "0123456789ab"
+    },
+    "seq": "43"
+  }
+}

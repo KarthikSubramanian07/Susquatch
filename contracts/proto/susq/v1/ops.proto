@@ -1,0 +1,137 @@
+syntax = "proto3";
+
+package susq.v1;
+
+import "susq/v1/common.proto";
+
+// One line of journal/*.journal.jsonl — every platform request/response.
+// Competition Data: never committed, never leaves the server except to private backups.
+message JournalEntry {
+  int64 ts_ns = 1;
+  string producer = 2;           // "bridge" | "rust-live"
+  string direction = 3;          // "request" | "response" | "error" | "event"
+  string method = 4;
+  string path = 5;               // path + query, API key never included
+  string body_json = 6;          // raw JSON text (request body or response body)
+  uint32 status = 7;
+  uint64 latency_us = 8;
+  string request_id = 9;         // x-request-id from the platform
+  string idempotency_key = 10;
+  string correlation_id = 11;    // ties request <-> response
+}
+
+enum IntentState {
+  INTENT_STATE_UNSPECIFIED = 0;
+  INTENT_STATE_PENDING = 1;      // written, not yet sent
+  INTENT_STATE_SENT = 2;         // request on the wire, outcome unknown
+  INTENT_STATE_ACKED = 3;        // 200 with orderId
+  INTENT_STATE_REJECTED = 4;     // terminal 4xx
+  INTENT_STATE_UNKNOWN = 5;      // 502 ORDER_STATUS_UNKNOWN / timeout -> must retry same key or reconcile
+  INTENT_STATE_DONE = 6;         // filled/cancelled/expired, closed out
+}
+
+// Write-ahead order intent: persisted BEFORE the request is sent so that a restart
+// retries with the SAME idempotency key instead of minting a new one.
+message OrderIntent {
+  string intent_id = 1;          // deterministic: strategy + decision identity
+  string idempotency_key = 2;    // uuid5(namespace, intent_id + payload hash)
+  string strategy = 3;
+  string exchange_id = 4;
+  Side side = 5;
+  Action action = 6;
+  int64 quantity = 7;
+  uint32 price_pips = 8;         // 1e-4 units; 0 = market (never used by us)
+  int64 expiration_ns = 9;
+  string tournament_id = 10;
+  IntentState state = 11;
+  int64 created_at_ns = 12;
+  int64 updated_at_ns = 13;
+  int64 order_id = 14;           // platform order id once acked
+  string last_error_code = 15;
+  uint32 attempts = 16;
+}
+
+// ops/state/trader.lease — whoever holds an unexpired lease may place orders. Nobody else.
+message TraderLease {
+  string holder = 1;             // "bridge" | "rust-live"
+  string host = 2;
+  uint32 pid = 3;
+  int64 acquired_at_ns = 4;
+  int64 expires_at_ns = 5;       // renewed every ~5 s, TTL ~30 s
+  uint64 epoch = 6;              // increments on every change of holder
+}
+
+message HealthItem {
+  string name = 1;               // "platform", "realtime", "kalshi", "needle", "targets", ...
+  string state = 2;              // "ok" | "degraded" | "down"
+  string detail = 3;
+  int64 last_ok_ns = 4;
+}
+
+message PositionSummary {
+  string exchange_id = 1;
+  string title = 2;
+  int64 quantity = 3;            // +YES / -NO
+  double avg_cost = 4;
+  double mark = 5;
+  double unrealized = 6;
+}
+
+message TradeSummary {
+  int64 ts_ns = 1;
+  string strategy = 2;
+  string title = 3;
+  Side side = 4;
+  Action action = 5;
+  int64 quantity = 6;
+  double price = 7;
+}
+
+// Pushed to Cloudflare KV every few minutes; rendered by the dashboard and the daily Worker.
+message StatusSnapshot {
+  Header header = 1;
+  string mode = 2;               // "paper" | "live"
+  string stage = 3;              // "forage" | "stalk" | "emerge" | "locked"
+  string trader = 4;             // current lease holder
+  double equity = 5;             // account value (platform)
+  double cash = 6;
+  double pnl_day = 7;
+  double pnl_total = 8;
+  int32 rank = 9;                // 0 = unranked
+  uint32 field_size = 10;
+  bool killed = 11;
+  string kill_reason = 12;
+  repeated HealthItem health = 13;
+  repeated PositionSummary positions = 14;
+  repeated TradeSummary recent_trades = 15;
+  repeated string action_needed = 16;  // human steps; empty on good days
+  repeated string events = 17;         // notable events since last snapshot
+}
+
+// markets/market_map.json — Cup market <-> race <-> real-money reference, plus parsed rules.
+// Produced by /parse-rules + human spot-check. Strategies only trade rows with verified = true.
+message MarketMap {
+  Header header = 1;
+  repeated MarketRule markets = 2;
+}
+
+message MarketRule {
+  string market_id = 1;
+  string exchange_id = 2;
+  string title = 3;
+  string race_id = 4;            // "2026-SEN-ME"; "" for non-race (chamber, freeform)
+  string kind = 5;               // "race_party" | "chamber" | "seat_count" | "freeform"
+  string party = 6;              // party whose win resolves YES ("DEM", "REP"), if any
+  string resolution_source = 7;
+  bool independent_can_win = 8;  // e.g. NE Senate (Osborn)
+  bool rcv = 9;
+  bool runoff_possible = 10;
+  bool manual_settlement = 11;   // chamber-control markets
+  string kalshi_ticker = 12;     // reference market for fair value ("" if none)
+  bool kalshi_inverted = 13;     // kalshi YES == Cup NO
+  string polymarket_token_id = 14;
+  bool polymarket_inverted = 15;
+  repeated string clusters = 16; // "national", "region:northeast", "state:ME", "house"
+  bool verified = 17;            // human spot-checked
+  string notes = 18;
+}

@@ -9,6 +9,17 @@ repository.workspace = true
 authors.workspace = true
 
 [dependencies]
+prost.workspace = true
+pbjson.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+hex.workspace = true
+thiserror.workspace = true
+
+[build-dependencies]
+prost-build.workspace = true
+pbjson-build.workspace = true
 
 [lints]
 workspace = true

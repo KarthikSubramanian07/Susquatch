@@ -1,0 +1,14 @@
+{
+  "header": {
+    "schemaVersion": 1,
+    "producedAtNs": "1791475200000000000",
+    "producer": {
+      "name": "needle",
+      "gitSha": "0123456789ab"
+    },
+    "seq": "1001"
+  },
+  "mean": -1.75,
+  "sd": 1.1,
+  "nRacesInforming": 6
+}
