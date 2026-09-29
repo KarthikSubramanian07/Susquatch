@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import time
 from collections import deque
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, fields
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -75,13 +75,14 @@ class Clock:
 
 
 class RateWindow:
-    """Sliding one-second window per key, on the real monotonic clock."""
+    """Sliding one-second window per key, on the mock clock (so tests can step through it)."""
 
-    def __init__(self) -> None:
+    def __init__(self, now_s: Callable[[], float]) -> None:
+        self._now_s = now_s
         self._hits: dict[str, deque[float]] = {}
 
     def allow(self, key: str, rps: float) -> bool:
-        now = time.monotonic()
+        now = self._now_s()
         hits = self._hits.setdefault(key, deque())
         while hits and now - hits[0] >= 1.0:
             hits.popleft()
