@@ -86,8 +86,8 @@ endif
 down: ## Stop the stack (ops/KILL is the way to stop trading; this stops everything)
 	$(COMPOSE) down
 
-logs: ## Follow logs of every service
-	$(COMPOSE) logs -f --tail=100
+logs: ## Follow logs (S=<service> for one)
+	$(COMPOSE) logs -f --tail=100 $(S)
 
 ps: ## Service status + health
 	$(COMPOSE) ps
@@ -104,8 +104,8 @@ restore: ## Restore the latest R2 backup (ARGS="--list" / "--archive NAME" / "--
 selfcheck: ## Disk, clock, expiries, lease, backups, quotas -> ACTION NEEDED items
 	$(OPS_PY) susq.ops.selfcheck
 
-unkill: ## HUMAN ONLY: clear the dashboard Kill flag, then remove ops/KILL
-	$(OPS_PY) susq.ops.kill_poller unkill
+unkill: ## HUMAN ONLY: clear the dashboard Kill flag, then remove ops/KILL (ARGS=--local-only)
+	$(OPS_PY) susq.ops.kill_poller unkill $(ARGS)
 
 priority: ## Election-night CPU priority status (MODE=election|normal|auto)
 	ops/priority.sh $(or $(MODE),status)
