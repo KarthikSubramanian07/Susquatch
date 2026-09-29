@@ -1,0 +1,1664 @@
+{
+ "election": {
+  "id": "01000000-b960-7e2f-bde4-08dead3401e5",
+  "name": [
+   {
+    "languageId": "en",
+    "text": "May 19, 2026 - General Primary"
+   }
+  ],
+  "electionDate": "2026-05-19",
+  "isProduction": true,
+  "isOfficialResults": true,
+  "asOf": "2026-06-05T12:37:48.4286599Z",
+  "lastUpdated": "2026-06-04T15:31:48.7238665Z"
+ },
+ "ballotItems": [],
+ "ballotItemWithBreakdown": {
+  "id": "01000000-f33c-bc21-a444-08dead340297",
+  "name": [
+   {
+    "languageId": "en",
+    "text": "US Senate - Rep"
+   }
+  ],
+  "contestType": "Candidate",
+  "voteTotal": 912696,
+  "reportingStatus": {
+   "reportingUnits": 159,
+   "totalUnits": 159,
+   "asOf": "2026-06-05T12:37:48.4286599Z",
+   "reportingStatusDetails": null
+  },
+  "breakdownResults": [
+   {
+    "parentBallotItemId": "01000000-f33c-bc21-063a-08dead340295",
+    "locality": {
+     "id": "d58e790a-a271-4225-8cd6-a1ed0aa829b1",
+     "name": [
+      {
+       "languageId": "en",
+       "text": "Appling County"
+      }
+     ],
+     "shortName": "appling-county-ga",
+     "turnoutPercent": null,
+     "percentReporting": null,
+     "precinctsReporting": null,
+     "hasCountGroupStatus": false,
+     "hasPrecinctStatus": false,
+     "mapFeatureId": "Appling"
+    },
+    "voteTotal": 3198,
+    "precinctReportingStatus": {
+     "reportingUnits": 9,
+     "totalUnits": 9,
+     "asOf": "2026-06-05T12:37:48.4286728Z",
+     "reportingStatusDetails": [
+      {
+       "groupName": [
+        {
+         "languageId": null,
+         "text": "Fully Reported"
+        }
+       ],
+       "reportingStatusClientTextKey": "reporting-status-fully-reported",
+       "order": 1,
+       "value": 9
+      },
+      {
+       "groupName": [
+        {
+         "languageId": null,
+         "text": "Partially Reported"
+        }
+       ],
+       "reportingStatusClientTextKey": "reporting-status-partially-reported",
+       "order": 3,
+       "value": 0
+      },
+      {
+       "groupName": [
+        {
+         "languageId": null,
+         "text": "Not Reported"
+        }
+       ],
+       "reportingStatusClientTextKey": "reporting-status-not-reported",
+       "order": 4,
+       "value": 0
+      }
+     ]
+    },
+    "ballotOptions": [
+     {
+      "id": "01000000-f33c-bc21-b67e-08dead340297",
+      "nativeId": "1",
+      "name": [
+       {
+        "languageId": "en",
+        "text": "Earl L. \"Buddy\" Carter"
+       }
+      ],
+      "voteCount": 1774,
+      "party": {
+       "id": "01000000-f33c-bc21-9a88-08dead340297",
+       "name": [
+        {
+         "languageId": "en",
+         "text": "REP"
+        }
+       ],
+       "abbreviation": "REP",
+       "standardName": null,
+       "color": "#960018",
+       "textColor": "#ffffff"
+      },
+      "groupResults": [
+       {
+        "groupId": "01000000-f33c-bc21-2728-08dead340289",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Election Day"
+         }
+        ],
+        "voteCount": 893
+       },
+       {
+        "groupId": "01000000-f33c-bc21-ac07-08dead34028c",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Advance Voting"
+         }
+        ],
+        "voteCount": 836
+       },
+       {
+        "groupId": "01000000-f33c-bc21-77a5-08dead34028d",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Absentee by Mail"
+         }
+        ],
+        "voteCount": 45
+       },
+       {
+        "groupId": "01000000-f33c-bc21-3b55-08dead34028e",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Provisional"
+         }
+        ],
+        "voteCount": 0
+       }
+      ],
+      "isWriteIn": false,
+      "isQualifiedWriteIn": false,
+      "isWinner": null
+     },
+     {
+      "id": "01000000-f33c-bc21-b83c-08dead340297",
+      "nativeId": "2",
+      "name": [
+       {
+        "languageId": "en",
+        "text": "Mike Collins"
+       }
+      ],
+      "voteCount": 1055,
+      "party": {
+       "id": "01000000-f33c-bc21-9a88-08dead340297",
+       "name": [
+        {
+         "languageId": "en",
+         "text": "REP"
+        }
+       ],
+       "abbreviation": "REP",
+       "standardName": null,
+       "color": "#960018",
+       "textColor": "#ffffff"
+      },
+      "groupResults": [
+       {
+        "groupId": "01000000-f33c-bc21-3b55-08dead34028e",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Provisional"
+         }
+        ],
+        "voteCount": 0
+       },
+       {
+        "groupId": "01000000-f33c-bc21-77a5-08dead34028d",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Absentee by Mail"
+         }
+        ],
+        "voteCount": 16
+       },
+       {
+        "groupId": "01000000-f33c-bc21-ac07-08dead34028c",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Advance Voting"
+         }
+        ],
+        "voteCount": 450
+       },
+       {
+        "groupId": "01000000-f33c-bc21-2728-08dead340289",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Election Day"
+         }
+        ],
+        "voteCount": 589
+       }
+      ],
+      "isWriteIn": false,
+      "isQualifiedWriteIn": false,
+      "isWinner": null
+     },
+     {
+      "id": "01000000-f33c-bc21-b848-08dead340297",
+      "nativeId": "3",
+      "name": [
+       {
+        "languageId": "en",
+        "text": "John F. Coyne III"
+       }
+      ],
+      "voteCount": 10,
+      "party": {
+       "id": "01000000-f33c-bc21-9a88-08dead340297",
+       "name": [
+        {
+         "languageId": "en",
+         "text": "REP"
+        }
+       ],
+       "abbreviation": "REP",
+       "standardName": null,
+       "color": "#960018",
+       "textColor": "#ffffff"
+      },
+      "groupResults": [
+       {
+        "groupId": "01000000-f33c-bc21-2728-08dead340289",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Election Day"
+         }
+        ],
+        "voteCount": 8
+       },
+       {
+        "groupId": "01000000-f33c-bc21-3b55-08dead34028e",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Provisional"
+         }
+        ],
+        "voteCount": 0
+       },
+       {
+        "groupId": "01000000-f33c-bc21-77a5-08dead34028d",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Absentee by Mail"
+         }
+        ],
+        "voteCount": 1
+       },
+       {
+        "groupId": "01000000-f33c-bc21-ac07-08dead34028c",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Advance Voting"
+         }
+        ],
+        "voteCount": 1
+       }
+      ],
+      "isWriteIn": false,
+      "isQualifiedWriteIn": false,
+      "isWinner": null
+     },
+     {
+      "id": "01000000-f33c-bc21-b84f-08dead340297",
+      "nativeId": "4",
+      "name": [
+       {
+        "languageId": "en",
+        "text": "Derek Dooley"
+       }
+      ],
+      "voteCount": 303,
+      "party": {
+       "id": "01000000-f33c-bc21-9a88-08dead340297",
+       "name": [
+        {
+         "languageId": "en",
+         "text": "REP"
+        }
+       ],
+       "abbreviation": "REP",
+       "standardName": null,
+       "color": "#960018",
+       "textColor": "#ffffff"
+      },
+      "groupResults": [
+       {
+        "groupId": "01000000-f33c-bc21-ac07-08dead34028c",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Advance Voting"
+         }
+        ],
+        "voteCount": 127
+       },
+       {
+        "groupId": "01000000-f33c-bc21-77a5-08dead34028d",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Absentee by Mail"
+         }
+        ],
+        "voteCount": 5
+       },
+       {
+        "groupId": "01000000-f33c-bc21-2728-08dead340289",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Election Day"
+         }
+        ],
+        "voteCount": 171
+       },
+       {
+        "groupId": "01000000-f33c-bc21-3b55-08dead34028e",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Provisional"
+         }
+        ],
+        "voteCount": 0
+       }
+      ],
+      "isWriteIn": false,
+      "isQualifiedWriteIn": false,
+      "isWinner": null
+     },
+     {
+      "id": "01000000-f33c-bc21-b855-08dead340297",
+      "nativeId": "5",
+      "name": [
+       {
+        "languageId": "en",
+        "text": "Jonathan \"Jon\" McColumn"
+       }
+      ],
+      "voteCount": 56,
+      "party": {
+       "id": "01000000-f33c-bc21-9a88-08dead340297",
+       "name": [
+        {
+         "languageId": "en",
+         "text": "REP"
+        }
+       ],
+       "abbreviation": "REP",
+       "standardName": null,
+       "color": "#960018",
+       "textColor": "#ffffff"
+      },
+      "groupResults": [
+       {
+        "groupId": "01000000-f33c-bc21-77a5-08dead34028d",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Absentee by Mail"
+         }
+        ],
+        "voteCount": 1
+       },
+       {
+        "groupId": "01000000-f33c-bc21-ac07-08dead34028c",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Advance Voting"
+         }
+        ],
+        "voteCount": 17
+       },
+       {
+        "groupId": "01000000-f33c-bc21-2728-08dead340289",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Election Day"
+         }
+        ],
+        "voteCount": 38
+       },
+       {
+        "groupId": "01000000-f33c-bc21-3b55-08dead34028e",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Provisional"
+         }
+        ],
+        "voteCount": 0
+       }
+      ],
+      "isWriteIn": false,
+      "isQualifiedWriteIn": false,
+      "isWinner": null
+     }
+    ]
+   },
+   {
+    "parentBallotItemId": "01000000-f33c-bc21-3535-08dead3449e1",
+    "locality": {
+     "id": "6911dea4-3a52-4ad8-b4de-b4ebf56c8d85",
+     "name": [
+      {
+       "languageId": "en",
+       "text": "DeKalb County"
+      }
+     ],
+     "shortName": "dekalb-county-ga",
+     "turnoutPercent": null,
+     "percentReporting": null,
+     "precinctsReporting": null,
+     "hasCountGroupStatus": false,
+     "hasPrecinctStatus": false,
+     "mapFeatureId": "DeKalb"
+    },
+    "voteTotal": 19491,
+    "precinctReportingStatus": {
+     "reportingUnits": 191,
+     "totalUnits": 191,
+     "asOf": "2026-06-05T12:37:48.4286728Z",
+     "reportingStatusDetails": [
+      {
+       "groupName": [
+        {
+         "languageId": null,
+         "text": "Fully Reported"
+        }
+       ],
+       "reportingStatusClientTextKey": "reporting-status-fully-reported",
+       "order": 1,
+       "value": 191
+      },
+      {
+       "groupName": [
+        {
+         "languageId": null,
+         "text": "Partially Reported"
+        }
+       ],
+       "reportingStatusClientTextKey": "reporting-status-partially-reported",
+       "order": 3,
+       "value": 0
+      },
+      {
+       "groupName": [
+        {
+         "languageId": null,
+         "text": "Not Reported"
+        }
+       ],
+       "reportingStatusClientTextKey": "reporting-status-not-reported",
+       "order": 4,
+       "value": 0
+      }
+     ]
+    },
+    "ballotOptions": [
+     {
+      "id": "01000000-f33c-bc21-b67e-08dead340297",
+      "nativeId": "1",
+      "name": [
+       {
+        "languageId": "en",
+        "text": "Earl L. \"Buddy\" Carter"
+       }
+      ],
+      "voteCount": 3713,
+      "party": {
+       "id": "01000000-f33c-bc21-9a88-08dead340297",
+       "name": [
+        {
+         "languageId": "en",
+         "text": "REP"
+        }
+       ],
+       "abbreviation": "REP",
+       "standardName": null,
+       "color": "#960018",
+       "textColor": "#ffffff"
+      },
+      "groupResults": [
+       {
+        "groupId": "01000000-f33c-bc21-3b55-08dead34028e",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Provisional"
+         }
+        ],
+        "voteCount": 5
+       },
+       {
+        "groupId": "01000000-f33c-bc21-ac07-08dead34028c",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Advance Voting"
+         }
+        ],
+        "voteCount": 1617
+       },
+       {
+        "groupId": "01000000-f33c-bc21-2728-08dead340289",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Election Day"
+         }
+        ],
+        "voteCount": 1998
+       },
+       {
+        "groupId": "01000000-f33c-bc21-77a5-08dead34028d",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Absentee by Mail"
+         }
+        ],
+        "voteCount": 93
+       }
+      ],
+      "isWriteIn": false,
+      "isQualifiedWriteIn": false,
+      "isWinner": null
+     },
+     {
+      "id": "01000000-f33c-bc21-b83c-08dead340297",
+      "nativeId": "2",
+      "name": [
+       {
+        "languageId": "en",
+        "text": "Mike Collins"
+       }
+      ],
+      "voteCount": 5342,
+      "party": {
+       "id": "01000000-f33c-bc21-9a88-08dead340297",
+       "name": [
+        {
+         "languageId": "en",
+         "text": "REP"
+        }
+       ],
+       "abbreviation": "REP",
+       "standardName": null,
+       "color": "#960018",
+       "textColor": "#ffffff"
+      },
+      "groupResults": [
+       {
+        "groupId": "01000000-f33c-bc21-ac07-08dead34028c",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Advance Voting"
+         }
+        ],
+        "voteCount": 2211
+       },
+       {
+        "groupId": "01000000-f33c-bc21-2728-08dead340289",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Election Day"
+         }
+        ],
+        "voteCount": 3034
+       },
+       {
+        "groupId": "01000000-f33c-bc21-3b55-08dead34028e",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Provisional"
+         }
+        ],
+        "voteCount": 5
+       },
+       {
+        "groupId": "01000000-f33c-bc21-77a5-08dead34028d",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Absentee by Mail"
+         }
+        ],
+        "voteCount": 92
+       }
+      ],
+      "isWriteIn": false,
+      "isQualifiedWriteIn": false,
+      "isWinner": null
+     },
+     {
+      "id": "01000000-f33c-bc21-b848-08dead340297",
+      "nativeId": "3",
+      "name": [
+       {
+        "languageId": "en",
+        "text": "John F. Coyne III"
+       }
+      ],
+      "voteCount": 545,
+      "party": {
+       "id": "01000000-f33c-bc21-9a88-08dead340297",
+       "name": [
+        {
+         "languageId": "en",
+         "text": "REP"
+        }
+       ],
+       "abbreviation": "REP",
+       "standardName": null,
+       "color": "#960018",
+       "textColor": "#ffffff"
+      },
+      "groupResults": [
+       {
+        "groupId": "01000000-f33c-bc21-ac07-08dead34028c",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Advance Voting"
+         }
+        ],
+        "voteCount": 255
+       },
+       {
+        "groupId": "01000000-f33c-bc21-3b55-08dead34028e",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Provisional"
+         }
+        ],
+        "voteCount": 1
+       },
+       {
+        "groupId": "01000000-f33c-bc21-77a5-08dead34028d",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Absentee by Mail"
+         }
+        ],
+        "voteCount": 7
+       },
+       {
+        "groupId": "01000000-f33c-bc21-2728-08dead340289",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Election Day"
+         }
+        ],
+        "voteCount": 282
+       }
+      ],
+      "isWriteIn": false,
+      "isQualifiedWriteIn": false,
+      "isWinner": null
+     },
+     {
+      "id": "01000000-f33c-bc21-b84f-08dead340297",
+      "nativeId": "4",
+      "name": [
+       {
+        "languageId": "en",
+        "text": "Derek Dooley"
+       }
+      ],
+      "voteCount": 8958,
+      "party": {
+       "id": "01000000-f33c-bc21-9a88-08dead340297",
+       "name": [
+        {
+         "languageId": "en",
+         "text": "REP"
+        }
+       ],
+       "abbreviation": "REP",
+       "standardName": null,
+       "color": "#960018",
+       "textColor": "#ffffff"
+      },
+      "groupResults": [
+       {
+        "groupId": "01000000-f33c-bc21-3b55-08dead34028e",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Provisional"
+         }
+        ],
+        "voteCount": 3
+       },
+       {
+        "groupId": "01000000-f33c-bc21-ac07-08dead34028c",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Advance Voting"
+         }
+        ],
+        "voteCount": 3525
+       },
+       {
+        "groupId": "01000000-f33c-bc21-77a5-08dead34028d",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Absentee by Mail"
+         }
+        ],
+        "voteCount": 139
+       },
+       {
+        "groupId": "01000000-f33c-bc21-2728-08dead340289",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Election Day"
+         }
+        ],
+        "voteCount": 5291
+       }
+      ],
+      "isWriteIn": false,
+      "isQualifiedWriteIn": false,
+      "isWinner": null
+     },
+     {
+      "id": "01000000-f33c-bc21-b855-08dead340297",
+      "nativeId": "5",
+      "name": [
+       {
+        "languageId": "en",
+        "text": "Jonathan \"Jon\" McColumn"
+       }
+      ],
+      "voteCount": 933,
+      "party": {
+       "id": "01000000-f33c-bc21-9a88-08dead340297",
+       "name": [
+        {
+         "languageId": "en",
+         "text": "REP"
+        }
+       ],
+       "abbreviation": "REP",
+       "standardName": null,
+       "color": "#960018",
+       "textColor": "#ffffff"
+      },
+      "groupResults": [
+       {
+        "groupId": "01000000-f33c-bc21-3b55-08dead34028e",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Provisional"
+         }
+        ],
+        "voteCount": 3
+       },
+       {
+        "groupId": "01000000-f33c-bc21-2728-08dead340289",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Election Day"
+         }
+        ],
+        "voteCount": 503
+       },
+       {
+        "groupId": "01000000-f33c-bc21-ac07-08dead34028c",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Advance Voting"
+         }
+        ],
+        "voteCount": 402
+       },
+       {
+        "groupId": "01000000-f33c-bc21-77a5-08dead34028d",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Absentee by Mail"
+         }
+        ],
+        "voteCount": 25
+       }
+      ],
+      "isWriteIn": false,
+      "isQualifiedWriteIn": false,
+      "isWinner": null
+     }
+    ]
+   },
+   {
+    "parentBallotItemId": "01000000-f33c-bc21-a78e-08dead346247",
+    "locality": {
+     "id": "4829f9e3-47bc-454f-b33e-64b13bf7e767",
+     "name": [
+      {
+       "languageId": "en",
+       "text": "Evans County"
+      }
+     ],
+     "shortName": "evans-county-ga",
+     "turnoutPercent": null,
+     "percentReporting": null,
+     "precinctsReporting": null,
+     "hasCountGroupStatus": false,
+     "hasPrecinctStatus": false,
+     "mapFeatureId": "Evans"
+    },
+    "voteTotal": 1144,
+    "precinctReportingStatus": {
+     "reportingUnits": 1,
+     "totalUnits": 1,
+     "asOf": "2026-06-05T12:37:48.4286728Z",
+     "reportingStatusDetails": [
+      {
+       "groupName": [
+        {
+         "languageId": null,
+         "text": "Fully Reported"
+        }
+       ],
+       "reportingStatusClientTextKey": "reporting-status-fully-reported",
+       "order": 1,
+       "value": 1
+      },
+      {
+       "groupName": [
+        {
+         "languageId": null,
+         "text": "Partially Reported"
+        }
+       ],
+       "reportingStatusClientTextKey": "reporting-status-partially-reported",
+       "order": 3,
+       "value": 0
+      },
+      {
+       "groupName": [
+        {
+         "languageId": null,
+         "text": "Not Reported"
+        }
+       ],
+       "reportingStatusClientTextKey": "reporting-status-not-reported",
+       "order": 4,
+       "value": 0
+      }
+     ]
+    },
+    "ballotOptions": [
+     {
+      "id": "01000000-f33c-bc21-b67e-08dead340297",
+      "nativeId": "1",
+      "name": [
+       {
+        "languageId": "en",
+        "text": "Earl L. \"Buddy\" Carter"
+       }
+      ],
+      "voteCount": 666,
+      "party": {
+       "id": "01000000-f33c-bc21-9a88-08dead340297",
+       "name": [
+        {
+         "languageId": "en",
+         "text": "REP"
+        }
+       ],
+       "abbreviation": "REP",
+       "standardName": null,
+       "color": "#960018",
+       "textColor": "#ffffff"
+      },
+      "groupResults": [
+       {
+        "groupId": "01000000-f33c-bc21-77a5-08dead34028d",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Absentee by Mail"
+         }
+        ],
+        "voteCount": null
+       },
+       {
+        "groupId": "01000000-f33c-bc21-2728-08dead340289",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Election Day"
+         }
+        ],
+        "voteCount": null
+       },
+       {
+        "groupId": "01000000-f33c-bc21-ac07-08dead34028c",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Advance Voting"
+         }
+        ],
+        "voteCount": null
+       },
+       {
+        "groupId": "01000000-f33c-bc21-3b55-08dead34028e",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Provisional"
+         }
+        ],
+        "voteCount": null
+       }
+      ],
+      "isWriteIn": false,
+      "isQualifiedWriteIn": false,
+      "isWinner": null
+     },
+     {
+      "id": "01000000-f33c-bc21-b83c-08dead340297",
+      "nativeId": "2",
+      "name": [
+       {
+        "languageId": "en",
+        "text": "Mike Collins"
+       }
+      ],
+      "voteCount": 299,
+      "party": {
+       "id": "01000000-f33c-bc21-9a88-08dead340297",
+       "name": [
+        {
+         "languageId": "en",
+         "text": "REP"
+        }
+       ],
+       "abbreviation": "REP",
+       "standardName": null,
+       "color": "#960018",
+       "textColor": "#ffffff"
+      },
+      "groupResults": [
+       {
+        "groupId": "01000000-f33c-bc21-3b55-08dead34028e",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Provisional"
+         }
+        ],
+        "voteCount": null
+       },
+       {
+        "groupId": "01000000-f33c-bc21-2728-08dead340289",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Election Day"
+         }
+        ],
+        "voteCount": null
+       },
+       {
+        "groupId": "01000000-f33c-bc21-ac07-08dead34028c",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Advance Voting"
+         }
+        ],
+        "voteCount": null
+       },
+       {
+        "groupId": "01000000-f33c-bc21-77a5-08dead34028d",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Absentee by Mail"
+         }
+        ],
+        "voteCount": null
+       }
+      ],
+      "isWriteIn": false,
+      "isQualifiedWriteIn": false,
+      "isWinner": null
+     },
+     {
+      "id": "01000000-f33c-bc21-b848-08dead340297",
+      "nativeId": "3",
+      "name": [
+       {
+        "languageId": "en",
+        "text": "John F. Coyne III"
+       }
+      ],
+      "voteCount": 6,
+      "party": {
+       "id": "01000000-f33c-bc21-9a88-08dead340297",
+       "name": [
+        {
+         "languageId": "en",
+         "text": "REP"
+        }
+       ],
+       "abbreviation": "REP",
+       "standardName": null,
+       "color": "#960018",
+       "textColor": "#ffffff"
+      },
+      "groupResults": [
+       {
+        "groupId": "01000000-f33c-bc21-3b55-08dead34028e",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Provisional"
+         }
+        ],
+        "voteCount": null
+       },
+       {
+        "groupId": "01000000-f33c-bc21-77a5-08dead34028d",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Absentee by Mail"
+         }
+        ],
+        "voteCount": null
+       },
+       {
+        "groupId": "01000000-f33c-bc21-2728-08dead340289",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Election Day"
+         }
+        ],
+        "voteCount": null
+       },
+       {
+        "groupId": "01000000-f33c-bc21-ac07-08dead34028c",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Advance Voting"
+         }
+        ],
+        "voteCount": null
+       }
+      ],
+      "isWriteIn": false,
+      "isQualifiedWriteIn": false,
+      "isWinner": null
+     },
+     {
+      "id": "01000000-f33c-bc21-b84f-08dead340297",
+      "nativeId": "4",
+      "name": [
+       {
+        "languageId": "en",
+        "text": "Derek Dooley"
+       }
+      ],
+      "voteCount": 147,
+      "party": {
+       "id": "01000000-f33c-bc21-9a88-08dead340297",
+       "name": [
+        {
+         "languageId": "en",
+         "text": "REP"
+        }
+       ],
+       "abbreviation": "REP",
+       "standardName": null,
+       "color": "#960018",
+       "textColor": "#ffffff"
+      },
+      "groupResults": [
+       {
+        "groupId": "01000000-f33c-bc21-2728-08dead340289",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Election Day"
+         }
+        ],
+        "voteCount": null
+       },
+       {
+        "groupId": "01000000-f33c-bc21-3b55-08dead34028e",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Provisional"
+         }
+        ],
+        "voteCount": null
+       },
+       {
+        "groupId": "01000000-f33c-bc21-77a5-08dead34028d",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Absentee by Mail"
+         }
+        ],
+        "voteCount": null
+       },
+       {
+        "groupId": "01000000-f33c-bc21-ac07-08dead34028c",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Advance Voting"
+         }
+        ],
+        "voteCount": null
+       }
+      ],
+      "isWriteIn": false,
+      "isQualifiedWriteIn": false,
+      "isWinner": null
+     },
+     {
+      "id": "01000000-f33c-bc21-b855-08dead340297",
+      "nativeId": "5",
+      "name": [
+       {
+        "languageId": "en",
+        "text": "Jonathan \"Jon\" McColumn"
+       }
+      ],
+      "voteCount": 26,
+      "party": {
+       "id": "01000000-f33c-bc21-9a88-08dead340297",
+       "name": [
+        {
+         "languageId": "en",
+         "text": "REP"
+        }
+       ],
+       "abbreviation": "REP",
+       "standardName": null,
+       "color": "#960018",
+       "textColor": "#ffffff"
+      },
+      "groupResults": [
+       {
+        "groupId": "01000000-f33c-bc21-ac07-08dead34028c",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Advance Voting"
+         }
+        ],
+        "voteCount": null
+       },
+       {
+        "groupId": "01000000-f33c-bc21-77a5-08dead34028d",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Absentee by Mail"
+         }
+        ],
+        "voteCount": null
+       },
+       {
+        "groupId": "01000000-f33c-bc21-2728-08dead340289",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Election Day"
+         }
+        ],
+        "voteCount": null
+       },
+       {
+        "groupId": "01000000-f33c-bc21-3b55-08dead34028e",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Provisional"
+         }
+        ],
+        "voteCount": null
+       }
+      ],
+      "isWriteIn": false,
+      "isQualifiedWriteIn": false,
+      "isWinner": null
+     }
+    ]
+   },
+   {
+    "parentBallotItemId": "01000000-f33c-bc21-caa3-08dead349bbd",
+    "locality": {
+     "id": "ea1814cb-4423-439e-b273-131e9a8356a6",
+     "name": [
+      {
+       "languageId": "en",
+       "text": "Fulton County"
+      }
+     ],
+     "shortName": "fulton-county-ga",
+     "turnoutPercent": null,
+     "percentReporting": null,
+     "precinctsReporting": null,
+     "hasCountGroupStatus": false,
+     "hasPrecinctStatus": false,
+     "mapFeatureId": "Fulton"
+    },
+    "voteTotal": 48170,
+    "precinctReportingStatus": {
+     "reportingUnits": 437,
+     "totalUnits": 437,
+     "asOf": "2026-06-05T12:37:48.4286728Z",
+     "reportingStatusDetails": [
+      {
+       "groupName": [
+        {
+         "languageId": null,
+         "text": "Fully Reported"
+        }
+       ],
+       "reportingStatusClientTextKey": "reporting-status-fully-reported",
+       "order": 1,
+       "value": 437
+      },
+      {
+       "groupName": [
+        {
+         "languageId": null,
+         "text": "Partially Reported"
+        }
+       ],
+       "reportingStatusClientTextKey": "reporting-status-partially-reported",
+       "order": 3,
+       "value": 0
+      },
+      {
+       "groupName": [
+        {
+         "languageId": null,
+         "text": "Not Reported"
+        }
+       ],
+       "reportingStatusClientTextKey": "reporting-status-not-reported",
+       "order": 4,
+       "value": 0
+      }
+     ]
+    },
+    "ballotOptions": [
+     {
+      "id": "01000000-f33c-bc21-b67e-08dead340297",
+      "nativeId": "1",
+      "name": [
+       {
+        "languageId": "en",
+        "text": "Earl L. \"Buddy\" Carter"
+       }
+      ],
+      "voteCount": 8375,
+      "party": {
+       "id": "01000000-f33c-bc21-9a88-08dead340297",
+       "name": [
+        {
+         "languageId": "en",
+         "text": "REP"
+        }
+       ],
+       "abbreviation": "REP",
+       "standardName": null,
+       "color": "#960018",
+       "textColor": "#ffffff"
+      },
+      "groupResults": [
+       {
+        "groupId": "01000000-f33c-bc21-ac07-08dead34028c",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Advance Voting"
+         }
+        ],
+        "voteCount": 4375
+       },
+       {
+        "groupId": "01000000-f33c-bc21-3b55-08dead34028e",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Provisional"
+         }
+        ],
+        "voteCount": 7
+       },
+       {
+        "groupId": "01000000-f33c-bc21-2728-08dead340289",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Election Day"
+         }
+        ],
+        "voteCount": 3871
+       },
+       {
+        "groupId": "01000000-f33c-bc21-77a5-08dead34028d",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Absentee by Mail"
+         }
+        ],
+        "voteCount": 122
+       }
+      ],
+      "isWriteIn": false,
+      "isQualifiedWriteIn": false,
+      "isWinner": null
+     },
+     {
+      "id": "01000000-f33c-bc21-b83c-08dead340297",
+      "nativeId": "2",
+      "name": [
+       {
+        "languageId": "en",
+        "text": "Mike Collins"
+       }
+      ],
+      "voteCount": 15436,
+      "party": {
+       "id": "01000000-f33c-bc21-9a88-08dead340297",
+       "name": [
+        {
+         "languageId": "en",
+         "text": "REP"
+        }
+       ],
+       "abbreviation": "REP",
+       "standardName": null,
+       "color": "#960018",
+       "textColor": "#ffffff"
+      },
+      "groupResults": [
+       {
+        "groupId": "01000000-f33c-bc21-3b55-08dead34028e",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Provisional"
+         }
+        ],
+        "voteCount": 15
+       },
+       {
+        "groupId": "01000000-f33c-bc21-ac07-08dead34028c",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Advance Voting"
+         }
+        ],
+        "voteCount": 7928
+       },
+       {
+        "groupId": "01000000-f33c-bc21-77a5-08dead34028d",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Absentee by Mail"
+         }
+        ],
+        "voteCount": 165
+       },
+       {
+        "groupId": "01000000-f33c-bc21-2728-08dead340289",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Election Day"
+         }
+        ],
+        "voteCount": 7328
+       }
+      ],
+      "isWriteIn": false,
+      "isQualifiedWriteIn": false,
+      "isWinner": null
+     },
+     {
+      "id": "01000000-f33c-bc21-b848-08dead340297",
+      "nativeId": "3",
+      "name": [
+       {
+        "languageId": "en",
+        "text": "John F. Coyne III"
+       }
+      ],
+      "voteCount": 853,
+      "party": {
+       "id": "01000000-f33c-bc21-9a88-08dead340297",
+       "name": [
+        {
+         "languageId": "en",
+         "text": "REP"
+        }
+       ],
+       "abbreviation": "REP",
+       "standardName": null,
+       "color": "#960018",
+       "textColor": "#ffffff"
+      },
+      "groupResults": [
+       {
+        "groupId": "01000000-f33c-bc21-ac07-08dead34028c",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Advance Voting"
+         }
+        ],
+        "voteCount": 428
+       },
+       {
+        "groupId": "01000000-f33c-bc21-3b55-08dead34028e",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Provisional"
+         }
+        ],
+        "voteCount": 2
+       },
+       {
+        "groupId": "01000000-f33c-bc21-77a5-08dead34028d",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Absentee by Mail"
+         }
+        ],
+        "voteCount": 10
+       },
+       {
+        "groupId": "01000000-f33c-bc21-2728-08dead340289",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Election Day"
+         }
+        ],
+        "voteCount": 413
+       }
+      ],
+      "isWriteIn": false,
+      "isQualifiedWriteIn": false,
+      "isWinner": null
+     },
+     {
+      "id": "01000000-f33c-bc21-b84f-08dead340297",
+      "nativeId": "4",
+      "name": [
+       {
+        "languageId": "en",
+        "text": "Derek Dooley"
+       }
+      ],
+      "voteCount": 21749,
+      "party": {
+       "id": "01000000-f33c-bc21-9a88-08dead340297",
+       "name": [
+        {
+         "languageId": "en",
+         "text": "REP"
+        }
+       ],
+       "abbreviation": "REP",
+       "standardName": null,
+       "color": "#960018",
+       "textColor": "#ffffff"
+      },
+      "groupResults": [
+       {
+        "groupId": "01000000-f33c-bc21-ac07-08dead34028c",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Advance Voting"
+         }
+        ],
+        "voteCount": 10797
+       },
+       {
+        "groupId": "01000000-f33c-bc21-3b55-08dead34028e",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Provisional"
+         }
+        ],
+        "voteCount": 15
+       },
+       {
+        "groupId": "01000000-f33c-bc21-77a5-08dead34028d",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Absentee by Mail"
+         }
+        ],
+        "voteCount": 226
+       },
+       {
+        "groupId": "01000000-f33c-bc21-2728-08dead340289",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Election Day"
+         }
+        ],
+        "voteCount": 10711
+       }
+      ],
+      "isWriteIn": false,
+      "isQualifiedWriteIn": false,
+      "isWinner": null
+     },
+     {
+      "id": "01000000-f33c-bc21-b855-08dead340297",
+      "nativeId": "5",
+      "name": [
+       {
+        "languageId": "en",
+        "text": "Jonathan \"Jon\" McColumn"
+       }
+      ],
+      "voteCount": 1757,
+      "party": {
+       "id": "01000000-f33c-bc21-9a88-08dead340297",
+       "name": [
+        {
+         "languageId": "en",
+         "text": "REP"
+        }
+       ],
+       "abbreviation": "REP",
+       "standardName": null,
+       "color": "#960018",
+       "textColor": "#ffffff"
+      },
+      "groupResults": [
+       {
+        "groupId": "01000000-f33c-bc21-3b55-08dead34028e",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Provisional"
+         }
+        ],
+        "voteCount": 1
+       },
+       {
+        "groupId": "01000000-f33c-bc21-ac07-08dead34028c",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Advance Voting"
+         }
+        ],
+        "voteCount": 897
+       },
+       {
+        "groupId": "01000000-f33c-bc21-2728-08dead340289",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Election Day"
+         }
+        ],
+        "voteCount": 841
+       },
+       {
+        "groupId": "01000000-f33c-bc21-77a5-08dead34028d",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Absentee by Mail"
+         }
+        ],
+        "voteCount": 18
+       }
+      ],
+      "isWriteIn": false,
+      "isQualifiedWriteIn": false,
+      "isWinner": null
+     }
+    ]
+   }
+  ]
+ }
+}

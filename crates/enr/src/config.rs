@@ -56,6 +56,9 @@ impl EnrConfig {
                     s.id
                 )));
             }
+            if let SourceKind::EnhancedVoting { .. } = &s.kind {
+                validate_enhanced_voting(s)?;
+            }
         }
         for r in &self.races {
             if r.race_id.trim().is_empty() || r.contest.trim().is_empty() {
@@ -104,6 +107,42 @@ impl EnrConfig {
         }
         RaceMap { map }
     }
+}
+
+fn validate_enhanced_voting(s: &SourceConfig) -> Result<(), ConfigError> {
+    let SourceKind::EnhancedVoting {
+        base_url,
+        jurisdiction,
+        contests,
+        discovery_interval_s,
+        ..
+    } = &s.kind
+    else {
+        return Ok(());
+    };
+    let bad = |what: &str| Err(ConfigError::Invalid(format!("source {:?}: {what}", s.id)));
+    if reqwest::Url::parse(base_url).is_err() {
+        return bad("base_url is not a URL");
+    }
+    if jurisdiction.trim().is_empty() {
+        return bad("jurisdiction is empty");
+    }
+    if contests.is_empty() {
+        return bad("contests is empty");
+    }
+    let mut names = std::collections::HashSet::new();
+    for c in contests {
+        if c.name.trim().is_empty() || c.race_id.trim().is_empty() {
+            return bad("contest with empty name or race_id");
+        }
+        if !names.insert(fold_contest(&c.name)) {
+            return bad(&format!("contest {:?} listed twice", c.name));
+        }
+    }
+    if !discovery_interval_s.is_finite() || *discovery_interval_s < 1.0 {
+        return bad("discovery_interval_s must be >= 1");
+    }
+    Ok(())
 }
 
 /// Defaults applied to every source.
@@ -202,6 +241,44 @@ pub enum SourceKind {
         urls: Vec<String>,
         mapping: Box<JsonMapping>,
     },
+    /// Enhanced Voting (e.g. Georgia's results.sos.ga.gov): the election and its ballot items are
+    /// discovered at runtime from the jurisdiction's election list, then each ballot item is
+    /// mapped with [`JsonMapping`]. See [`crate::adapters::enhanced_voting`].
+    EnhancedVoting {
+        /// API root, e.g. `https://results.sos.ga.gov/results/public/api`.
+        #[serde(default = "enhanced_voting_base_url")]
+        base_url: String,
+        /// Jurisdiction short name as it appears in the API path (`Georgia`).
+        jurisdiction: String,
+        /// Poll the election held on exactly this date (a quoted `"YYYY-MM-DD"` string).
+        election_date: chrono::NaiveDate,
+        /// Contests to follow, matched to ballot items by name (case/whitespace-insensitive).
+        contests: Vec<ContestSpec>,
+        /// How often to re-read the election list and ballot-item ids.
+        #[serde(default = "enhanced_voting_discovery_s")]
+        discovery_interval_s: f64,
+        /// Withhold results unless the site marks the election `isProduction`.
+        #[serde(default)]
+        require_production: bool,
+        mapping: Box<JsonMapping>,
+    },
+}
+
+fn enhanced_voting_base_url() -> String {
+    crate::adapters::enhanced_voting::DEFAULT_BASE_URL.to_owned()
+}
+
+fn enhanced_voting_discovery_s() -> f64 {
+    600.0
+}
+
+/// One contest an [`SourceKind::EnhancedVoting`] source follows.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ContestSpec {
+    /// Ballot-item name as the site prints it (e.g. `US Senate`).
+    pub name: String,
+    pub race_id: String,
 }
 
 /// Maps a contest name as the source prints it to our race id.
@@ -248,9 +325,15 @@ impl RaceMap {
     pub fn is_empty(&self) -> bool {
         self.map.is_empty()
     }
+
+    /// Add (or replace) one mapping.
+    pub fn insert(&mut self, contest: &str, race_id: &str) {
+        self.map.insert(fold_contest(contest), race_id.to_owned());
+    }
 }
 
-fn fold_contest(s: &str) -> String {
+/// Contest-name folding shared by every lookup: ASCII-lowercased, whitespace runs collapsed.
+pub fn fold_contest(s: &str) -> String {
     s.split_whitespace()
         .collect::<Vec<_>>()
         .join(" ")
@@ -323,6 +406,73 @@ race_id = "2026-SEN-GA-override"
         assert!(EnrConfig::parse(&unknown_src).is_err());
     }
 
+    const EV: &str = r#"
+[[sources]]
+id = "ga_sos"
+state = "GA"
+kind = "enhanced_voting"
+jurisdiction = "Georgia"
+election_date = "2026-11-03"
+contests = [{ name = "US Senate", race_id = "2026-SEN-GA" }]
+discovery_interval_s = 600
+
+[sources.mapping]
+rows = "r[*]"
+race = "$.n"
+county = "c"
+candidates = "o[*]"
+candidate_name = "n"
+candidate_votes = "v"
+"#;
+
+    #[test]
+    fn enhanced_voting_parses_with_defaults() {
+        let cfg = EnrConfig::parse(EV).expect("parse");
+        let SourceKind::EnhancedVoting {
+            base_url,
+            election_date,
+            contests,
+            discovery_interval_s,
+            require_production,
+            ..
+        } = &cfg.sources[0].kind
+        else {
+            panic!("enhanced_voting expected")
+        };
+        assert_eq!(base_url, crate::adapters::enhanced_voting::DEFAULT_BASE_URL);
+        assert_eq!(election_date.to_string(), "2026-11-03");
+        assert_eq!(contests[0].race_id, "2026-SEN-GA");
+        assert!((discovery_interval_s - 600.0).abs() < f64::EPSILON);
+        assert!(!require_production);
+        assert!(crate::adapters::build_source(&cfg, &cfg.sources[0]).is_ok());
+    }
+
+    #[test]
+    fn enhanced_voting_rejects_bad_settings() {
+        for (from, to) in [
+            ("\"2026-11-03\"", "\"Nov 3\""),
+            (
+                "contests = [{ name = \"US Senate\", race_id = \"2026-SEN-GA\" }]",
+                "contests = []",
+            ),
+            (
+                "contests = [{ name = \"US Senate\", race_id = \"2026-SEN-GA\" }]",
+                "contests = [{ name = \"US Senate\", race_id = \"a\" }, { name = \"us  senate\", race_id = \"b\" }]",
+            ),
+            ("race_id = \"2026-SEN-GA\"", "race_id = \" \""),
+            ("discovery_interval_s = 600", "discovery_interval_s = 0.5"),
+            ("jurisdiction = \"Georgia\"", "jurisdiction = \"\""),
+            (
+                "jurisdiction = \"Georgia\"",
+                "jurisdiction = \"Georgia\"\nbase_url = \"not a url\"",
+            ),
+        ] {
+            let bad = EV.replace(from, to);
+            assert_ne!(bad, EV, "replacement {from:?} must apply");
+            assert!(EnrConfig::parse(&bad).is_err(), "{to:?} must be rejected");
+        }
+    }
+
     #[test]
     fn repo_config_is_valid() {
         let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../config/enr_sources.toml");
@@ -337,5 +487,18 @@ race_id = "2026-SEN-GA-override"
                 .iter()
                 .any(|s| matches!(s.kind, SourceKind::Clarity { .. }))
         );
+        let ga = cfg.sources.iter().find(|s| s.id == "ga_sos").expect("ga_sos");
+        assert!(ga.enabled, "discovery is harmless before the election");
+        let SourceKind::EnhancedVoting {
+            election_date,
+            contests,
+            ..
+        } = &ga.kind
+        else {
+            panic!("ga_sos must be enhanced_voting")
+        };
+        assert_eq!(election_date.to_string(), "2026-11-03");
+        let ids: Vec<_> = contests.iter().map(|c| c.race_id.as_str()).collect();
+        assert_eq!(ids, ["2026-SEN-GA", "2026-GOV-GA"]);
     }
 }

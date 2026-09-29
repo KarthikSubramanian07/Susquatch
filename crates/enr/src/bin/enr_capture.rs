@@ -78,6 +78,13 @@ async fn main() -> anyhow::Result<()> {
                 let h = health.borrow_and_update().clone();
                 tracing::info!(batches, accepted = h.pipeline.accepted, duplicates = h.pipeline.duplicates,
                     rejected = h.pipeline.rejected, disputed = ?h.disputed_races, "status");
+                for (source, s) in &h.sources {
+                    if let Some(d) = &s.discovery {
+                        tracing::info!(%source, phase = ?d.phase, date = %d.election_date,
+                            election = ?d.election_id, production_verified = d.production_verified,
+                            contests = ?d.contests, "discovery");
+                    }
+                }
             }
         }
     }

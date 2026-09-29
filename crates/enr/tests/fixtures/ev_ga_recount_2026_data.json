@@ -1,0 +1,35 @@
+{
+ "election": {
+  "id": "01000000-bc80-1501-925b-08dec6632242",
+  "name": [
+   {
+    "languageId": "en",
+    "text": "RECOUNT - May 19th, 2026 PSC District 3-REP"
+   }
+  ],
+  "electionDate": "2026-05-19",
+  "isProduction": true,
+  "isOfficialResults": false,
+  "asOf": "2026-07-01T16:47:20.1410688Z",
+  "lastUpdated": "2026-07-01T15:47:38.1889139Z"
+ },
+ "ballotItems": [
+  {
+   "id": "01000000-c857-3a10-d2bf-08dec66323f1",
+   "parentId": null,
+   "publishPublicElectionId": "RECOUNTPSCDistrict3",
+   "name": [
+    {
+     "languageId": "en",
+     "text": "PSC - District 3 - Rep"
+    }
+   ],
+   "contestType": "Candidate",
+   "partyName": "REP",
+   "voteTotal": 776322
+  }
+ ],
+ "localityElections": [],
+ "precincts": [],
+ "ballotItemWithBreakdown": null
+}

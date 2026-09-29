@@ -5,8 +5,10 @@
 #   clarity     Clarity/Scytl ENR: polls <base_url>/current_ver.txt, fetches a snapshot only when
 #               the version changes (detail = "xml" for county x vote type, "json" for totals only)
 #   static_json any JSON document, mapped with the path language in adapters/json_map.rs
+#   enhanced_voting  Enhanced Voting sites (Georgia): finds the election by date and its ballot
+#               items by contest name at runtime, then maps each item like static_json
 # [[races]] maps a contest name exactly as the source prints it (case/whitespace-insensitive) to
-# our race id. Contests without a mapping are ignored. `source = "*"` applies to every source.
+# our race id (enhanced_voting sources carry their own `contests` list instead). Contests without a mapping are ignored. `source = "*"` applies to every source.
 # Endpoint formats and their verification dates are documented in docs/ELECTION_NIGHT.md.
 
 [defaults]
@@ -75,19 +77,30 @@ enabled = false
 base_url = "https://electionresults.iowa.gov/IA/126082"
 detail = "xml"
 
-# ── Georgia (Enhanced Voting; not Clarity since 2024) via the generic JSON mapper ───────────
-# 2024 presidential ballot item: county x vote method ("Advanced Voting", "Election Day",
-# "Absentee by Mail", "Provisional"). The endpoint is what results.sos.ga.gov itself calls; it is
-# not a published API. Swap the election slug and ballot-item id for 2026.
+# ── Georgia (Enhanced Voting; not Clarity since 2024), discovered at runtime ──────────────
+# Election slugs and ballot-item ids are minted per election and published late, so this source
+# names *what* to follow and finds *where* itself: it polls the jurisdiction's election list until
+# an election dated `election_date` appears, reads that election's ballot items, matches the
+# contest names below (case/whitespace-insensitive; unmatched ones are logged and skipped), then
+# polls each ballot item (county x vote method). It re-discovers every `discovery_interval_s`
+# and soon after a 404 or stale id. Until the SoS lists the Nov 3 general it only waits, so it is
+# safe to leave enabled. The payload's `isProduction` flag is reported in health
+# (`discovery.production_verified`); `require_production = true` withholds test data entirely.
+# The endpoints are what results.sos.ga.gov itself calls, not a published API
+# (docs/ELECTION_NIGHT.md §1.3). `election_date` must be a quoted string.
 [[sources]]
 id = "ga_sos"
 state = "GA"
-kind = "static_json"
+kind = "enhanced_voting"
 tz = "America/New_York"
-enabled = false
-urls = [
-  "https://results.sos.ga.gov/results/public/api/elections/Georgia/2024NovGen/data/ballot-item/01000000-d884-2e72-6367-08dcda4b86b5",
+jurisdiction = "Georgia"
+election_date = "2026-11-03"
+contests = [
+  { name = "US Senate", race_id = "2026-SEN-GA" },
+  { name = "Governor", race_id = "2026-GOV-GA" },
 ]
+discovery_interval_s = 600
+require_production = true   # hold SoS test payloads (isProduction=false) off the bus; see ELECTION_NIGHT §6
 
 [sources.mapping]
 rows = "ballotItemWithBreakdown.breakdownResults[*]"
@@ -104,6 +117,22 @@ precincts_reporting = "precinctReportingStatus.reportingUnits"
 precincts_total = "precinctReportingStatus.totalUnits"
 source_ts = "$.election.lastUpdated"
 
+# Georgia general-election runoff (Dec 1 2026), in case the Senate or governor race goes to one.
+# To enable, uncomment and copy the [sources.mapping] block from ga_sos above.
+# [[sources]]
+# id = "ga_sos_runoff"
+# state = "GA"
+# kind = "enhanced_voting"
+# tz = "America/New_York"
+# jurisdiction = "Georgia"
+# election_date = "2026-12-01"
+# contests = [
+#   { name = "US Senate", race_id = "2026-SEN-GA" },
+#   { name = "Governor", race_id = "2026-GOV-GA" },
+# ]
+# discovery_interval_s = 600
+# require_production = false
+
 # ── Race map ──────────────────────────────────────────────────────────────────────────────
 [[races]]
 source = "ca_sos"
@@ -119,11 +148,6 @@ race_id = "2026-GOV-CA"
 source = "clarity:SC"
 contest = "President and Vice President"
 race_id = "2024-PRES-SC"
-
-[[races]]
-source = "ga_sos"
-contest = "President of the US"
-race_id = "2024-PRES-GA"
 
 # California House: the bulk files say "United States Representative District N", the REST API
 # says "U.S. House of Representatives District N". Both map to the same race id.

@@ -57,6 +57,10 @@ pub struct SourceHealth {
     /// Last poll that produced at least one accepted result.
     pub last_new_data_ns: i64,
     pub last_error: Option<String>,
+    /// Discovery state for sources that find their endpoints at runtime (Enhanced Voting),
+    /// including whether the site flags the data as production or test.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub discovery: Option<crate::adapters::enhanced_voting::DiscoveryStatus>,
 }
 
 /// Snapshot published on the health channel after every poll.
@@ -258,6 +262,9 @@ impl PipelineTask {
                     h.malformed_payloads += u64::from(output.malformed_payloads);
                     h.unresolved_counties += u64::from(output.unresolved_counties);
                     h.last_error = output.partial_errors.last().cloned();
+                    if let Some(d) = &output.discovery {
+                        h.discovery = Some(d.as_ref().clone());
+                    }
                 }
                 let outcome = self.pipeline.ingest(output.results);
                 log_events(&source, &outcome.events);

@@ -1,6 +1,7 @@
 //! Election-night results pollers.
 //!
-//! Public results sites (CA SoS JSON, Clarity/Scytl ENR, any static JSON via a config mapping)
+//! Public results sites (CA SoS JSON, Clarity/Scytl ENR, Enhanced Voting with runtime discovery,
+//! any static JSON via a config mapping)
 //! are polled with jittered cadence and conditional GETs, normalized into cumulative
 //! [`susq_contracts::v1::CountyResult`]s, validated, deduped, checked for monotonicity and
 //! cross-source agreement, and emitted as `CountyResultsBatch`es on a `tokio::sync::mpsc` channel.
@@ -11,7 +12,8 @@
 //!  ┌───────────────┐   PollOutput   ┌──────────────────────────────────────┐   CountyResultsBatch
 //!  │ ca_sos        │ ─────────────► │ validate → tag → dedupe → monotonic  │ ─────────────────────►
 //!  │ clarity:SC    │                │ → cross-source → header(seq) → chunk │   mpsc
-//!  │ static_json:* │                └──────────────────────────────────────┘
+//!  │ ga_sos (EV)   │                └──────────────────────────────────────┘
+//!  │ static_json:* │
 //!  └───────────────┘                         │ watch<EnrHealth> (disputed races, per-source health)
 //! ```
 //!
