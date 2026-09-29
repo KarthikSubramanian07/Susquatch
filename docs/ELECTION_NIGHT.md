@@ -447,9 +447,9 @@ The first sample drill on 2026-09-28 used the reference backend, all three chaos
   Georgia no longer needs manual ids: `ga_sos` discovers the Nov 3 general by date (§1.3). What is not verified is the general's
   exact contest names ("US Senate" and "Governor" are assumed from the 2024 and primary naming). Once the SoS lists the election,
   check `discovery.contests` in `last_health.json` for `null` entries.
-- **Georgia test data:** `ga_sos` ships with `require_production = false`, so SoS test payloads published before polls close would
-  flow to the bus, labelled only in health (`discovery.production_verified = false`). Set `require_production = true` for
-  election night unless something downstream reads that label.
+- **Georgia test data:** `ga_sos` ships with `require_production = true`. SoS test payloads (not flagged `isProduction`) are
+  held off the bus and counted in health. If Georgia ever mislabels real returns, the held counter climbs and the health
+  panel shows it; flip the flag only after checking `last_health.json` (`discovery.production_verified`).
 - **Adapters for custom SoS sites** (AZ, NV, TX, OH, MI, KS, AK, NC zip, NE CSV) are not built. Their JSON must be captured first; CSV/zip sources need a small adapter.
 - The **Clarity `istestmode` flag** is not read. Captured test data should be labelled by date rather than trusted.
 - **Poll-closing table:** 33 states are unverified (GA and NH are the important ones).

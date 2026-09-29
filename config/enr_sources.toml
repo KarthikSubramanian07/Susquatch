@@ -100,7 +100,7 @@ contests = [
   { name = "Governor", race_id = "2026-GOV-GA" },
 ]
 discovery_interval_s = 600
-require_production = false
+require_production = true   # hold SoS test payloads (isProduction=false) off the bus; see ELECTION_NIGHT §6
 
 [sources.mapping]
 rows = "ballotItemWithBreakdown.breakdownResults[*]"
