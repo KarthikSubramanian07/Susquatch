@@ -89,6 +89,7 @@ There are **no real-time alerts** by design. The system has to fail safe on its 
   <img src="docs/img/dashboard-desktop.png" alt="Susquatch dashboard on desktop" width="68%">
   &nbsp;
   <img src="docs/img/dashboard-mobile.png" alt="Susquatch dashboard on a phone" width="24%">
+  <br><sub><i>Rendered from a synthetic status fixture. Every number here is demo data, not results.</i></sub>
 </p>
 
 A password-protected Cloudflare Pages site at `susquatch.pages.dev`: mode, stage, lease, heartbeat, equity, rank, health,
