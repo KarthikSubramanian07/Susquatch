@@ -1,0 +1,97 @@
+# Susquatch shared configuration — read by the Python bridge/scheduler AND rust-live.
+# Non-secret only. Secrets come from .env / the environment (see .env.example).
+# Every value here is a default; experiments change them via PRs logged in experiments/.
+
+[platform]
+base_url = "https://www.thesuper.market/api/v1"
+alt_base_url = "https://sig.thesuper.market/api/v1"
+tournament_slug = "midterm-elections"
+request_timeout_ms = 10000
+# Adaptive limiter starts here and adapts to 429 / Retry-After (docs publish no numbers).
+initial_rps = 4.0
+min_rps = 0.5
+max_rps = 20.0
+# Share of the request budget reserved for order placement/cancel (never starved by reads).
+order_budget_frac = 0.35
+
+[calendar]
+# 2026-10-01 12:00 EDT and 2026-11-04 12:00 EST, in UTC.
+open_utc = "2026-10-01T16:00:00Z"
+lock_utc = "2026-11-04T17:00:00Z"
+# Hard gate: no new orders at/after this; cancel-all fires here; every order's expiration <= this.
+last_order_utc = "2026-11-04T16:55:00Z"
+
+[mode]
+# paper | live. Live ALSO requires SUSQ_MODE=live in the environment and ops/GO_LIVE containing "go live".
+default = "paper"
+
+[risk]
+per_market_gross_frac = 0.05
+total_gross_frac = 0.60
+glitch_through_fair_pts = 15.0     # an order this far through fair is a "glitch trade"...
+glitch_max_frac = 0.02             # ...and is capped at this share of capital
+loss_per_hour_frac = 0.03          # MTM loss in any rolling hour that trips cancel-all + freeze
+reject_breaker_per_min = 10
+max_order_notional_frac = 0.02     # default per-order cap unless a strategy sets tighter
+
+[risk.clusters]
+national = 0.25
+region = 0.15
+state = 0.10
+house = 0.20
+
+[oms]
+default_ttl_s = 300                # every order carries expirationDate = now + ttl (capped at last_order_utc)
+reconcile_interval_s = 15
+idempotency_namespace = "6f1c0e2a-7c55-4d7e-9a8e-5f2b3c1d0a99"   # uuid5 namespace for deterministic keys
+
+[lease]
+path = "ops/state/trader.lease"
+ttl_s = 30
+renew_s = 5
+
+[kill]
+file = "ops/KILL"
+go_live_file = "ops/GO_LIVE"
+
+[fair]
+kalshi_weight = 0.8
+sim_weight = 0.2
+stale_after_s = 60                 # orders built on older fair values are cancelled
+mapping_error_pts = 25.0           # |cup_mid - fair| beyond this = assume mis-mapping, block + flag
+
+[strategies.racer]
+enabled = true
+poll_interval_s = 3.0              # fallback when realtime is down; realtime is primary
+min_edge = 0.01                    # guaranteed-payoff margin after ticks, per bundle share
+max_bundle_notional_frac = 0.01
+order_ttl_s = 20
+
+[strategies.sniper]
+enabled = true
+min_edge_pts = 3.5                 # through fair, after ticks
+max_mistake_frac = 0.01            # size so a wrong fill costs < 1% of bankroll
+order_ttl_s = 30
+
+[strategies.mm]
+enabled = false                    # decided by the decision table after measure_day1
+
+[telemetry]
+leaderboard_interval_s = 3600
+price_snapshot_interval_s = 60
+
+[targets]
+dir = "targets"
+max_age_h = 36                     # tightened in the final days
+
+[needle]
+heartbeat_timeout_s = 10
+resume_after_healthy = 5
+
+[paths]
+journal = "journal"
+state = "state"
+data = "data"
+reports = "reports"
+status = "state/status.json"
+market_map = "state/market_map.json"
