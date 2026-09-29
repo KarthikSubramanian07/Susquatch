@@ -185,6 +185,7 @@ pub async fn run(cli: &Cli, force_paper: bool) -> anyhow::Result<()> {
             _ = tick.tick() => {
                 engine.step().await;
                 let now = rt.clock.now_ns();
+                record_gauges(&engine);
                 {
                     let mut l = liveness.lock();
                     l.last_step_ns = now;
@@ -210,6 +211,37 @@ pub async fn run(cli: &Cli, force_paper: bool) -> anyhow::Result<()> {
     drop(engine);
     rt.close().await;
     Ok(())
+}
+
+/// Loop-level gauges so `/metrics` always shows the engine's vital signs.
+fn record_gauges(engine: &Engine) {
+    let w = &engine.world;
+    metrics::counter!("susq_engine_steps_total").increment(1);
+    metrics::gauge!("susq_equity").set(w.equity);
+    metrics::gauge!("susq_cash").set(w.cash);
+    metrics::gauge!("susq_positions").set(w.positions.map().len() as f64);
+    metrics::gauge!("susq_violations").set(w.violations.len() as f64);
+    metrics::gauge!("susq_exchanges_with_live_orders").set(engine.live_exchanges().len() as f64);
+    metrics::gauge!("susq_killed").set(if engine.gateway().kill().is_killed() {
+        1.0
+    } else {
+        0.0
+    });
+    metrics::gauge!("susq_lease_held").set(if engine.gateway().lease().holds() {
+        1.0
+    } else {
+        0.0
+    });
+    let needle_ok = w.needle.as_ref().is_some_and(|n| n.healthy);
+    metrics::gauge!("susq_needle_healthy").set(if needle_ok { 1.0 } else { 0.0 });
+    for h in w.health.values() {
+        let v = match h.state.as_str() {
+            "ok" => 2.0,
+            "degraded" => 1.0,
+            _ => 0.0,
+        };
+        metrics::gauge!("susq_health", "component" => h.name.clone()).set(v);
+    }
 }
 
 /// Non-marketable price for a 1-contract smoke test: the best bid, kept one tick below the ask.

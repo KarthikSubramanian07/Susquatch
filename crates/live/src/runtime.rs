@@ -49,10 +49,11 @@ impl Runtime {
     }
 }
 
-/// Initialise tracing (JSON or human), filtered by `RUST_LOG` (default `info`).
+/// Initialise tracing (JSON or human), filtered by `RUST_LOG` (default `info`, with the NATS
+/// client's per-attempt reconnect chatter muted).
 pub fn init_tracing(json: bool) {
     let filter = tracing_subscriber::EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info,async_nats=warn"));
     let builder = tracing_subscriber::fmt()
         .with_env_filter(filter)
         .with_target(false);
