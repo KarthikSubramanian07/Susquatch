@@ -77,7 +77,10 @@ There is no pager. The bridge has to fail safe on its own, so every write goes t
    60 %, per-order 2 % of equity; glitch trades (> 15 pts through fair) share a 2 % budget; locked
    legs can't be reduced; we never send an order that crosses our own resting order; `tournamentId`
    must be ours. Caps shrink an order instead of rejecting it where they can; a hypothesis property
-   test checks that **no accepted order ever breaches a cap**.
+   test checks that **no accepted order ever breaches a cap**. Once a reconcile has reported cash, a
+   **buying-power** cap also applies: what the order consumes must fit in cash minus what our resting
+   orders could consume. By default that is the full notional of the shares it opens (see
+   [ALL collateral](#all-collateral) for the opt-in alternative).
 7. **Write-ahead intent.** The `OrderIntent` (with its deterministic idempotency key,
    `uuid5(namespace, intent_id | canonical_payload)`) is fsynced to `state/bridge/intents.jsonl`
    **before** the request leaves.
@@ -109,6 +112,25 @@ Legs are sized by walking the book, capped at 1 % of equity per bundle, sent ato
 `/orders/multi-leg` (never with `relationshipConstraint`, which would reject arbitrage), and any unfilled
 remainder is cancelled at once. Latency from violation to acknowledgement is journaled.
 
+## ALL collateral
+
+The platform backs part of a relationship-linked fill with the component's **guaranteed payout
+floor** instead of cash (NO on both legs of a pair pays at least 1, so the second leg can cost almost
+nothing). The engine's exact rules are not documented, so the bridge keeps two things apart:
+
+| | What happens | When |
+|---|---|---|
+| **Record** | every order response's `all` block is journaled as `all_economics`, next to what the shared model (`susq.platform.collateral`, the same code as the mock and paper broker) predicted for that fill; counters and the last known outstanding advance per component live on `gateway.collateral` | always |
+| **Size** | the buying-power cap and the racer's per-bundle budget count the modeled *effective* cost (`netBuyingPowerImpact`-style: nominal minus the advance) instead of full notional; bundle legs are costed together, in order | only with `[risk] use_collateral_buying_power = true` |
+
+The flag ships **false**. `measure-day1` decides: its `collateral` section compares the engine's `all`
+on a linked fill (the racer's, or live-only a 1-share NO+NO probe on a mutually exclusive pair, which
+pays at least 1 whatever happens) with the model field by field, and the decision table says
+"set use_collateral_buying_power = true" only if every field matches within 0.01 SUSQies. Otherwise
+it names the mismatch and keeps the flag off. Exposure caps (per market, cluster, gross) stay on full
+notional either way. Paper mode applies the same model to paper fills once the racer has loaded the
+relationships.
+
 ## The sniper's gates
 
 Only markets whose `MarketRule` in `state/market_map.json` is `verified: true`; only with a fair value
@@ -127,7 +149,7 @@ Orders whose fair input goes stale are cancelled by the reconcile loop.
 | `state/fair_live.json` | input: `TargetFile` with `header` + `fair`, rewritten every ~15 s |
 | `state/status.json` | output: `StatusSnapshot` every minute |
 | `data/cup/{prices,leaderboard}/date=…/part-….parquet`, `data/cup/markets/` | research data |
-| `reports/DAY1.md`, `reports/day1.json`, `reports/first_trade.json` | day-one measurements |
+| `reports/DAY1.md`, `reports/day1.json`, `reports/first_trade.json` | day-one measurements (incl. the `collateral` verdict) |
 | `ops/KILL`, `ops/GO_LIVE`, `ops/state/trader.lease` | the switches and the lease |
 
 Everything under `journal/ state/ data/ reports/` is gitignored and blocked by the pre-commit hook.
@@ -142,5 +164,6 @@ uv run pytest -m live bridge_py/tests            # read-only smoke test against 
 The tests drive a full `Bridge` against `susq-mock` (see `py/susq/mock/README.md`), including
 502-was-actually-placed retries, a kill mid-run, lease contention between OS processes, the time gate,
 restart recovery, paper-vs-live routing, the racer refusing an unsafe exhaustive bundle, the sniper
-refusing stale and mis-mapped fair values, and a realtime violation raced end to end over a real
-websocket.
+refusing stale and mis-mapped fair values, a realtime violation raced end to end over a real
+websocket, and ALL collateral: `all` journaled with the flag off, the racer sizing bigger only with it
+on, and the day-one verdict refusing the flag when the engine returns `all: null`.
