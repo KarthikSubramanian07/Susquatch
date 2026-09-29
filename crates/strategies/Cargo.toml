@@ -9,6 +9,13 @@ repository.workspace = true
 authors.workspace = true
 
 [dependencies]
+susq-core.workspace = true
+susq-contracts.workspace = true
+susq-book.workspace = true
+susq-platform.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
 
 [lints]
 workspace = true
