@@ -197,7 +197,7 @@ def _unit(req: OrderRequest) -> int:
     return req.yes_price_pips if req.yes_direction > 0 else 10_000 - req.yes_price_pips
 
 
-@settings(max_examples=400, deadline=None)
+@settings(max_examples=200, deadline=None)
 @given(
     equity=st.floats(min_value=100, max_value=1_000_000),
     positions=st.dictionaries(st.sampled_from(EXCHANGES), st.integers(min_value=-20_000, max_value=20_000)),

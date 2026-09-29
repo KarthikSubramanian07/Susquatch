@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import shutil
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -114,9 +113,14 @@ class Harness:
 
 
 def make_home(tmp_path: Path) -> Path:
+    """A SUSQ_HOME with the repo config, but a limiter fast enough for tests (the mock has no limit)."""
     home = tmp_path / "home"
     (home / "config").mkdir(parents=True)
-    shutil.copy(REPO / "config" / "susq.toml", home / "config" / "susq.toml")
+    toml = (REPO / "config" / "susq.toml").read_text()
+    toml = toml.replace("initial_rps = 4.0", "initial_rps = 500.0").replace(
+        "max_rps = 20.0", "max_rps = 1000.0"
+    )
+    (home / "config" / "susq.toml").write_text(toml)
     return home
 
 

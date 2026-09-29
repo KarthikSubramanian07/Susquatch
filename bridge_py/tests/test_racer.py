@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import shutil
 import time
 from pathlib import Path
 
@@ -250,11 +249,8 @@ async def test_racer_in_paper_mode_trades_nothing_real(harness) -> None:  # type
         await bridge.close()
 
 
-async def test_realtime_violation_is_raced(tmp_path: Path) -> None:
+async def test_realtime_violation_is_raced(home: Path) -> None:
     """Mock on a real socket: the bridge joins realtime and races the pushed violation."""
-    home = tmp_path / "home"
-    (home / "config").mkdir(parents=True)
-    shutil.copy(Path(__file__).resolve().parents[2] / "config" / "susq.toml", home / "config" / "susq.toml")
     (home / "ops").mkdir()
     (home / "ops" / "GO_LIVE").write_text("go live")
     async with serve_mock(MockConfig(seed=7)) as live:
