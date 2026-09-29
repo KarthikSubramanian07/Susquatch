@@ -1,0 +1,92 @@
+{
+ "id": "09378a07-e6cf-4f66-be7c-ca4aa534f99a",
+ "name": [
+  {
+   "languageId": "en",
+   "text": "Georgia"
+  }
+ ],
+ "shortName": "Georgia",
+ "elections": [
+  {
+   "publicElectionId": "08252026SpecialElectionRunoff",
+   "electionDate": "2026-08-25",
+   "name": [
+    {
+     "languageId": "en",
+     "text": "August 25th, 2026 Special Election Runoff"
+    }
+   ],
+   "dateText": [
+    {
+     "languageId": "en",
+     "text": "August 25, 2026"
+    }
+   ]
+  },
+  {
+   "publicElectionId": "06162026GeneralPrimaryRunoff",
+   "electionDate": "2026-06-16",
+   "name": [
+    {
+     "languageId": "en",
+     "text": "June 16th, 2026 General Primary Runoff"
+    }
+   ],
+   "dateText": [
+    {
+     "languageId": "en",
+     "text": "June 16, 2026"
+    }
+   ]
+  },
+  {
+   "publicElectionId": "RECOUNTPSCDistrict3",
+   "electionDate": "2026-05-19",
+   "name": [
+    {
+     "languageId": "en",
+     "text": "RECOUNT - May 19th, 2026 PSC District 3-REP"
+    }
+   ],
+   "dateText": [
+    {
+     "languageId": "en",
+     "text": "May 19, 2026"
+    }
+   ]
+  },
+  {
+   "publicElectionId": "2024NovGen",
+   "electionDate": "2024-11-05",
+   "name": [
+    {
+     "languageId": "en",
+     "text": "November General Election"
+    }
+   ],
+   "dateText": [
+    {
+     "languageId": "en",
+     "text": "November 5, 2024"
+    }
+   ]
+  },
+  {
+   "publicElectionId": "GeneralPrimary51926",
+   "electionDate": "2026-05-19",
+   "name": [
+    {
+     "languageId": "en",
+     "text": "May 19, 2026 - General Primary"
+    }
+   ],
+   "dateText": [
+    {
+     "languageId": "en",
+     "text": "May 19, 2026"
+    }
+   ]
+  }
+ ]
+}

@@ -1,0 +1,105 @@
+{
+ "election": {
+  "id": "01000000-b960-7e2f-bde4-08dead3401e5",
+  "name": [
+   {
+    "languageId": "en",
+    "text": "May 19, 2026 - General Primary"
+   }
+  ],
+  "electionDate": "2026-05-19",
+  "isProduction": true,
+  "isOfficialResults": true,
+  "asOf": "2026-06-05T12:37:48.4286599Z",
+  "lastUpdated": "2026-06-04T15:31:48.7238665Z"
+ },
+ "ballotItems": [
+  {
+   "id": "01000000-f33c-bc21-a444-08dead340297",
+   "parentId": null,
+   "publishPublicElectionId": "GeneralPrimary51926",
+   "name": [
+    {
+     "languageId": "en",
+     "text": "US Senate - Rep"
+    }
+   ],
+   "contestType": "Candidate",
+   "partyName": "REP",
+   "voteTotal": 912696
+  },
+  {
+   "id": "01000000-f33c-bc21-b379-08dead3402a6",
+   "parentId": null,
+   "publishPublicElectionId": "GeneralPrimary51926",
+   "name": [
+    {
+     "languageId": "en",
+     "text": "US Senate - Dem"
+    }
+   ],
+   "contestType": "Candidate",
+   "partyName": "DEM",
+   "voteTotal": 1042331
+  },
+  {
+   "id": "01000000-f33c-bc21-51c6-08dead3402a8",
+   "parentId": null,
+   "publishPublicElectionId": "GeneralPrimary51926",
+   "name": [
+    {
+     "languageId": "en",
+     "text": "Governor - Rep"
+    }
+   ],
+   "contestType": "Candidate",
+   "partyName": "REP",
+   "voteTotal": 933817
+  },
+  {
+   "id": "01000000-f33c-bc21-75d0-08dead3402aa",
+   "parentId": null,
+   "publishPublicElectionId": "GeneralPrimary51926",
+   "name": [
+    {
+     "languageId": "en",
+     "text": "Governor - Dem"
+    }
+   ],
+   "contestType": "Candidate",
+   "partyName": "DEM",
+   "voteTotal": 1081811
+  },
+  {
+   "id": "01000000-f33c-bc21-55e7-08dead3402ac",
+   "parentId": null,
+   "publishPublicElectionId": "GeneralPrimary51926",
+   "name": [
+    {
+     "languageId": "en",
+     "text": "Lieutenant Governor - Rep"
+    }
+   ],
+   "contestType": "Candidate",
+   "partyName": "REP",
+   "voteTotal": 889130
+  },
+  {
+   "id": "01000000-f33c-bc21-041f-08dead3402ae",
+   "parentId": null,
+   "publishPublicElectionId": "GeneralPrimary51926",
+   "name": [
+    {
+     "languageId": "en",
+     "text": "Lieutenant Governor - Dem"
+    }
+   ],
+   "contestType": "Candidate",
+   "partyName": "DEM",
+   "voteTotal": 1030951
+  }
+ ],
+ "localityElections": [],
+ "precincts": [],
+ "ballotItemWithBreakdown": null
+}
