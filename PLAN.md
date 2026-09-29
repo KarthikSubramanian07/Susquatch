@@ -85,12 +85,15 @@ Every milestone is a feature branch → PR (with CI) → merge into `main`. The 
 
 ### Must be live by Oct 1 12:00 ET (ITERATION §1)
 
-- [ ] SuperMarket adapter verified against the official docs *(done on paper; needs the API key for live verification)*
-- [ ] gateway, OMS, risk, kill switch, journal (Python bridge)
-- [ ] `measure_day1` → `reports/DAY1.md`
-- [ ] first qualifying trade (1 share near mid, liquid market). **Needs "go live".**
-- [ ] constraints racer (event-driven + polling fallback)
-- [ ] stale-order sniper (needs verified Cup↔Kalshi mapping)
+- [x] SuperMarket adapter built to the official docs (#9, #11). *Live verification needs the API key.*
+- [x] gateway, OMS, risk, kill switch, journal (Python bridge, #10)
+- [x] `measure_day1` → `reports/DAY1.md` (#10). *The live steps run on Oct 1 with the key.*
+- [x] first qualifying trade (#10). **Armed only by "go live".**
+- [x] constraints racer, realtime first with polling fallback (#10, #11, re-fire fix #12)
+- [x] stale-order sniper (#10). *Trades only markets marked `verified` in the market map.*
+
+Beyond the Oct 1 list, these landed early: rust-live (#11), C++ `sim`/`tourney`/`needle` (#13), research (#7),
+election night (#8, #14), ops (#15), dashboard (#16).
 
 ---
 
@@ -149,14 +152,22 @@ Every milestone is a feature branch → PR (with CI) → merge into `main`. The 
 
 ## 7. Human steps (only Karthik can do these)
 
-1. **Register** at sig.thesuper.market (student eligibility), confirm the email, accept the Terms and Rules, and opt in to recruiting contact.
-2. **Create an API key** (Settings → API Keys) with `read` + `trade` and put it in `.env` as `SUSQ_API_KEY=…`. Never paste it in chat.
-3. Say **"go live"** in a Claude Code session, which arms the first trade and the live bridge.
-4. **Cloudflare:** a scoped API token (Pages + Workers + KV + R2 edit), stored as GitHub Actions secrets, plus enabling R2 on the account.
-5. **GitHub:** a fine-grained token (issues:write on `susquatch-reports` only), stored as a Worker secret.
-6. **Oracle Cloud Always Free** signup (card hold only; **never** upgrade to Pay-As-You-Go), then run `ops/cloud-init`.
-7. Spot-check the market map and parsed rules (`/parse-rules`) before the sniper trades a market.
-8. Optional: send the drafted DDHQ student-access email.
+Ordered by deadline. The private `susquatch-reports` repo and its pinned **Daily summary** issue already exist.
+
+1. **Before Oct 1:** register at sig.thesuper.market (student eligibility), confirm the email, accept the Terms and Rules, and opt in to recruiting contact.
+2. **Before Oct 1:** create an API key (Settings → API Keys) with `read` + `trade`. Put it in `.env` as `SUSQ_API_KEY=…` and never paste it in chat.
+   Then run `uv run susq-bridge record` once to snapshot the markets, so the map can be built before open.
+3. **Before Oct 1:** decide where it runs on day one. The Mac (`make up`, colima) works now. The Oracle server is better but needs step 6.
+4. **Before Oct 1:** run `/parse-rules`, paste Info-tab text into `state/info_tabs/<id>.md` for the risky markets, and mark rows `verified: true`.
+   The sniper and scenario book trade only verified rows. The racer's NO-bundles don't need verification.
+5. **Oct 1, before 12:00 ET:** say **"go live"** in a Claude Code session (`/go-live` runs the pre-flight). Without it, everything stays paper.
+6. **This week:** sign up for Oracle Cloud Always Free (card hold only; **never** upgrade to Pay-As-You-Go), then `ops/cloud-init.yaml` + `ops/install.sh`.
+7. **This week:** Cloudflare. Add `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` as GitHub Actions secrets (permissions in `docs/OPS.md` §4),
+   enable R2, set the dashboard password secret, then merge-to-main deploys `susquatch.pages.dev`. Wrangler is already logged in locally, but deploying is your call.
+8. **This week:** a fine-grained GitHub token (Issues: write, Contents: read on `susquatch-reports` only), stored as the Worker secret.
+9. **Mid-October:** re-check the CA SoS media page for the 2026 test-window dates (see `brief/ERRATA.md` E18), and turn on Claude Code cloud routines for
+   `/daily-review` (daily) and `/weekly-strategy` (Sundays), reading `susquatch-reports`, with **extra usage OFF**.
+10. **Optional:** send the DDHQ student-access email (`docs/outreach/DDHQ_student_access.md`).
 
 ---
 
