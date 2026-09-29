@@ -108,10 +108,13 @@ impl World {
         out
     }
 
-    /// Exchanges whose books the strategies need this round.
+    /// Exchanges whose books the strategies need this round. Only fresh fair values pull their
+    /// books in (stale ones can't be traded on anyway).
     pub fn exchanges_of_interest(
         &self,
         targets: Option<&susq_contracts::v1::TargetFile>,
+        now_ns: i64,
+        fair_max_age_ns: i64,
     ) -> BTreeSet<ExchangeId> {
         let mut out: BTreeSet<ExchangeId> = self.positions.map().keys().cloned().collect();
         for (v, _) in self.violations.values() {
@@ -127,7 +130,12 @@ impl World {
         if let Some(t) = targets {
             out.extend(t.positions.iter().map(|p| ExchangeId::new(p.exchange_id.clone())));
         }
-        out.extend(self.fair.keys().cloned());
+        out.extend(
+            self.fair
+                .iter()
+                .filter(|(_, q)| now_ns - q.observed_at_ns <= fair_max_age_ns)
+                .map(|(ex, _)| ex.clone()),
+        );
         if let Some(n) = self.needle.as_ref().filter(|n| n.healthy) {
             for race in n.posteriors.keys() {
                 out.extend(self.markets.exchanges_for_race(race).iter().cloned());

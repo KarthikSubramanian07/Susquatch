@@ -154,8 +154,13 @@ struct Session {
 }
 
 async fn session(prepare: impl FnOnce(&Path, &ManualClock)) -> Session {
+    session_with(|_| {}, prepare).await
+}
+
+async fn session_with(tweak: impl FnOnce(&mut Config), prepare: impl FnOnce(&Path, &ManualClock)) -> Session {
     let home = tempfile::tempdir().expect("tmp");
-    let cfg = config();
+    let mut cfg = config();
+    tweak(&mut cfg);
     let clock = ManualClock::at("2026-10-08T16:00:00Z".parse().expect("ts"));
     let mock = Arc::new(MockPlatform::new(
         Arc::new(clock.clone()),
@@ -398,4 +403,122 @@ async fn everything_is_cancelled_at_the_last_order_gate() {
         before,
         "no new orders after the gate"
     );
+}
+
+/// `state/fair_live.json` as the research scheduler writes it: header + fair only.
+fn write_fair(home: &Path, produced_at_ns: i64, values: &[(&str, f64)]) {
+    let tf = TargetFile {
+        header: Some(Header {
+            schema_version: susq_contracts::SCHEMA_VERSION,
+            produced_at_ns,
+            producer: Some(Producer {
+                name: "python-scheduler".into(),
+                git_sha: "test".into(),
+            }),
+            seq: 1,
+        }),
+        fair: values
+            .iter()
+            .map(|(ex, p)| v1::FairValue {
+                exchange_id: (*ex).into(),
+                p_yes: *p,
+                p_lo: *p,
+                p_hi: *p,
+                source: "0.8*kalshi+0.2*sim".into(),
+                ..Default::default()
+            })
+            .collect(),
+        ..Default::default()
+    };
+    let path = home.join("state/fair_live.json");
+    std::fs::create_dir_all(path.parent().expect("dir")).expect("mkdir");
+    let tmp = path.with_extension("tmp");
+    std::fs::write(&tmp, susq_contracts::to_json(&tf).expect("json")).expect("write");
+    std::fs::rename(tmp, path).expect("rename");
+}
+
+#[tokio::test]
+async fn fresh_fair_feeds_the_sniper_and_a_stale_feed_stops_it() {
+    // House leg: ask 0.55, fair 0.62 → 7 pts through fair, more than the 3.5-pt edge.
+    let mut s = session(|home, clock| write_fair(home, clock.now_ns(), &[("4", 0.62)])).await;
+    s.tick(1).await;
+    let sniper = s.intents("sniper");
+    assert_eq!(sniper.len(), 1, "{sniper:?}");
+    assert_eq!(sniper[0].1, OrderState::Filled);
+    assert_eq!(
+        s.paper_position("4").await,
+        100,
+        "took the visible depth at <= 0.58"
+    );
+
+    // The feed keeps updating: another opportunity is taken (paper never consumes live depth).
+    write_fair(s.home.path(), s.clock.now_ns() + S, &[("4", 0.62)]);
+    s.tick(1).await;
+    assert_eq!(s.intents("sniper").len(), 2);
+
+    // The scheduler dies: after stale_after_s (60 s) nothing new is built on the old fair.
+    s.tick(61).await;
+    s.tick(1).await;
+    assert_eq!(s.intents("sniper").len(), 2, "stale fair: sniper stops");
+    let fair = s.engine.world.health.get("fair").map(|h| h.state.clone());
+    assert_eq!(fair.as_deref(), Some("down"));
+}
+
+#[tokio::test]
+async fn stale_fair_cancels_market_maker_quotes() {
+    let mut s = session_with(
+        |cfg| {
+            cfg.strategies.mm.enabled = true;
+            cfg.strategies.sniper.enabled = false;
+        },
+        |home, clock| write_fair(home, clock.now_ns(), &[("4", 0.525)]),
+    )
+    .await;
+    s.tick(1).await;
+    let live = |s: &Session| s.intents("mm").into_iter().filter(|(_, st)| st.is_live()).count();
+    assert_eq!(live(&s), 2, "two-sided quotes rest: {:?}", s.intents("mm"));
+
+    s.tick(61).await;
+    assert_eq!(
+        live(&s),
+        0,
+        "stale fair cancels every quote: {:?}",
+        s.intents("mm")
+    );
+    s.tick(1).await;
+    assert_eq!(live(&s), 0, "and nothing is re-quoted");
+}
+
+#[tokio::test]
+async fn a_malformed_fair_file_is_refused_and_the_old_values_age_out() {
+    let mut s = session(|home, clock| write_fair(home, clock.now_ns(), &[("4", 0.62)])).await;
+    s.tick(1).await;
+    assert_eq!(s.intents("sniper").len(), 1);
+    std::fs::write(
+        s.home.path().join("state/fair_live.json"),
+        "{\"header\": {\"schemaVersion\"",
+    )
+    .expect("write");
+    s.tick(1).await;
+    assert!(
+        s.engine
+            .world
+            .events
+            .iter()
+            .any(|e| e.starts_with("fair file rejected"))
+    );
+    let fair = s.engine.world.health.get("fair").map(|h| h.state.clone());
+    assert_eq!(
+        fair.as_deref(),
+        Some("degraded"),
+        "still inside the freshness window"
+    );
+    assert_eq!(
+        s.intents("sniper").len(),
+        2,
+        "the last good values are still fresh, so trading continues"
+    );
+    s.tick(61).await;
+    s.tick(1).await;
+    assert_eq!(s.intents("sniper").len(), 2, "once they age out, nothing more");
 }

@@ -9,6 +9,7 @@ use std::{
     collections::{BTreeSet, HashMap, HashSet},
     path::{Path, PathBuf},
     sync::Arc,
+    time::Duration,
 };
 
 use susq_book::L2Book;
@@ -26,7 +27,7 @@ use susq_strategies::{
     ConstraintsRacer, EnExecutor, FairQuote, MarketMaker, NeedleView, ScenarioExecutor, Snapshot, Sniper,
     Strategy,
 };
-use susq_targets::{ReaderConfig, RefreshOutcome, TargetsReader};
+use susq_targets::{FairOutcome, FairReader, ReaderConfig, RefreshOutcome, TargetsReader};
 use tokio::{
     sync::{mpsc, watch},
     task::JoinHandle,
@@ -41,6 +42,8 @@ const BOOKS_PER_STEP: usize = 8;
 const VIOLATION_TTL_NS: i64 = 30 * S;
 /// Relationships are re-read at least this often.
 const RELATIONSHIPS_EVERY_NS: i64 = 3600 * S;
+/// Fair quotes absent from the live file for this long are forgotten.
+const FAIR_FORGET_NS: i64 = 3600 * S;
 /// Market map re-read period.
 const MARKET_MAP_EVERY_NS: i64 = 60 * S;
 
@@ -79,6 +82,7 @@ pub struct Engine {
     risk: PreTrade,
     breakers: Breakers,
     targets: TargetsReader,
+    fair: FairReader,
     racer: ConstraintsRacer,
     sniper: Sniper,
     mm: MarketMaker,
@@ -108,6 +112,10 @@ impl Engine {
             },
             breakers: Breakers::new(BreakerConfig::from_cfg(&cfg.risk)),
             targets: TargetsReader::new(ReaderConfig::from_core(cfg, &d.home)),
+            fair: FairReader::new(
+                d.home.join(&cfg.paths.fair_live),
+                Duration::from_secs(cfg.fair.stale_after_s),
+            ),
             racer: ConstraintsRacer::new(cfg.strategies.racer.clone()),
             sniper: Sniper::new(cfg.strategies.sniper.clone()),
             mm: MarketMaker::new(cfg.strategies.mm.clone()),
@@ -321,6 +329,7 @@ impl Engine {
             self.refresh_leaderboard(now).await;
         }
         self.refresh_targets(now);
+        self.refresh_fair(now);
         self.refresh_needle(now);
         self.world
             .violations
@@ -450,23 +459,6 @@ impl Engine {
         match self.targets.refresh(now) {
             RefreshOutcome::Loaded(t) => {
                 self.world.event(format!("targets loaded: {}", t.source()));
-                let fair: HashMap<ExchangeId, FairQuote> = t
-                    .file()
-                    .fair
-                    .iter()
-                    .map(|f| {
-                        let ex = ExchangeId::new(f.exchange_id.clone());
-                        let prev = self.world.fair.get(&ex).map(|q| q.p_yes);
-                        let q = FairQuote {
-                            p_yes: f.p_yes,
-                            observed_at_ns: t.produced_at_ns(),
-                            prev_p_yes: prev,
-                            source: f.source.clone(),
-                        };
-                        (ex, q)
-                    })
-                    .collect();
-                self.world.fair = fair;
                 self.risk.limits.cluster_override_frac = t
                     .file()
                     .clusters
@@ -478,6 +470,36 @@ impl Engine {
             RefreshOutcome::Unchanged => {}
         }
         self.world.put_health(self.targets.health(now));
+    }
+
+    /// Live fair values (sniper and market maker). Each quote carries the file's `produced_at_ns`,
+    /// so strategies see it go stale on their own and cancel what they built on it. Exchanges that
+    /// drop out of the file keep their last quote until it has aged out (so their orders are
+    /// cancelled as stale rather than orphaned), then are forgotten.
+    fn refresh_fair(&mut self, now: i64) {
+        match self.fair.refresh(now) {
+            FairOutcome::Loaded(_) => {
+                if let Some(snap) = self.fair.current() {
+                    for f in &snap.fair {
+                        let ex = ExchangeId::new(f.exchange_id.clone());
+                        let prev = self.world.fair.get(&ex).map(|q| q.p_yes);
+                        let quote = FairQuote {
+                            p_yes: f.p_yes,
+                            observed_at_ns: snap.produced_at_ns,
+                            prev_p_yes: prev,
+                            source: f.source.clone(),
+                        };
+                        self.world.fair.insert(ex, quote);
+                    }
+                }
+            }
+            FairOutcome::Rejected(r) => self.world.event(format!("fair file rejected: {r}")),
+            FairOutcome::Unchanged => {}
+        }
+        self.world
+            .fair
+            .retain(|_, q| now - q.observed_at_ns <= FAIR_FORGET_NS);
+        self.world.put_health(self.fair.health(now));
     }
 
     fn refresh_needle(&mut self, now: i64) {
@@ -503,9 +525,11 @@ impl Engine {
 
     async fn refresh_books(&mut self, now: i64) {
         let max_age = duration_ns(std::time::Duration::from_secs(self.d.cfg.live.book_max_age_s));
-        let interest = self
-            .world
-            .exchanges_of_interest(self.targets.current().map(|t| t.file()));
+        let fair_max_age = i64::try_from(self.d.cfg.fair.stale_after_s)
+            .unwrap_or(60)
+            .saturating_mul(S);
+        let targets = self.targets.current().map(|t| t.file());
+        let interest = self.world.exchanges_of_interest(targets, now, fair_max_age);
         // Dirty books first (realtime said they moved), then books about to go stale.
         let dirty: Vec<ExchangeId> = self
             .world
