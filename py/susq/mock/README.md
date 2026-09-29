@@ -138,10 +138,10 @@ uses last tournament trade prices; the production engine's exact price source is
 ```python
 from susq.mock.testing import open_mock_env, serve_mock
 
-async with open_mock_env() as env:           # ASGI, frozen clock at 2026-10-01T16:00Z
+async with open_mock_env() as env:  # ASGI, frozen clock at 2026-10-01T16:00Z
     t = await env.client.get_tournament("midterm-elections")
     await env.post_admin("/_mock/faults", {"order_status_unknown_next": 1})
 
-async with serve_mock() as live:             # real socket for websockets
-    print(live.api)                          # http://127.0.0.1:<port>/api/v1
+async with serve_mock() as live:  # real socket for websockets
+    print(live.api)  # http://127.0.0.1:<port>/api/v1
 ```
