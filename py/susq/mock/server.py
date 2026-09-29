@@ -33,6 +33,7 @@ from susq.mock.engine import (
     FillRecord,
     Placement,
     RestingOrder,
+    SettlementRecord,
     TradeRecord,
     iso,
     parse_iso,
@@ -42,7 +43,7 @@ from susq.mock.realtime import PhoenixHub, TokenInfo
 from susq.mock.scenario import Scenario, ScenarioConfig
 from susq.platform.prices import PIPS_PER_UNIT, to_pips, to_price
 
-__all__ = ["MockConfig", "MockExchange", "create_app", "main"]
+__all__ = ["MockConfig", "MockExchange", "config_from_args", "create_app", "main"]
 
 API = "/api/v1"
 REALTIME_TTL = timedelta(hours=3)
@@ -57,6 +58,8 @@ class MockConfig:
     sponsor_half_width_pips: int = 100
     sponsor_size: int = 500
     synthetic_players: int = 40
+    #: Model ALL collateral (relationship-backed advances); False = plain cash, ``all: null``.
+    collateral: bool = True
     faults: Faults = field(default_factory=Faults)
     frozen_now: datetime | None = None
     #: Public origin for ``supabaseUrl`` in realtime tokens (the websocket lives on this same app).
@@ -131,6 +134,7 @@ class MockExchange:
                 sponsor_half_width_pips=self.config.sponsor_half_width_pips,
                 sponsor_size=self.config.sponsor_size,
                 synthetic_players=self.config.synthetic_players,
+                collateral=self.config.collateral,
                 api_keys=dict(self.config.api_keys),
             ),
             self.clock.now(),
@@ -139,6 +143,8 @@ class MockExchange:
         #: (profile, endpoint, key) -> (fingerprint, status, body)
         self.idempotency: dict[tuple[str, str, str], tuple[bytes, int, Any]] = {}
         self.tokens: dict[str, TokenInfo] = {}
+        #: profile -> collateral events already broadcast on its ``user:`` channel
+        self.collateral_published: dict[str, int] = {}
         self.rate.reset()
 
     @property
@@ -276,6 +282,8 @@ class MockExchange:
         by_owner: dict[str, list[FillRecord]] = {}
         for f in new_fills:
             by_owner.setdefault(f.owner, []).append(f)
+        for owner in self.pending_collateral():
+            by_owner.setdefault(owner, [])
         for owner, fills in by_owner.items():
             await self.hub.broadcast(
                 f"user:{owner}",
@@ -299,11 +307,34 @@ class MockExchange:
                     ],
                     "settlements": [],
                     "refunds": [],
-                    "collateralChanges": [],
+                    "collateralChanges": self.take_collateral_changes(owner),
                 },
             )
         if trades:
             await self.broadcast_violations({t.exchange_id for t in trades})
+
+    def pending_collateral(self) -> list[str]:
+        """Profiles with collateral events not yet broadcast (bots excluded)."""
+        return [
+            pid
+            for pid, acct in self.engine.state.accounts.items()
+            if not acct.is_bot and len(acct.collateral.events) > self.collateral_published.get(pid, 0)
+        ]
+
+    def take_collateral_changes(self, profile: str) -> list[dict[str, Any]]:
+        """``account_batch.collateralChanges`` items since the last broadcast to ``profile``."""
+        events = self.engine.account(profile).collateral.events
+        start = min(self.collateral_published.get(profile, 0), len(events))
+        self.collateral_published[profile] = len(events)
+        return [
+            {
+                "delta": e.delta_pips / PIPS_PER_UNIT,
+                "outstandingAdvanceAfter": e.outstanding_after_pips / PIPS_PER_UNIT,
+                "componentId": e.component_id,
+                "tournamentId": self.tid,
+            }
+            for e in events[start:]
+        ]
 
     def _order_update(self, order: RestingOrder, now: datetime) -> dict[str, Any]:
         return {
@@ -369,8 +400,8 @@ class MockExchange:
             "status": m.status,
             "createdAt": "2026-09-20T00:00:00Z",
             "settlementDate": m.settlement_date,
-            "settledWith": None,
-            "settledOn": None,
+            "settledWith": m.settled_with,
+            "settledOn": iso(m.settled_on) if m.settled_on else None,
             "categories": [m.category],
             "isComposite": False,
             "isMultiOutcome": False,
@@ -1035,12 +1066,34 @@ async def get_fills(mx: MockExchange, request: Request, profile: str) -> Respons
     )
 
 
+def _settlement_json(mx: MockExchange, r: SettlementRecord) -> dict[str, Any]:
+    shares = abs(r.quantity)
+    return {
+        "id": str(r.id),
+        "type": "settlement",
+        "createdAt": iso(r.settled_at),
+        "marketId": r.market_id,
+        "marketTitle": mx.engine.markets[r.market_id].title,
+        "exchangeId": r.exchange_id,
+        "settlementOption": "YES",
+        "settlementOutcome": r.outcome,
+        "shares": r.quantity,
+        "avgEntryPrice": round(r.cost_basis_pips / shares / PIPS_PER_UNIT, 6) if shares else None,
+        "costBasis": r.cost_basis_pips / PIPS_PER_UNIT,
+        "payout": r.payout_pips / PIPS_PER_UNIT,
+        "realizedPnl": (r.payout_pips - r.cost_basis_pips) / PIPS_PER_UNIT,
+    }
+
+
 async def get_settlements(mx: MockExchange, request: Request, profile: str) -> Response:
     mx.require_slug(request)
+    rows = [r for r in reversed(mx.engine.state.settlements) if r.owner == profile and r.quantity]
+    chunk, pagination = _page(rows, request, default=50, maximum=200)
+    pagination.pop("total")
     return _json(
         {
-            "data": [],
-            "pagination": {"limit": 50, "hasMore": False, "nextCursor": None},
+            "data": [_settlement_json(mx, r) for r in chunk],
+            "pagination": pagination,
             "coverage": {"complete": True},
         }
     )
@@ -1048,7 +1101,126 @@ async def get_settlements(mx: MockExchange, request: Request, profile: str) -> R
 
 async def get_collateral(mx: MockExchange, request: Request, profile: str) -> Response:
     mx.require_tournament(request)
-    return _json({"data": []})
+    acct = mx.engine.account(profile)
+    rows = acct.collateral.views(acct.ledger)
+    return _json({"data": [{"profileId": profile, "tournamentId": mx.tid, **row} for row in rows]})
+
+
+_TX_TYPES = ("trade", "settlement", "deposit", "fee", "market_creation")
+
+
+def _transactions(mx: MockExchange, profile: str) -> list[dict[str, Any]]:
+    """Trades, settlements and ALL collateral events for ``profile``, newest first."""
+    eng = mx.engine
+    rows: list[tuple[datetime, int, int, dict[str, Any]]] = []
+    blank = dict.fromkeys(
+        (
+            "price",
+            "exchangeId",
+            "marketId",
+            "settlementOption",
+            "currentPrice",
+            "marketTitle",
+            "orderType",
+            "contractType",
+            "description",
+            "amount",
+            "transactionType",
+            "outstandingAdvanceAfter",
+            "componentId",
+            "reason",
+        )
+    )
+    for f in eng.state.fills:
+        if f.owner != profile:
+            continue
+        m = eng.by_exchange[f.exchange_id]
+        mark = eng.mark(f.exchange_id)
+        row = {
+            **blank,
+            "event_id": f"fill-{f.id}",
+            "event_type": "trade",
+            "createdAt": iso(f.filled_at),
+            "price": to_price(f.yes_price),
+            "quantity": f.quantity,
+            "exchangeId": f.exchange_id,
+            "marketId": m.market_id,
+            "marketTitle": m.title,
+            "currentPrice": to_price(mark) if mark is not None else None,
+            "orderType": "limit",
+            "contractType": f.side.upper(),
+        }
+        rows.append((f.filled_at, 0, f.id, row))
+    for r in eng.state.settlements:
+        if r.owner != profile or not r.quantity:
+            continue
+        m = eng.by_exchange[r.exchange_id]
+        row = {
+            **blank,
+            "event_id": f"settlement-{r.id}",
+            "event_type": "settlement",
+            "createdAt": iso(r.settled_at),
+            "quantity": r.quantity,
+            "exchangeId": r.exchange_id,
+            "marketId": m.market_id,
+            "marketTitle": m.title,
+            "settlementOption": r.outcome,
+            "amount": r.payout_pips / PIPS_PER_UNIT,
+        }
+        rows.append((r.settled_at, 1, r.id, row))
+    for i, e in enumerate(eng.account(profile).collateral.events, start=1):
+        m = eng.by_exchange[e.exchange_id]
+        # Mock assumption: advances/repayments ride on the trade that caused them, releases on settlement.
+        kind = "settlement" if e.type == "ALL_COLLATERAL_RELEASE" else "trade"
+        row = {
+            **blank,
+            "event_id": f"collateral-{i}",
+            "event_type": kind,
+            "createdAt": iso(e.at),
+            "quantity": 0,
+            "exchangeId": e.exchange_id,
+            "marketId": m.market_id,
+            "marketTitle": m.title,
+            "amount": e.delta_pips / PIPS_PER_UNIT,
+            "transactionType": e.type,
+            "outstandingAdvanceAfter": e.outstanding_after_pips / PIPS_PER_UNIT,
+            "componentId": e.component_id,
+            "reason": e.reason,
+        }
+        rows.append((e.at, 2, i, row))
+    rows.sort(key=lambda r: (r[0], r[1], r[2]), reverse=True)
+    return [{**row, "tournamentId": mx.tid} for *_, row in rows]
+
+
+_COLLATERAL_DETAIL = ("outstandingAdvanceAfter", "componentId", "reason", "tournamentId")
+
+
+async def _transactions_response(
+    mx: MockExchange, request: Request, profile: str, *, collateral_detail: bool = True
+) -> Response:
+    wanted = request.query_params.get("type")
+    rows = _transactions(mx, profile)
+    if not collateral_detail:
+        rows = [{k: v for k, v in r.items() if k not in _COLLATERAL_DETAIL} for r in rows]
+    if wanted:
+        kinds = {k.strip() for k in wanted.split(",") if k.strip()}
+        if not kinds <= set(_TX_TYPES):
+            raise EngineError(400, "VALIDATION_ERROR", "Invalid query parameters.", {"type": list(_TX_TYPES)})
+        rows = [r for r in rows if r["event_type"] in kinds]
+    chunk, pagination = _page(rows, request, default=50, maximum=200)
+    pagination.pop("total")
+    return _json({"data": chunk, "pagination": pagination, "coverage": {"complete": True}})
+
+
+async def get_transactions(mx: MockExchange, request: Request, profile: str) -> Response:
+    """``GET /portfolio/transactions``: the (only) tournament is the key's default."""
+    return await _transactions_response(mx, request, profile)
+
+
+async def get_tournament_transactions(mx: MockExchange, request: Request, profile: str) -> Response:
+    """The tournament-scoped read documents no collateral detail fields; only the unscoped one does."""
+    mx.require_slug(request)
+    return await _transactions_response(mx, request, profile, collateral_detail=False)
 
 
 async def get_leaderboard(mx: MockExchange, request: Request, profile: str) -> Response:
@@ -1202,9 +1374,11 @@ async def admin_state(mx: MockExchange, _: Any) -> Any:
                 "cash": a.ledger.cash,
                 "positions": {ex: h.quantity for ex, h in a.ledger.holdings.items() if h.quantity},
                 "openOrders": len(eng.open_orders(a.profile_id, now)),
+                "collateral": a.collateral.views(a.ledger),
             }
             for a in eng.state.accounts.values()
         },
+        "collateral": eng.collateral_enabled,
         "faults": mx.faults.as_dict(),
         "realtime": {"connections": mx.hub.connections, "joins": mx.hub.joins},
     }
@@ -1266,6 +1440,26 @@ async def admin_violation(mx: MockExchange, body: Any) -> Any:
     return {"relationshipId": rel.id, "evaluation": mx.scenario.evaluate(rel)}
 
 
+async def admin_settle(mx: MockExchange, body: Any) -> Any:
+    ex = str(body["exchangeId"])
+    outcome = str(body.get("outcome", "")).upper()
+    records = mx.engine.settle(ex, outcome, mx.clock.now())
+    await mx.publish([], {ex}, [])
+    return {
+        "exchangeId": ex,
+        "outcome": outcome,
+        "settled": [
+            {
+                "profileId": r.owner,
+                "quantity": r.quantity,
+                "payout": r.payout_pips / PIPS_PER_UNIT,
+                "released": r.released_pips / PIPS_PER_UNIT,
+            }
+            for r in records
+        ],
+    }
+
+
 async def admin_rt_disconnect(mx: MockExchange, _: Any) -> Any:
     return {"closed": await mx.hub.disconnect_all()}
 
@@ -1313,6 +1507,8 @@ def create_app(config: MockConfig | None = None) -> Starlette:
         Route(f"{API}/orders/{{id:int}}", api(delete_order), methods=["DELETE"]),
         Route(f"{API}/orders/{{id:int}}/fills", api(get_order_fills), methods=["GET"]),
         Route(f"{API}/portfolio/collateral", api(get_collateral)),
+        Route(f"{API}/portfolio/transactions", api(get_transactions)),
+        Route(f"{API}/tournaments/{{slug}}/portfolio/transactions", api(get_tournament_transactions)),
         Route(f"{API}/relationships", api(list_relationships)),
         Route(f"{API}/relationships/graph", api(get_graph)),
         Route(f"{API}/relationships/constraints", api(get_constraints)),
@@ -1326,6 +1522,7 @@ def create_app(config: MockConfig | None = None) -> Starlette:
         Route("/_mock/sponsor", admin(admin_sponsor), methods=["POST"]),
         Route("/_mock/stale-order", admin(admin_stale), methods=["POST"]),
         Route("/_mock/violation", admin(admin_violation), methods=["POST"]),
+        Route("/_mock/settle", admin(admin_settle), methods=["POST"]),
         Route("/_mock/realtime/disconnect", admin(admin_rt_disconnect), methods=["POST"]),
         Route("/_mock/realtime/skip-revision", admin(admin_rt_skip), methods=["POST"]),
         Route("/_mock/realtime/broadcast", admin(admin_rt_broadcast), methods=["POST"]),
@@ -1335,10 +1532,7 @@ def create_app(config: MockConfig | None = None) -> Starlette:
     return app
 
 
-def main(argv: list[str] | None = None) -> None:
-    """``susq-mock``: serve the mock exchange."""
-    import uvicorn
-
+def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="susq-mock", description="Faithful mock of The Super Market API.")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8787)
@@ -1357,18 +1551,29 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--sponsor-half-width", type=float, default=0.01)
     parser.add_argument("--sponsor-size", type=int, default=500)
     parser.add_argument("--players", type=int, default=40, help="synthetic leaderboard entrants")
-    args = parser.parse_args(argv)
+    parser.add_argument(
+        "--no-collateral",
+        action="store_true",
+        help="disable ALL collateral modeling (plain cash accounting, `all: null`)",
+    )
+    return parser
+
+
+def config_from_args(argv: list[str] | None = None) -> MockConfig:
+    """Parse ``susq-mock`` command-line flags into a :class:`MockConfig`."""
+    args = _parser().parse_args(argv)
 
     keys: dict[str, str] = {}
     for item in args.api_key or ["mock-key-alpha=trader-alpha"]:
         key, _, name = item.partition("=")
         keys[key] = name or f"trader-{len(keys)}"
-    config = MockConfig(
+    return MockConfig(
         seed=args.seed,
         api_keys=keys,
         sponsor_half_width_pips=to_pips(args.sponsor_half_width),
         sponsor_size=args.sponsor_size,
         synthetic_players=args.players,
+        collateral=not args.no_collateral,
         faults=Faults(
             rate_limit_rps=args.rate_limit_rps,
             retry_after_s=args.retry_after_s,
@@ -1377,4 +1582,11 @@ def main(argv: list[str] | None = None) -> None:
         ),
         public_origin=f"http://{args.host}:{args.port}",
     )
-    uvicorn.run(create_app(config), host=args.host, port=args.port, log_level="info")
+
+
+def main(argv: list[str] | None = None) -> None:
+    """``susq-mock``: serve the mock exchange."""
+    import uvicorn
+
+    args = _parser().parse_args(argv)
+    uvicorn.run(create_app(config_from_args(argv)), host=args.host, port=args.port, log_level="info")
