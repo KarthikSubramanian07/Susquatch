@@ -137,6 +137,7 @@ class Watchdog:
 
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    logging.getLogger("httpx").setLevel(logging.WARNING)  # one line per poll is noise
     home = susq_home()
     config = load_config(home)
     last = config.get("calendar", {}).get("last_order_utc")

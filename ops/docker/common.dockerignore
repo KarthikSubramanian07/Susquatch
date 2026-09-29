@@ -1,0 +1,18 @@
+# Shared by every Dockerfile here: BuildKit reads <name>.Dockerfile.dockerignore, which symlink to this file.
+# Competition Data, secrets and build output never enter a build context.
+**
+!Cargo.toml
+!Cargo.lock
+!rust-toolchain.toml
+!crates/**
+!contracts/proto/**
+!cpp/**
+!pyproject.toml
+!uv.lock
+!README.md
+!LICENSE
+!py/susq/**
+!bridge_py/susq_bridge/**
+**/__pycache__
+**/target
+**/build

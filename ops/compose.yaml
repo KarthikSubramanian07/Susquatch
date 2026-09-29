@@ -1,0 +1,228 @@
+# Susquatch stack. aarch64-first (Oracle A1), identical on Apple Silicon via colima.
+#
+#   make up                     # = docker compose --project-directory . -f ops/compose.yaml up -d --build
+#   COMPOSE_PROFILES=bridge,scheduler   (in .env) picks the optional services below
+#
+# Always on:   nats, status-pusher, kill-poller, watchdog (+ docker-proxy for it)
+# Profiles:    bridge     the Oct-1 Python bridge (retired after the Rust cutover)
+#              rust       rust-live (holds the trader lease after cutover)
+#              election   needle (Nov 3-4)
+#              scheduler  python-scheduler (collectors + daily sim/tourney)
+# The bridge and rust-live may both run: the trader lease guarantees only one of them ever places orders.
+#
+# Paths are relative to the project directory (the checkout). Nothing is published to the internet:
+# Docker-published ports bypass ufw, so only 127.0.0.1 metrics ports exist (reach them over an SSH tunnel).
+#
+# CPU priority: the host is 2 OCPU, shared with another project. cpu_shares (cgroup v2 cpu.weight) only
+# matter under contention, and then the trading path wins: rust-live/bridge 4096, needle/nats 3072,
+# kill-poller 2048, ops helpers 1024, scheduler 256 and hard-capped at 1.5 CPUs. The co-tenant's
+# containers default to 1024; ops/priority.sh lowers its non-critical jobs further on election night.
+name: susquatch
+
+x-susq: &susq
+  env_file:
+    - path: .env
+      required: false
+  environment: &susq-env
+    SUSQ_HOME: /susq
+    SUSQ_NATS_URL: nats://nats:4222
+    TZ: UTC
+  user: "${SUSQ_UID:-10001}:${SUSQ_GID:-10001}"
+  init: true
+  restart: unless-stopped
+  read_only: true
+  tmpfs: [/tmp]
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: [ALL]
+  volumes:
+    - ./config:/susq/config:ro
+    - ./ops:/susq/ops
+    - ./state:/susq/state
+    - ./journal:/susq/journal
+    - ./data:/susq/data
+    - ./reports:/susq/reports
+    - ./targets:/susq/targets
+  logging: &logging
+    driver: json-file
+    options: { max-size: "10m", max-file: "3" }
+
+x-python-image: &python-image
+  image: susquatch/python:local
+  build:
+    context: .
+    dockerfile: ops/docker/python.Dockerfile
+    args: { GIT_SHA: "${SUSQ_GIT_SHA:-unknown}" }
+
+services:
+  nats:
+    image: nats:2.12-alpine
+    command: ["--http_port", "8222"]
+    restart: unless-stopped
+    read_only: true
+    security_opt: ["no-new-privileges:true"]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8222/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    cpu_shares: 3072
+    mem_limit: 256m
+    pids_limit: 128
+    oom_score_adj: -500
+    logging: *logging
+
+  rust-live:
+    <<: *susq
+    profiles: [rust]
+    image: susquatch/rust-live:local
+    build:
+      context: .
+      dockerfile: ops/docker/rust.Dockerfile
+      args: { GIT_SHA: "${SUSQ_GIT_SHA:-unknown}" }
+    environment:
+      <<: *susq-env
+      SUSQ_METRICS_ADDR: 0.0.0.0:9101
+    ports: ["127.0.0.1:9101:9101"]
+    depends_on:
+      nats: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9101/healthz"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 60s   # reconcile from REST before reporting healthy
+    stop_grace_period: 30s # SIGTERM -> cancel-all -> exit
+    cpu_shares: 4096
+    mem_limit: 1g
+    pids_limit: 256
+    oom_score_adj: -800
+
+  bridge:
+    <<: [*susq, *python-image]
+    profiles: [bridge]
+    command: ["susq-bridge", "open"]
+    environment:
+      <<: *susq-env
+      SUSQ_METRICS_ADDR: 0.0.0.0:9103
+    ports: ["127.0.0.1:9103:9103"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:9103/healthz', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    stop_grace_period: 30s
+    cpu_shares: 4096
+    mem_limit: 768m
+    pids_limit: 256
+    oom_score_adj: -800
+
+  needle:
+    <<: *susq
+    profiles: [election]
+    image: susquatch/needle:local
+    build:
+      context: .
+      dockerfile: ops/docker/cpp.Dockerfile
+      args: { GIT_SHA: "${SUSQ_GIT_SHA:-unknown}" }
+    environment:
+      <<: *susq-env
+      SUSQ_METRICS_ADDR: 0.0.0.0:9102
+    ports: ["127.0.0.1:9102:9102"]
+    depends_on:
+      nats: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9102/healthz"]
+      interval: 5s
+      timeout: 2s
+      retries: 3
+      start_period: 20s
+    cpu_shares: 3072
+    mem_limit: 2g
+    pids_limit: 128
+    oom_score_adj: -300
+
+  python-scheduler:
+    <<: [*susq, *python-image]
+    profiles: [scheduler]
+    command: ["python", "-m", "susq.scheduler"]
+    environment:
+      <<: *susq-env
+      SUSQ_METRICS_ADDR: 0.0.0.0:9104
+    ports: ["127.0.0.1:9104:9104"]
+    depends_on:
+      nats: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:9104/healthz', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 120s
+    cpu_shares: 256
+    cpus: 1.5
+    mem_limit: 4g
+    pids_limit: 512
+    oom_score_adj: 500
+
+  status-pusher:
+    <<: [*susq, *python-image]
+    command: ["python", "-m", "susq.ops.status_push"]
+    cpu_shares: 1024
+    mem_limit: 192m
+    pids_limit: 64
+
+  kill-poller:
+    <<: [*susq, *python-image]
+    command: ["python", "-m", "susq.ops.kill_poller", "run"]
+    cpu_shares: 2048
+    mem_limit: 128m
+    pids_limit: 64
+    oom_score_adj: -500
+
+  watchdog:
+    <<: [*susq, *python-image]
+    command: ["python", "-m", "susq.ops.watchdog"]
+    environment:
+      <<: *susq-env
+      SUSQ_DOCKER_API: http://docker-proxy:2375
+      COMPOSE_PROJECT_NAME: susquatch
+    networks: [default, dockerapi]
+    depends_on: [docker-proxy]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os,sys,time; sys.exit(time.time()-os.path.getmtime('/susq/ops/state/watchdog.json')>120)"]
+      interval: 60s
+      timeout: 5s
+      retries: 2
+      start_period: 60s
+    cpu_shares: 1024
+    mem_limit: 128m
+    pids_limit: 64
+
+  # The watchdog never sees the raw Docker socket. This proxy allows exactly two calls: list containers and
+  # restart one. Everything else (create, exec, kill, images, ...) gets 403.
+  docker-proxy:
+    image: wollomatic/socket-proxy:1
+    restart: unless-stopped
+    user: "65534:${DOCKER_GID:-0}"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    command:
+      - -loglevel=warn
+      - -listenip=0.0.0.0
+      - -proxyport=2375
+      - -allowfrom=watchdog
+      - -allowGET=^(/v1\.[0-9]+)?/containers/json$
+      - -allowPOST=^(/v1\.[0-9]+)?/containers/[a-f0-9]{12,64}/restart$
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks: [dockerapi]
+    cpu_shares: 512
+    mem_limit: 64m
+    logging: *logging
+
+networks:
+  default: {}
+  dockerapi:
+    internal: true

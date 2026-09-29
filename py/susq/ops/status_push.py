@@ -322,6 +322,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--once", action="store_true", help="build and push one snapshot, then exit")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    logging.getLogger("httpx").setLevel(logging.WARNING)  # one line per poll is noise
 
     home = susq_home()
     cfg = PushConfig.load(load_config(home), dict(os.environ))
