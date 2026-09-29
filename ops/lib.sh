@@ -23,14 +23,21 @@ die() { log "ERROR: $*"; exit 1; }
 
 # Export KEY=VALUE lines from $SUSQ_HOME/.env without letting an existing environment be overridden.
 susq_load_env() {
-  local env_file="$SUSQ_HOME/.env" line key
+  local env_file="$SUSQ_HOME/.env" line key value
   [ -f "$env_file" ] || return 0
   while IFS= read -r line || [ -n "$line" ]; do
     case "$line" in ''|\#*) continue ;; esac
     key="${line%%=*}"
     case "$key" in *[!A-Za-z0-9_]*|'') continue ;; esac
     if [ -z "${!key+x}" ]; then
-      export "$key=${line#*=}"
+      value="${line#*=}"
+      # dotenv convention: one matching pair of surrounding quotes is syntax, not data. Values with
+      # shell metacharacters (e.g. the `a|b|c` throttle regex) must be quoted so `set -a; . .env` is safe too.
+      case "$value" in
+        \"*\") value="${value#\"}"; value="${value%\"}" ;;
+        \'*\') value="${value#\'}"; value="${value%\'}" ;;
+      esac
+      export "$key=$value"
     fi
   done < "$env_file"
 }
