@@ -59,3 +59,7 @@ node_modules/
 .vscode/*
 !.vscode/extensions.json
 *.swp
+
+# Claude Code local state (agent worktrees, settings)
+.claude/worktrees/
+.claude/settings.local.json
