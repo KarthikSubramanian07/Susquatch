@@ -13,7 +13,11 @@ the live client without any strategy knowing. Semantics mirror the platform:
   through** its limit (conservative: at an equal price we'd be queued behind real orders);
 * self-trade prevention against our own paper orders, GTD expiry, idempotency replay/409, and
   insufficient-balance rejections behave like the platform;
-* cash and FIFO positions use :class:`~susq.platform.ledger.Ledger`, the same code the mock uses.
+* cash and FIFO positions use :class:`~susq.platform.ledger.Ledger`, the same code the mock uses;
+* ALL collateral uses :class:`~susq.platform.collateral.CollateralAccount`, also shared with the mock:
+  once :meth:`PaperBroker.set_relationships` is called, fills on linked exchanges get the modeled
+  advance, responses carry ``all``, and a fill that would overdraw cash stops (remainder cancelled
+  with ``InsufficientBalance``). ``collateral=False`` keeps plain cash accounting and ``all: null``.
 """
 
 from __future__ import annotations
@@ -21,19 +25,23 @@ from __future__ import annotations
 import copy
 import itertools
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Protocol
 
 import orjson
 
+from susq.platform.collateral import AllTotals, CollateralAccount, CollateralGraph, Relation
 from susq.platform.errors import ApiError
 from susq.platform.ledger import Ledger, opening_cost_pips, units
 from susq.platform.models import (
+    AllEconomics,
     BatchItemResult,
     BatchResult,
     CancelAllResult,
     CancelResult,
+    Collateral,
+    CollateralComponent,
     MultiLegItem,
     MultiLegResult,
     Order,
@@ -73,6 +81,11 @@ class PaperOrder:
     cost_pips: int = 0
     commit_qty: int = 0  # remainder shares closing an existing paper position
     reserve_qty: int = 0  # remainder shares whose opening cost is reserved
+    credit_pips: int = 0  # prospective ALL advance netted off the reservation
+    totals: AllTotals = field(default_factory=AllTotals)
+
+    def reserved_pips(self) -> int:
+        return max(0, opening_cost_pips(self.yes_dir, self.yes_limit, self.reserve_qty) - self.credit_pips)
 
 
 def _levels(book: OrderBook, yes_dir: int) -> list[tuple[int, int]]:
@@ -94,10 +107,13 @@ class PaperBroker:
         starting_cash: float = 100_000.0,
         depth: int = 50,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        relationships: Sequence[Relation] = (),
+        collateral: bool = True,
     ) -> None:
         self._books = books
         self.tournament_id = tournament_id
         self.ledger = Ledger(round(starting_cash * PIPS_PER_UNIT))
+        self.collateral = CollateralAccount(CollateralGraph(relationships), enabled=collateral)
         self._depth = depth
         self._clock = clock
         self.orders: dict[int, PaperOrder] = {}
@@ -109,12 +125,12 @@ class PaperBroker:
 
     # ── helpers ─────────────────────────────────────────────────────────────────────────────
 
+    def set_relationships(self, relationships: Sequence[Relation]) -> None:
+        """Refresh the relationship graph (advances already granted are kept, keyed by component)."""
+        self.collateral.graph = CollateralGraph(relationships)
+
     def _reserved_pips(self) -> int:
-        return sum(
-            opening_cost_pips(o.yes_dir, o.yes_limit, o.reserve_qty)
-            for o in self.orders.values()
-            if o.status == "open"
-        )
+        return sum(o.reserved_pips() for o in self.orders.values() if o.status == "open")
 
     def _committed(self, exchange_id: str) -> int:
         return sum(
@@ -184,7 +200,9 @@ class PaperBroker:
         else:
             commit = min(req.quantity, max(0, self.ledger.closable(ex, yes_dir) - self._committed(ex)))
             reserve = req.quantity - commit
-        need = opening_cost_pips(yes_dir, yes_limit, reserve)
+        need, credit = self.collateral.required_cash_pips(
+            self.ledger, ex, yes_dir, yes_limit, req.quantity, reserve
+        )
         if need > self.ledger.cash_pips - self._reserved_pips():
             raise ApiError(
                 400,
@@ -206,6 +224,7 @@ class PaperBroker:
             expiration=req.expiration,
             commit_qty=commit,
             reserve_qty=reserve,
+            credit_pips=credit,
         )
         book = await self._books.get_orderbook(ex, self.tournament_id, depth=self._depth)
         self.orders[order.id] = order
@@ -217,15 +236,18 @@ class PaperBroker:
             and (o.yes_limit <= yes_limit if yes_dir > 0 else o.yes_limit >= yes_limit)
             for o in self.orders.values()
         )
-        self._match(order, book, now, strictly_through=False)
+        starved = self._match(order, book, now, strictly_through=False)
         if order.remaining == 0:
             self._close(order, "filled")
         elif own_cross:
             # Our own resting paper order would cross: other counterparties filled, remainder cancelled.
             self._close(order, "cancelled", "SelfTradePrevented")
+        elif starved:
+            self._close(order, "cancelled", "InsufficientBalance")
         return self._result(order)
 
-    def _match(self, order: PaperOrder, book: OrderBook, now: datetime, *, strictly_through: bool) -> None:
+    def _match(self, order: PaperOrder, book: OrderBook, now: datetime, *, strictly_through: bool) -> bool:
+        """Fill ``order`` against ``book``. True if it stopped because cash ran out (ALL repayment)."""
         for price, displayed in _levels(book, order.yes_dir):
             if order.remaining == 0:
                 break
@@ -240,8 +262,13 @@ class PaperBroker:
                 continue
             # Resting orders that fill later fill at their own limit; takers fill at the book price.
             fill_price = order.yes_limit if strictly_through else price
+            n = self.collateral.affordable(self.ledger, order.exchange_id, order.yes_dir, fill_price, n)
+            if n <= 0:
+                return True
             self._take(order.exchange_id, price, displayed, n)
-            self.ledger.execute(order.exchange_id, order.yes_dir * n, fill_price, now)
+            econ = self.collateral.execute(self.ledger, order.exchange_id, order.yes_dir * n, fill_price, now)
+            order.totals.add(econ)
+            order.credit_pips = max(0, order.credit_pips - econ.savings_pips)
             from_commit = min(n, order.commit_qty)
             order.commit_qty -= from_commit
             order.reserve_qty = max(0, order.reserve_qty - (n - from_commit))
@@ -250,8 +277,10 @@ class PaperBroker:
             side_price = fill_price if order.side == "yes" else PIPS_PER_UNIT - fill_price
             order.cost_pips += n * side_price
             self.marks[order.exchange_id] = fill_price
+        return False
 
     def _result(self, order: PaperOrder) -> PlaceOrderResult:
+        wire = order.totals.wire(self.collateral, self.ledger, order.exchange_id)
         return PlaceOrderResult(
             order_id=order.id,
             exchange_id=order.exchange_id,
@@ -265,7 +294,7 @@ class PaperBroker:
             quantity_traded=order.traded,
             total_cost=units(order.cost_pips),
             fill_price=units(order.cost_pips) / order.traded if order.traded else None,
-            all=None,
+            all=AllEconomics.model_validate(wire) if wire is not None else None,
         )
 
     # ── TradingApi ──────────────────────────────────────────────────────────────────────────
@@ -323,13 +352,18 @@ class PaperBroker:
         if stored is not None:
             assert isinstance(stored, MultiLegResult)
             return stored
-        snapshot = (copy.deepcopy(self.ledger), copy.deepcopy(self.orders), dict(self._consumed))
+        snapshot = (
+            copy.deepcopy(self.ledger),
+            copy.deepcopy(self.orders),
+            dict(self._consumed),
+            copy.deepcopy(self.collateral),
+        )
         items: list[MultiLegItem] = []
         for i, leg in enumerate(legs):
             try:
                 items.append(MultiLegItem(index=i, data=await self._place(leg)))
             except ApiError as err:
-                self.ledger, self.orders, self._consumed = snapshot
+                self.ledger, self.orders, self._consumed, self.collateral = snapshot
                 raise ApiError(err.status, err.code, err.message, {**err.details, "leg": i}) from err
         result = MultiLegResult(results=items)
         self._remember("multi-leg", idempotency_key, payload, result)
@@ -391,10 +425,12 @@ class PaperBroker:
             if o.status != "open" or o.exchange_id != book.exchange_id:
                 continue
             before = o.remaining
-            self._match(o, book, now, strictly_through=True)
+            starved = self._match(o, book, now, strictly_through=True)
             filled += before - o.remaining
             if o.remaining == 0:
                 self._close(o, "filled")
+            elif starved:
+                self._close(o, "cancelled", "InsufficientBalance")
         return filled
 
     async def poll(self) -> int:
@@ -451,4 +487,14 @@ class PaperBroker:
         )
 
     def account_value(self) -> float:
-        return units(self.ledger.account_value_pips(self.marks))
+        """Cash + marked holdings - outstanding ALL advance (collateral model assumption A4)."""
+        return units(self.ledger.account_value_pips(self.marks) - self.collateral.liability_pips)
+
+    def get_collateral(self) -> Collateral:
+        """The paper ``GET /portfolio/collateral``."""
+        return Collateral(
+            data=[
+                CollateralComponent.model_validate({"tournamentId": self.tournament_id, **row})
+                for row in self.collateral.views(self.ledger)
+            ]
+        )
