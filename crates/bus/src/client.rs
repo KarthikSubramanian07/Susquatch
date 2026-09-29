@@ -217,7 +217,10 @@ fn log_event(event: &Event) {
     match event {
         Event::Connected => tracing::info!("nats connected"),
         Event::Disconnected => tracing::warn!("nats disconnected; reconnecting"),
-        Event::ServerError(_) | Event::ClientError(_) | Event::SlowConsumer(_) | Event::LameDuckMode => {
+        // Repeats on every reconnect attempt while NATS is down; the Disconnected warning above
+        // already records the outage, so keep the log quiet.
+        Event::ClientError(_) => tracing::debug!(%event, "nats event"),
+        Event::ServerError(_) | Event::SlowConsumer(_) | Event::LameDuckMode => {
             tracing::warn!(%event, "nats event")
         }
         Event::Draining | Event::Closed => tracing::info!(%event, "nats event"),
