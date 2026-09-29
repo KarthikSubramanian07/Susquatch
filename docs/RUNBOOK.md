@@ -45,7 +45,7 @@ Nothing you do can extend it, and nothing should.
 
 | ET (UTC) | What happens | You |
 |---|---|---|
-| **17:00 (22:00Z)** | Pre-flight | `git pull && make up` only if a fix was merged today (then `make ps`). Set `COMPOSE_PROFILES=rust,election` and `make up` so `needle` is running. `make selfcheck`. Dashboard on the phone, charger in. |
+| **17:00 (22:00Z)** | Pre-flight | `git pull && make up` only if a fix was merged today (then `make ps`). In `.env` set `COMPOSE_PROFILES=rust,election` and `SUSQ_LIVE_FLAGS=--election` (rust-live runs the results pollers), then `make up` so `needle` is running. `make selfcheck`. Dashboard on the phone, charger in. |
 | 17:15 | Drill | `needle` heartbeat tile green. Replay smoke if you have one queued. Confirm `targets` tile says *accepted*. |
 | **18:00 (23:00Z)** | Priority window opens (automatic) | `make priority` shows our scheduler and calshi's backfill/research at weight 128. First polls close (IN, KY). |
 | 19:00–20:00 | GA, VA, NC, OH, then the big East wave | Watch *events*. A `needle silent` or `seq gap` event means the executor already stopped acting on posteriors; you do nothing unless it lasts more than 10 min. |

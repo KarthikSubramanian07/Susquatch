@@ -50,9 +50,9 @@ Every piece is in the repo: [`ops/cloud-init.yaml`](../ops/cloud-init.yaml), [`o
 | Service | Image | Profile | CPU weight | Memory | Health | Notes |
 |---|---|---|---|---|---|---|
 | `nats` | `nats:2.12-alpine` | always | 3072 | 256 MB | `:8222/healthz` | the bus; not published anywhere |
-| `rust-live` | `ops/docker/rust.Dockerfile` | `rust` | 4096 | 1 GB | `:9101/healthz` | 30 s stop grace for cancel-all; OOM score −800 |
+| `rust-live` | `ops/docker/rust.Dockerfile` | `rust` | 4096 | 1 GB | `127.0.0.1:9101/healthz` (in-container) | `susq-live run $SUSQ_LIVE_FLAGS` (`--election` on Nov 3–4); needs `SUSQ_API_KEY` or it exits and Docker backs off; 30 s stop grace for cancel-all; OOM score −800 |
 | `bridge` | python | `bridge` | 4096 | 768 MB | `python -m susq.ops.healthcheck bridge` | `susq-bridge open` ([bridge_py/README.md](../bridge_py/README.md)); healthy while waiting for the key or the open, then status/journal must move within 10 min; retired after the cutover |
-| `needle` | `ops/docker/cpp.Dockerfile` | `election` | 3072 | 2 GB | `:9102/healthz` | cnats v3.14.0 built from source |
+| `needle` | `ops/docker/cpp.Dockerfile` | `election` | 3072 | 2 GB | `:9102/healthz` (in-container) | cnats v3.14.0 built from source; **image pending `cpp/needle`** |
 | `python-scheduler` | python | always | 256, **capped 1.5 CPU** | 4 GB | `state/research/scheduler.json` < 180 s old | `susq research run`; never trades; OOM score +500 (dies first) |
 | `status-pusher` | python | always | 1024 | 192 MB | loop | [`status_push.py`](../py/susq/ops/status_push.py) |
 | `kill-poller` | python | always | 2048 | 128 MB | loop | [`kill_poller.py`](../py/susq/ops/kill_poller.py) |
@@ -70,12 +70,12 @@ The bridge and rust-live may run side by side: the trader lease, enforced in
 both gateways, guarantees only one of them ever places orders.
 
 **Hardening, all services:** read-only root filesystem, `cap_drop: ALL`, `no-new-privileges`, non-root user (the
-checkout's owner, so bind mounts just work), log rotation (3 × 10 MB). **No ports are published** beyond `127.0.0.1`
-metrics ports: Docker-published ports bypass ufw, so "don't publish" is the firewall. Reach metrics with
-`ssh -L 9101:127.0.0.1:9101 ubuntu@<host>`.
+checkout's owner, so bind mounts just work), log rotation (3 × 10 MB). **No ports are published at all**: Docker-published ports bypass ufw, so
+"don't publish" is the firewall. Health and metrics stay inside each container (rust-live insists on a loopback
+address): `docker compose --project-directory . -f ops/compose.yaml exec rust-live curl -s 127.0.0.1:9101/metrics`.
 
 **Health contract for service owners.** Every process that should be supervised serves `GET /healthz` (200 = healthy)
-on the port above, bound to `SUSQ_METRICS_ADDR` (the research scheduler proves liveness through its
+inside its container on the port above, via `SUSQ_METRICS_ADDR` (the research scheduler proves liveness through its
 `scheduler.json` instead, which the status pusher also turns into the `research` health tile; the bridge is checked
 by [`susq.ops.healthcheck`](../py/susq/ops/healthcheck.py)). Compose marks it unhealthy after 3 failures, and the watchdog restarts
 it (max 3 per hour, then an ACTION NEEDED item instead of a crash loop). A process that *exits* is restarted by
