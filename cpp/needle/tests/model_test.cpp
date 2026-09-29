@@ -56,7 +56,7 @@ susq::v1::CountyResult Result(const std::string& race, const std::string& fips, 
   return r;
 }
 
-const RaceEstimate& Find(const NeedleModel& m, const std::string& id) {
+RaceEstimate Find(const NeedleModel& m, const std::string& id) {
   return *std::find_if(m.races().begin(), m.races().end(), [&](const RaceEstimate& e) { return e.race_id == id; });
 }
 
@@ -88,7 +88,7 @@ TEST(NationalShift, PosteriorMatchesTheGaussianUpdate) {
   EXPECT_NEAR(Find(model, "2026-SEN-OH").margin_mean, 6.0, 1e-6);
 
   // AZ has no data: its mean moves by beta * E[N]; its variance shrinks accordingly.
-  const RaceEstimate& az = Find(model, "2026-SEN-AZ");
+  const RaceEstimate az = Find(model, "2026-SEN-AZ");
   const double az_delta = std::pow(model.RaceLevelSd("2026-SEN-AZ"), 2);
   EXPECT_NEAR(az.margin_mean, 1.0 + 0.5 * expected_mean, 1e-3);
   EXPECT_NEAR(az.margin_sd, std::sqrt(0.25 * expected_var + az_delta), 1e-3);
