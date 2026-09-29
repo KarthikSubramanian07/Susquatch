@@ -3,6 +3,7 @@
 #
 #   ops/backup.sh            # run a backup now (what the nightly timer runs; also `make backup`)
 #   ops/backup.sh --dry-run  # build + measure the archive, upload nothing
+#   ops/backup.sh --force    # run even inside the election-night priority window (normally deferred)
 #
 # Layout in the bucket:   <prefix>/daily/susq-<UTC>.tar.zst (+ .sha256)   newest backup_keep_daily kept
 #                         <prefix>/weekly/susq-<UTC>.tar.zst              Sunday copies, backup_keep_weekly kept
@@ -18,8 +19,12 @@ set -euo pipefail
 . "$(dirname "$0")/lib.sh"
 susq_init
 
-DRY_RUN=0
-[ "${1:-}" = "--dry-run" ] && DRY_RUN=1
+DRY_RUN=0 FORCE=0
+case "${1:-}" in --dry-run) DRY_RUN=1 ;; --force) FORCE=1 ;; esac
+# The nightly slot (07:30Z) lands mid-count on election night: defer to the post-lock run (priority-off).
+if [ "$FORCE" = 0 ] && in_priority_window; then
+  log "inside the election-night priority window: deferred (runs after the lock, or use --force)"; exit 0
+fi
 
 QUOTA="${SUSQ_R2_QUOTA_BYTES:-$(toml_get ops r2_quota_bytes 10000000000)}"
 GUARD="$(toml_get ops r2_guard_frac 0.80)"

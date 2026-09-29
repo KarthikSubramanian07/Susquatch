@@ -1,0 +1,10 @@
+[Unit]
+Description=Nightly Susquatch backup (07:30 UTC = 03:30 ET; deferred inside the election-night window)
+
+[Timer]
+OnCalendar=*-*-* 07:30:00 UTC
+RandomizedDelaySec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

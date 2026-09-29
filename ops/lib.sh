@@ -11,6 +11,11 @@ susq_init() {
   ACTIONS_DIR="$OPS_STATE/actions"
   mkdir -p "$ACTIONS_DIR"
   susq_load_env
+  # Root-run helpers (the priority units) must not leave root-owned files the containers can't write.
+  # (A script that sets its own EXIT trap replaces this one; only priority.sh runs as root and it has none.)
+  if [ "$(id -u)" = 0 ]; then
+    trap 'chown -R --reference="$SUSQ_HOME" "$OPS_STATE" 2>/dev/null || true' EXIT
+  fi
 }
 
 log() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >&2; }
@@ -39,6 +44,16 @@ toml_get() {
   ' "$SUSQ_HOME/config/susq.toml" 2>/dev/null)"
   value="${value//_/}"
   printf '%s' "${value:-$default}"
+}
+
+# True inside the election-night priority window ([ops].priority_window_*; SUSQ_NOW_UTC overrides "now").
+in_priority_window() {
+  local start end now
+  start="$(toml_get ops priority_window_start_utc 2026-11-03T23:00:00Z)"
+  end="$(toml_get ops priority_window_end_utc 2026-11-04T17:00:00Z)"
+  now="${SUSQ_NOW_UTC:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
+  # ISO-8601 UTC strings of identical shape order correctly as text.
+  [[ ! "$now" < "$start" ]] && [[ "$now" < "$end" ]]
 }
 
 sha256_of() {

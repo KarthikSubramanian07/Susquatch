@@ -1,0 +1,12 @@
+[Unit]
+Description=Susquatch daily self-check (feeds ACTION NEEDED into the 14:00 UTC summary)
+Requires=docker.service
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+User=@SUSQ_USER@
+Environment=SUSQ_HOME=@SUSQ_HOME@
+ExecStart=/usr/bin/docker compose --project-directory @SUSQ_HOME@ -f @SUSQ_HOME@/ops/compose.yaml run --rm --no-deps -T status-pusher python -m susq.ops.selfcheck
+Nice=10
+TimeoutStartSec=10min

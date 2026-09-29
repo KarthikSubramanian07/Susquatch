@@ -1,0 +1,24 @@
+# Installed by ops/install.sh (@SUSQ_HOME@ / @SUSQ_USER@ substituted). Wraps the compose stack.
+# Per-container restarts are Compose's job (restart: unless-stopped) and the watchdog's (unhealthy);
+# this unit brings the stack up at boot and re-applies election-night priority if we boot inside the window.
+[Unit]
+Description=Susquatch stack (docker compose)
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=@SUSQ_USER@
+WorkingDirectory=@SUSQ_HOME@
+Environment=SUSQ_HOME=@SUSQ_HOME@
+ExecStart=/usr/bin/docker compose --project-directory @SUSQ_HOME@ -f @SUSQ_HOME@/ops/compose.yaml up -d --build --remove-orphans
+ExecStartPost=+@SUSQ_HOME@/ops/priority.sh auto
+ExecStop=/usr/bin/docker compose --project-directory @SUSQ_HOME@ -f @SUSQ_HOME@/ops/compose.yaml down
+# First boot builds every image natively on 2 OCPU.
+TimeoutStartSec=45min
+TimeoutStopSec=2min
+
+[Install]
+WantedBy=multi-user.target

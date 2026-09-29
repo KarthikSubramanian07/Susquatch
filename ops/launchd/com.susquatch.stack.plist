@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Mac fallback host: keeps the same compose stack up via colima. Installed by ops/launchd/install.sh
+  (__SUSQ_HOME__ substituted). RunAtLoad + KeepAlive(SuccessfulExit=false): mac-up.sh is re-run if it fails,
+  e.g. when colima isn't up yet after a reboot. Logs: ~/Library/Logs/susquatch-stack.log
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.susquatch.stack</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>__SUSQ_HOME__/ops/launchd/mac-up.sh</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>SUSQ_HOME</key><string>__SUSQ_HOME__</string>
+    <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key>
+  <dict><key>SuccessfulExit</key><false/></dict>
+  <key>ThrottleInterval</key><integer>120</integer>
+  <key>StandardOutPath</key><string>__LOG_DIR__/susquatch-stack.log</string>
+  <key>StandardErrorPath</key><string>__LOG_DIR__/susquatch-stack.log</string>
+</dict>
+</plist>

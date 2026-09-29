@@ -1,0 +1,15 @@
+[Unit]
+Description=Susquatch nightly backup to Cloudflare R2
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=@SUSQ_USER@
+Environment=SUSQ_HOME=@SUSQ_HOME@
+ExecStart=@SUSQ_HOME@/ops/backup.sh
+# Never compete with the trading path.
+Nice=19
+CPUWeight=20
+IOSchedulingClass=idle
+TimeoutStartSec=2h

@@ -1,0 +1,9 @@
+[Unit]
+Description=Daily Susquatch self-check, 30 min before the summary Worker runs (14:00 UTC)
+
+[Timer]
+OnCalendar=*-*-* 13:30:00 UTC
+Persistent=true
+
+[Install]
+WantedBy=timers.target
