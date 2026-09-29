@@ -16,6 +16,8 @@
 //!   on every exchange and quotes nothing that tick (stale fairs are excluded: an old move is not news).
 //! * A stale fair cancels the quotes on that exchange; a quote whose price differs from the new target
 //!   is cancelled and replaced.
+//! * Mapping-error gate: a book mid more than `fair.mapping_error_pts` from fair means the fair is
+//!   probably mapped to the wrong contract; quotes on that exchange are cancelled and not replaced.
 
 use susq_book::{L2Book, Level};
 use susq_core::{
@@ -159,6 +161,19 @@ impl MarketMaker {
             d.note(format!("mm {ex}: no fresh book, quotes left as they are"));
             return;
         };
+        if let Some(mid) = book
+            .mid()
+            .filter(|m| (m - fair.p_yes).abs() > snap.fair_cfg.mapping_error_pts / 100.0)
+        {
+            for i in &ours {
+                d.cancel(&i.intent_id, "mapping error suspected");
+            }
+            d.note(format!(
+                "mm {ex}: mapping error suspected (book {mid:.3} vs fair {:.3}), not quoting",
+                fair.p_yes
+            ));
+            return;
+        }
         let util = snap
             .markets
             .clusters(ex)
@@ -446,6 +461,19 @@ mod tests {
             MarketMaker::new(cfg()).decide(&w.snap()).cancels.is_empty(),
             "1.5 pts is not a move"
         );
+    }
+
+    #[test]
+    fn mapping_error_gate_cancels_and_stops_quoting() {
+        let mut w = world();
+        w.fair("1", 0.20, None); // book mid 0.50: 30 pts away
+        w.book("1", &[(4800, 100)], &[(5200, 100)]);
+        w.intents
+            .push(intent("mm:1:bid:1", NAME, "1", Side::Yes, Action::Buy, 1900));
+        let d = MarketMaker::new(cfg()).decide(&w.snap());
+        assert!(d.bundles.is_empty());
+        assert_eq!(d.cancels.len(), 1);
+        assert_eq!(d.cancels[0].reason, "mapping error suspected");
     }
 
     #[test]
