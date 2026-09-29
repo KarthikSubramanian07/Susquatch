@@ -1,0 +1,84 @@
+syntax = "proto3";
+
+package susq.v1;
+
+import "susq/v1/common.proto";
+
+// NATS subjects (binary protobuf payloads):
+//   enr.county_results       CountyResultsBatch   rust-live(enr) -> needle
+//   needle.race_posteriors   RacePosteriors       needle -> rust-live
+//   needle.national_shift    NationalShift        needle -> rust-live
+//   needle.heartbeat         Heartbeat            needle -> rust-live   (every <= 2 s)
+//   ops.kill                 Kill                 any -> all
+
+enum VoteType {
+  VOTE_TYPE_UNSPECIFIED = 0;
+  VOTE_TYPE_MAIL = 1;
+  VOTE_TYPE_EARLY_IN_PERSON = 2;
+  VOTE_TYPE_ELECTION_DAY = 3;
+  VOTE_TYPE_PROVISIONAL = 4;
+  VOTE_TYPE_MIXED = 5;           // source does not split by type
+}
+
+message CandidateVotes {
+  string candidate = 1;
+  string party = 2;              // "DEM", "REP", "IND", "LIB", ...
+  uint64 votes = 3;
+}
+
+// Cumulative county totals for one race as reported by one source at one time.
+message CountyResult {
+  string race_id = 1;            // "2026-SEN-OH-S", "2026-HOUSE-CA-13", "2026-GOV-GA"
+  string state = 2;              // USPS code
+  string county_fips = 3;        // 5-digit FIPS
+  string source = 4;             // "ca_sos", "clarity:GA", ...
+  int64 source_ts_ns = 5;        // timestamp the source stamped (0 if none)
+  int64 observed_at_ns = 6;      // when our poller saw it
+  VoteType vote_type = 7;
+  repeated CandidateVotes votes = 8;
+  uint64 total_votes = 9;
+  uint32 precincts_reporting = 10;
+  uint32 precincts_total = 11;
+  string batch_id = 12;          // stable id of this delta for dedupe
+}
+
+message CountyResultsBatch {
+  Header header = 1;
+  repeated CountyResult results = 2;
+}
+
+message RacePosterior {
+  string race_id = 1;
+  double p_dem = 2;              // P(Democrat wins), in [0,1]
+  double p_rep = 3;              // P(Republican wins); p_dem + p_rep <= 1 (independents)
+  double margin_mean = 4;        // D - R, percentage points of two-party vote
+  double margin_sd = 5;
+  double expected_remaining_votes = 6;
+  double reported_frac = 7;      // share of expected total already counted
+  uint32 n_batches = 8;          // county batches informing the estimate
+  uint32 n_counties_reporting = 9;
+}
+
+message RacePosteriors {
+  Header header = 1;
+  repeated RacePosterior races = 2;
+}
+
+message NationalShift {
+  Header header = 1;
+  double mean = 2;               // pts of margin vs pre-election prior (+ = toward D)
+  double sd = 3;
+  uint32 n_races_informing = 4;
+}
+
+message Heartbeat {
+  Header header = 1;
+  string status = 2;             // "ok", "degraded:<why>"
+  uint64 last_input_seq = 3;     // last enr seq consumed
+}
+
+message Kill {
+  Header header = 1;
+  string reason = 2;
+  string issuer = 3;             // "dashboard", "file", "watchdog", "human"
+}
