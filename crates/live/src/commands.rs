@@ -21,7 +21,8 @@ use tokio::sync::{mpsc, watch};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    cli::Cli,
+    cli::{Cli, RunArgs},
+    election,
     engine::Engine,
     http::{self, Liveness},
     runtime::{Runtime, connect},
@@ -91,16 +92,18 @@ async fn start_realtime(
     Some(rx)
 }
 
+/// Connect to NATS, wire `ops.kill` to `kill`, and start the needle monitor. Returns the bus
+/// (for the `--election` publisher) and the needle snapshots.
 async fn start_bus(
     rt: &Runtime,
     kill: KillSwitch,
     shutdown: &CancellationToken,
-) -> Option<watch::Receiver<NeedleSnapshot>> {
+) -> (Option<Arc<Bus>>, Option<watch::Receiver<NeedleSnapshot>>) {
     let bus = match Bus::connect(&rt.cfg.bus.nats_url, crate::wiring::PRODUCER, &status::git_sha()).await {
-        Ok(b) => b,
+        Ok(b) => Arc::new(b),
         Err(e) => {
             tracing::warn!(error = %e, "NATS unavailable: needle is absent, election-night executor stays idle");
-            return None;
+            return (None, None);
         }
     };
     if let Ok(mut kills) = bus.subscribe_kill().await {
@@ -117,7 +120,9 @@ async fn start_bus(
             }
         });
     }
-    let messages = bus.subscribe_needle().await.ok()?;
+    let Ok(messages) = bus.subscribe_needle().await else {
+        return (Some(bus), None);
+    };
     let monitor = NeedleMonitor::spawn(
         messages,
         known_races(rt),
@@ -125,7 +130,7 @@ async fn start_bus(
         rt.clock.clone(),
         shutdown.clone(),
     );
-    Some(monitor.subscribe())
+    (Some(bus), Some(monitor.subscribe()))
 }
 
 async fn terminate_signal() {
@@ -147,7 +152,7 @@ async fn terminate_signal() {
 }
 
 /// `run` / `paper-run`: the trading loop until SIGTERM / Ctrl-C.
-pub async fn run(cli: &Cli, force_paper: bool) -> anyhow::Result<()> {
+pub async fn run(cli: &Cli, args: &RunArgs, force_paper: bool) -> anyhow::Result<()> {
     let rt = connect(&cli.home, &cli.config_path()).await?;
     let metrics = PrometheusBuilder::new().install_recorder().ok();
     let shutdown = CancellationToken::new();
@@ -158,7 +163,22 @@ pub async fn run(cli: &Cli, force_paper: bool) -> anyhow::Result<()> {
         None
     };
     let kill = KillSwitch::new(rt.home.join(&rt.cfg.kill.file));
-    let needle = start_bus(&rt, kill.clone(), &shutdown).await;
+    let (bus, needle) = start_bus(&rt, kill.clone(), &shutdown).await;
+    let enr = match (args.election, bus) {
+        (false, _) => None,
+        (true, None) => anyhow::bail!(
+            "--election needs NATS at {} to publish county results",
+            rt.cfg.bus.nats_url
+        ),
+        (true, Some(bus)) => {
+            let enr_config = args
+                .enr_config
+                .clone()
+                .unwrap_or_else(|| rt.home.join("config/enr_sources.toml"));
+            let archive = rt.home.join(&rt.cfg.paths.data).join("enr");
+            Some(election::start(&enr_config, &archive, bus, &shutdown)?)
+        }
+    };
     // The same switch (shared flag) is wired to NATS ops.kill and handed to the gateway.
     let mut engine = build_engine(&rt, force_paper, realtime, needle, Some(kill))?;
     engine.bootstrap().await;
@@ -207,6 +227,9 @@ pub async fn run(cli: &Cli, force_paper: bool) -> anyhow::Result<()> {
     let now = rt.clock.now_ns();
     let _ = status::write(&status_path, &status::snapshot(&engine, now, seq + 1));
     shutdown.cancel();
+    if let Some(enr) = enr {
+        enr.shutdown().await;
+    }
     let _ = server.await;
     drop(engine);
     rt.close().await;

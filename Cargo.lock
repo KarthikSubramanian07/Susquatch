@@ -2743,6 +2743,7 @@ name = "susq-live"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "axum",
  "chrono",
  "clap",
@@ -2755,6 +2756,7 @@ dependencies = [
  "susq-bus",
  "susq-contracts",
  "susq-core",
+ "susq-enr",
  "susq-gateway",
  "susq-journal",
  "susq-oms",

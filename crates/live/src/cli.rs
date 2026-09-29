@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 
 /// susq-live: the only Rust process that talks to the exchange.
 #[derive(Debug, Parser)]
@@ -25,9 +25,9 @@ pub struct Cli {
 #[derive(Debug, Subcommand)]
 pub enum Command {
     /// Trade: paper unless SUSQ_MODE=live AND ops/GO_LIVE contains "go live".
-    Run,
+    Run(RunArgs),
     /// Trade in paper mode whatever the environment says (fills simulated against live books).
-    PaperRun,
+    PaperRun(RunArgs),
     /// Place one contract (non-marketable, at the bid) and cancel it, through every gate.
     Smoke {
         /// Exchange to use (pick a liquid one).
@@ -41,6 +41,18 @@ pub enum Command {
     },
     /// Print the trader lease on disk.
     Lease,
+}
+
+/// Options of the trading loop.
+#[derive(Debug, Clone, Default, Args)]
+pub struct RunArgs {
+    /// Election night: also poll the results sites (`susq-enr`) and publish every
+    /// `CountyResultsBatch` on NATS `enr.county_results` for the needle.
+    #[arg(long)]
+    pub election: bool,
+    /// Results-source config for `--election` (default: `<home>/config/enr_sources.toml`).
+    #[arg(long)]
+    pub enr_config: Option<PathBuf>,
 }
 
 impl Cli {

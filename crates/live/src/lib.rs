@@ -6,10 +6,12 @@
 //! * [`wiring::build`] assembles gateway, OMS, paper broker and [`engine::Engine`].
 //! * [`engine::Engine::step`] is one tick of the trading loop.
 //! * [`commands`] implements `run`, `paper-run`, `smoke`, `cancel-all` and `lease`.
+//! * [`election`] runs the results pollers and publishes county results with `--election`.
 //! * [`status`] writes `state/status.json`; [`http`] serves `/healthz` and `/metrics` on loopback.
 
 pub mod cli;
 pub mod commands;
+pub mod election;
 pub mod engine;
 pub mod http;
 pub mod runtime;
