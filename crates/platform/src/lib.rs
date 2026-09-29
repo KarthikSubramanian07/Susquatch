@@ -9,6 +9,7 @@ pub mod adapter;
 pub mod error;
 pub mod mock;
 pub mod models;
+pub mod realtime;
 pub mod supermarket;
 
 pub use adapter::{PlatformAdapter, all_markets, all_orders, all_relationships, bulk_prices};

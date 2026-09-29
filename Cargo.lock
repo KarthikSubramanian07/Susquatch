@@ -2092,6 +2092,18 @@ version = "0.1.0"
 [[package]]
 name = "susq-oms"
 version = "0.1.0"
+dependencies = [
+ "chrono",
+ "proptest",
+ "serde_json",
+ "susq-contracts",
+ "susq-core",
+ "susq-platform",
+ "tempfile",
+ "thiserror",
+ "tracing",
+ "uuid",
+]
 
 [[package]]
 name = "susq-platform"
@@ -2112,6 +2124,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-tungstenite",
+ "tokio-util",
  "tracing",
  "url",
  "uuid",
@@ -2125,10 +2138,26 @@ version = "0.1.0"
 [[package]]
 name = "susq-strategies"
 version = "0.1.0"
+dependencies = [
+ "proptest",
+ "susq-book",
+ "susq-contracts",
+ "susq-core",
+ "susq-platform",
+]
 
 [[package]]
 name = "susq-targets"
 version = "0.1.0"
+dependencies = [
+ "proptest",
+ "serde_json",
+ "susq-contracts",
+ "susq-core",
+ "tempfile",
+ "thiserror",
+ "tracing",
+]
 
 [[package]]
 name = "syn"
