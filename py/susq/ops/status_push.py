@@ -19,7 +19,7 @@ import json
 import logging
 import os
 import time
-from collections import deque
+from collections import Counter, deque
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -122,6 +122,7 @@ class StatusPusher:
         self.actions = ActionItems(paths.actions_dir)
         self.pending_events: deque[str] = deque(maxlen=MAX_PENDING_EVENTS)
         self.last_seen_seq: int | None = None
+        self.prev_events: Counter[str] = Counter()
         self.last_push_at: datetime | None = None
         self.next_attempt_at: datetime | None = None
         self.failures = 0
@@ -129,7 +130,7 @@ class StatusPusher:
 
     # ── reading ────────────────────────────────────────────────────────────
     def read_snapshot(self) -> ops_pb2.StatusSnapshot | None:
-        """Parse `state/status.json`; queue its events the first time we see its `seq`."""
+        """Parse `state/status.json`; queue its *new* events the first time we see its `seq`."""
         try:
             text = self.paths.status_file.read_text(encoding="utf-8")
             snap = from_json(ops_pb2.StatusSnapshot, text)
@@ -140,8 +141,24 @@ class StatusPusher:
         if seq != self.last_seen_seq:
             self.last_seen_seq = seq
             stamp = self.clock().strftime("%Y-%m-%dT%H:%M:%SZ")
-            self.pending_events.extend(f"{stamp} {e}" for e in snap.events)
+            self.pending_events.extend(f"{stamp} {e}" for e in self._new_events(list(snap.events)))
         return snap
+
+    def _new_events(self, events: list[str]) -> list[str]:
+        """Events not already in the previous snapshot (a multiset difference, oldest first).
+
+        Writers differ: the proto says "since the last snapshot", while the bridge keeps a sliding window of
+        its last 20 events (plus standing lines such as blocked mappings) in every snapshot. The difference
+        is right for both: a since-last list never repeats, and a window only adds at its end.
+        """
+        fresh = Counter(events) - self.prev_events
+        self.prev_events = Counter(events)
+        out: list[str] = []
+        for e in reversed(events):  # the newest copies of a repeated line are the new ones
+            if fresh[e] > 0:
+                fresh[e] -= 1
+                out.append(e)
+        return out[::-1]
 
     # ── building ───────────────────────────────────────────────────────────
     def build(self, snap: ops_pb2.StatusSnapshot | None) -> ops_pb2.StatusSnapshot:

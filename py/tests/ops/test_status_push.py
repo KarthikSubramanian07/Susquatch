@@ -213,3 +213,23 @@ def test_research_scheduler_health(paths, clock, api) -> None:
     clock.advance(400)  # the file is now 400 s old: hung
     p.tick()
     assert next(h for h in pushed(route).health if h.name == "research").state == "down"
+
+
+def test_sliding_window_events_are_pushed_once(paths, clock, api) -> None:
+    """The bridge keeps its last 20 events in every snapshot; each must reach the dashboard once."""
+    route = api.post("/api/push").respond(200)
+    p = make(paths, clock)
+    write_status(paths, clock, seq=1, events=["lease acquired", "mapping error blocked 381: inverted"])
+    p.tick()
+    clock.advance(p.cfg.interval_s)
+    write_status(
+        paths, clock, seq=2, events=["lease acquired", "mapping error blocked 381: inverted", "racer filled"]
+    )
+    p.tick()
+    clock.advance(p.cfg.interval_s)
+    write_status(
+        paths, clock, seq=3, events=["mapping error blocked 381: inverted", "racer filled", "racer filled"]
+    )
+    p.tick()
+    texts = [e.split(" ", 1)[1] for i in range(3) for e in pushed(route, i).events]
+    assert texts == ["lease acquired", "mapping error blocked 381: inverted", "racer filled", "racer filled"]
