@@ -30,6 +30,7 @@ for (const s of shots) {
     hasTouch: s.hasTouch,
     httpCredentials: { username: "susq", password },
     colorScheme: "dark",
+    reducedMotion: "reduce", // deterministic frames: tweens and draw-ins collapse to their final state
   });
   const page = await ctx.newPage();
   const errors = [];
@@ -37,6 +38,7 @@ for (const s of shots) {
   page.on("console", (m) => m.type() === "error" && errors.push(m.text()));
   await page.goto(url, { waitUntil: "networkidle" });
   await page.waitForFunction(() => document.getElementById("equity")?.textContent !== "—" || document.getElementById("silent")?.hidden === false);
+  await page.waitForFunction(() => document.body.dataset.ready === "1");
   await page.evaluate(() => document.fonts.ready);
   if (s.kill && !(await page.isEnabled("#kill-open"))) {
     await ctx.close();
