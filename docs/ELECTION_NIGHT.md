@@ -98,13 +98,24 @@ governor, McGuire vs Gallagher for CA-1, and random-looking counts, with first r
 ran against it on 2026-09-28 and produced 202 county results (58 governor rows plus 144 House county rows), with no rejects and
 no unresolved counties.
 
-**Test-window dates: UNVERIFIED. The brief's Oct 22 / Oct 29 / Nov 1 are probably each one day off.**
-- The 2026 general testing schedule (`4-testing-schedule-v21.pdf`) returns 403.
-- The published pattern is integrated tests on the Wednesdays before Election Day, 8:00 a.m. to 12:00 p.m. PT, plus the Saturday before (8 a.m. to noon; the v20 text says 1 p.m.).
-  - 2026 primary (v20): Wed May 20, Wed May 27, Sat May 30.
-  - 2024 general (v18): Wed Oct 23, Wed Oct 30, Sat Nov 2.
-- For 2026 that pattern predicts **Wed Oct 21, Wed Oct 28 and Sat Oct 31**. Oct 22 is a Thursday and Nov 1 a Sunday.
-- **Action:** re-check `https://www.sos.ca.gov/media` in mid-October. Meanwhile, simply run `enr-capture` whenever test data changes; it is already flowing.
+**Test-window dates: resolved (2026-09-29). The brief's Oct 22 / Oct 29 / Nov 1 are the *2025 special election's* dates.**
+
+Every published CA SoS testing schedule follows one rule: **Wednesday 13 days before, Wednesday 6 days before, Saturday 3 days before**
+the election, 8:00 a.m. to 12:00 p.m. PT. (The Saturday prose says "until 1:00 p.m.", but every table says noon.)
+
+| Schedule doc | Election | Test dates | Offsets |
+|---|---|---|---|
+| v17 | 2024 presidential primary (Tue Mar 5) | Wed Feb 21, Wed Feb 28, Sat Mar 2 | −13, −6, −3 |
+| v18 | 2024 general (Tue Nov 5) | Wed Oct 23, Wed Oct 30, Sat Nov 2 | −13, −6, −3 |
+| **v19** | **2025 statewide special (Tue Nov 4)** | **Wed Oct 22, Wed Oct 29, Sat Nov 1** (the brief's dates) | −13, −6, −3 |
+| v20 | 2026 primary (Tue Jun 2) | Wed May 20, Wed May 27, Sat May 30 | −13, −6, −3 |
+| (v21, not yet posted) | **2026 general (Tue Nov 3)** | **Wed Oct 21, Wed Oct 28, Sat Oct 31** | −13, −6, −3 |
+
+- 2026 windows in UTC: **15:00–19:00Z** (PDT is still in effect on Oct 31; DST ends Nov 1).
+- **Automated:** `ops/systemd/susq-enr-capture.timer` runs `enr-capture` (CA sources only) from 14:50Z for 5.5 h on all three dates.
+  If v21 lands with different dates, edit the three `OnCalendar` lines.
+- **Action:** once `https://cms.cdn.sos.ca.gov/media/4-testing-schedule-v21.pdf` stops returning 403, confirm the dates. The daily self-check can
+  poll it. Meanwhile, 2026 general test data is already being served, so ad-hoc `enr-capture` runs are useful now.
 
 ### 1.2 Clarity / Scytl ENR (verified on real 2020–2024 elections)
 
