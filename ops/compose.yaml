@@ -102,16 +102,29 @@ services:
     <<: [*susq, *python-image]
     profiles: [bridge]
     command: ["susq-bridge", "open"]
-    environment:
-      <<: *susq-env
-      SUSQ_METRICS_ADDR: 0.0.0.0:9103
-    ports: ["127.0.0.1:9103:9103"]
+    # The bridge reads .env itself and starts the moment SUSQ_API_KEY appears there (it polls). Passing .env
+    # as env_file would freeze an empty key into the environment, which the bridge rightly lets win.
+    env_file: []
+    volumes:
+      - ./config:/susq/config:ro
+      - ./ops:/susq/ops
+      - ./state:/susq/state
+      - ./journal:/susq/journal
+      - ./data:/susq/data
+      - ./reports:/susq/reports
+      - ./targets:/susq/targets
+      - type: bind
+        source: ./.env
+        target: /susq/.env
+        read_only: true
+        bind: { create_host_path: false }
+    # Healthy while waiting for the key / the open; afterwards status.json or the journal must move (10 min).
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:9103/healthz', timeout=3)"]
-      interval: 15s
-      timeout: 5s
+      test: ["CMD", "python", "-m", "susq.ops.healthcheck", "bridge"]
+      interval: 60s
+      timeout: 10s
       retries: 3
-      start_period: 60s
+      start_period: 120s
     stop_grace_period: 30s
     cpu_shares: 4096
     mem_limit: 768m
