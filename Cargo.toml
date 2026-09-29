@@ -63,6 +63,9 @@ pbjson = "0.9"
 pbjson-build = "0.9"
 pbjson-types = "0.9"
 toml = "1.1"
+# election-night feeds (enr): Clarity ENR ships detail.xml inside a zip
+quick-xml = "0.42"
+zip = { version = "8", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 # misc
 thiserror = "2.0"

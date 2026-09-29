@@ -1,0 +1,254 @@
+[
+  {
+    "raceTitle": "United States Representative District 13 - Districtwide Results",
+    "Reporting": "6.6% (64 of 974) precincts reporting",
+    "ReportingTime": "November 3, 2026, 10:42 p.m.",
+    "candidates": [
+      {
+        "Name": "Adam Gray",
+        "Party": "Dem",
+        "Votes": "15",
+        "Percent": "57.7",
+        "incumbent": false
+      },
+      {
+        "Name": "Kevin Lincoln",
+        "Party": "Rep",
+        "Votes": "11",
+        "Percent": "42.3",
+        "incumbent": false
+      }
+    ]
+  },
+  {
+    "raceTitle": "United States Representative District 13 - Fresno County Results",
+    "Reporting": "41.2% (212 of 515) precincts reporting",
+    "ReportingTime": "November 3, 2026, 10:42 p.m.",
+    "candidates": [
+      {
+        "Name": "Adam Gray",
+        "Party": "Dem",
+        "Votes": "20,974",
+        "Percent": "0.0",
+        "incumbent": false
+      },
+      {
+        "Name": "Kevin Lincoln",
+        "Party": "Rep",
+        "Votes": "23,055",
+        "Percent": "0.0",
+        "incumbent": false
+      }
+    ]
+  },
+  {
+    "raceTitle": "United States Representative District 13 - Madera County Results",
+    "Reporting": "41.2% (212 of 515) precincts reporting",
+    "ReportingTime": "November 3, 2026, 10:42 p.m.",
+    "candidates": [
+      {
+        "Name": "Adam Gray",
+        "Party": "Dem",
+        "Votes": "16,171",
+        "Percent": "0.0",
+        "incumbent": false
+      },
+      {
+        "Name": "Kevin Lincoln",
+        "Party": "Rep",
+        "Votes": "19,109",
+        "Percent": "0.0",
+        "incumbent": false
+      }
+    ]
+  },
+  {
+    "raceTitle": "United States Representative District 13 - Merced County Results",
+    "Reporting": "41.2% (212 of 515) precincts reporting",
+    "ReportingTime": "November 3, 2026, 10:42 p.m.",
+    "candidates": [
+      {
+        "Name": "Adam Gray",
+        "Party": "Dem",
+        "Votes": "13,644",
+        "Percent": "0.0",
+        "incumbent": false
+      },
+      {
+        "Name": "Kevin Lincoln",
+        "Party": "Rep",
+        "Votes": "18,756",
+        "Percent": "0.0",
+        "incumbent": false
+      }
+    ]
+  },
+  {
+    "raceTitle": "United States Representative District 13 - San Joaquin County Results",
+    "Reporting": "41.2% (212 of 515) precincts reporting",
+    "ReportingTime": "November 3, 2026, 10:42 p.m.",
+    "candidates": [
+      {
+        "Name": "Adam Gray",
+        "Party": "Dem",
+        "Votes": "16,279",
+        "Percent": "57.7",
+        "incumbent": false
+      },
+      {
+        "Name": "Kevin Lincoln",
+        "Party": "Rep",
+        "Votes": "12,533",
+        "Percent": "42.3",
+        "incumbent": false
+      }
+    ]
+  },
+  {
+    "raceTitle": "United States Representative District 13 - Stanislaus County Results",
+    "Reporting": "41.2% (212 of 515) precincts reporting",
+    "ReportingTime": "November 3, 2026, 10:42 p.m.",
+    "candidates": [
+      {
+        "Name": "Adam Gray",
+        "Party": "Dem",
+        "Votes": "8,641",
+        "Percent": "0.0",
+        "incumbent": false
+      },
+      {
+        "Name": "Kevin Lincoln",
+        "Party": "Rep",
+        "Votes": "38,820",
+        "Percent": "0.0",
+        "incumbent": false
+      }
+    ]
+  },
+  {
+    "raceTitle": "United States Representative District 22 - Districtwide Results",
+    "Reporting": "0% (0 of 1,475) precincts reporting",
+    "ReportingTime": "November 3, 2026, 10:42 p.m.",
+    "candidates": [
+      {
+        "Name": "Randy Villegas",
+        "Party": "Dem",
+        "Votes": "0",
+        "Percent": "0.0",
+        "incumbent": false
+      },
+      {
+        "Name": "David G. Valadao",
+        "Party": "Rep",
+        "Votes": "0",
+        "Percent": "0.0",
+        "incumbent": false
+      }
+    ]
+  },
+  {
+    "raceTitle": "United States Representative District 22 - Fresno County Results",
+    "Reporting": "41.2% (212 of 515) precincts reporting",
+    "ReportingTime": "November 3, 2026, 10:42 p.m.",
+    "candidates": [
+      {
+        "Name": "Randy Villegas",
+        "Party": "Dem",
+        "Votes": "18,018",
+        "Percent": "0.0",
+        "incumbent": false
+      },
+      {
+        "Name": "David G. Valadao",
+        "Party": "Rep",
+        "Votes": "23,310",
+        "Percent": "0.0",
+        "incumbent": false
+      }
+    ]
+  },
+  {
+    "raceTitle": "United States Representative District 22 - Kern County Results",
+    "Reporting": "41.2% (212 of 515) precincts reporting",
+    "ReportingTime": "November 3, 2026, 10:42 p.m.",
+    "candidates": [
+      {
+        "Name": "Randy Villegas",
+        "Party": "Dem",
+        "Votes": "5,964",
+        "Percent": "0.0",
+        "incumbent": false
+      },
+      {
+        "Name": "David G. Valadao",
+        "Party": "Rep",
+        "Votes": "32,284",
+        "Percent": "0.0",
+        "incumbent": false
+      }
+    ]
+  },
+  {
+    "raceTitle": "United States Representative District 22 - Kings County Results",
+    "Reporting": "41.2% (212 of 515) precincts reporting",
+    "ReportingTime": "November 3, 2026, 10:42 p.m.",
+    "candidates": [
+      {
+        "Name": "Randy Villegas",
+        "Party": "Dem",
+        "Votes": "12,276",
+        "Percent": "0.0",
+        "incumbent": false
+      },
+      {
+        "Name": "David G. Valadao",
+        "Party": "Rep",
+        "Votes": "4,945",
+        "Percent": "0.0",
+        "incumbent": false
+      }
+    ]
+  },
+  {
+    "raceTitle": "United States Representative District 22 - Madera County Results",
+    "Reporting": "41.2% (212 of 515) precincts reporting",
+    "ReportingTime": "November 3, 2026, 10:42 p.m.",
+    "candidates": [
+      {
+        "Name": "Randy Villegas",
+        "Party": "Dem",
+        "Votes": "22,077",
+        "Percent": "0.0",
+        "incumbent": false
+      },
+      {
+        "Name": "David G. Valadao",
+        "Party": "Rep",
+        "Votes": "13,614",
+        "Percent": "0.0",
+        "incumbent": false
+      }
+    ]
+  },
+  {
+    "raceTitle": "United States Representative District 22 - Tulare County Results",
+    "Reporting": "41.2% (212 of 515) precincts reporting",
+    "ReportingTime": "November 3, 2026, 10:42 p.m.",
+    "candidates": [
+      {
+        "Name": "Randy Villegas",
+        "Party": "Dem",
+        "Votes": "9,567",
+        "Percent": "0.0",
+        "incumbent": false
+      },
+      {
+        "Name": "David G. Valadao",
+        "Party": "Rep",
+        "Votes": "21,199",
+        "Percent": "0.0",
+        "incumbent": false
+      }
+    ]
+  }
+]
