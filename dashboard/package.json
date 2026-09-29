@@ -1,0 +1,26 @@
+{
+  "name": "susquatch-dashboard",
+  "private": true,
+  "description": "Password-protected Cloudflare Pages dashboard (Functions + KV) and the daily-summary cron Worker",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "seed": "node scripts/seed.mjs",
+    "test": "node --test 'test/**/*.test.ts' '../worker/test/**/*.test.ts'",
+    "typecheck": "tsc -p tsconfig.json",
+    "check": "npm run typecheck && npm test",
+    "deploy:pages": "wrangler pages deploy --project-name susquatch --branch main",
+    "deploy:worker": "wrangler deploy --config ../worker/wrangler.jsonc"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260928.1",
+    "@types/node": "^24.5.0",
+    "playwright-core": "^1.63.0",
+    "typescript": "^5.9.3",
+    "wrangler": "^4.143.0"
+  }
+}

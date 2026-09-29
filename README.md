@@ -83,6 +83,22 @@ There are **no real-time alerts** by design. The system has to fail safe on its 
 - **Kill it from anywhere:** the `ops/KILL` file, the dashboard's Kill button, or NATS `ops.kill`.
 - **Hard time gate:** no new orders at or after 11:55 ET on Nov 4.
 
+## The dashboard, and the one message a day
+
+<p align="center">
+  <img src="docs/img/dashboard-desktop.png" alt="Susquatch dashboard on desktop" width="68%">
+  &nbsp;
+  <img src="docs/img/dashboard-mobile.png" alt="Susquatch dashboard on a phone" width="24%">
+  <br><sub><i>Rendered from a synthetic status fixture. Every number here is demo data, not results.</i></sub>
+</p>
+
+A password-protected Cloudflare Pages site at `susquatch.pages.dev`: mode, stage, lease, heartbeat, equity, rank, health,
+positions, trades, events and a two-step **Kill**. If the server goes quiet, the page turns clay and says since when.
+Once a day a cron Worker, running on Cloudflare rather than the server, writes the summary (ACTION NEEDED first, usually
+empty) to the dashboard and to a pinned GitHub issue, so a dead server still gets reported. All of it costs $0, and
+`make costs` fails the build if that ever stops being true. See [`docs/OPS.md`](docs/OPS.md) and
+[`docs/RUNBOOK.md`](docs/RUNBOOK.md).
+
 ## Rules we play by
 
 One account. No coordination, and no trading against friends. No wash trades. No MNPI. The Sponsor owns all Competition Data,

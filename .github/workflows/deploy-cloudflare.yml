@@ -1,0 +1,104 @@
+name: deploy-cloudflare
+
+# Dashboard (Pages + Functions -> https://susquatch.pages.dev) and the daily-summary Worker.
+# Deploys only when the Cloudflare credentials exist; without them the job skips cleanly with a notice.
+# Required (Settings -> Secrets and variables -> Actions), see docs/OPS.md#cloudflare:
+#   secrets.CLOUDFLARE_API_TOKEN   Account: Cloudflare Pages Edit, Workers Scripts Edit, Workers KV Storage Edit
+#   secrets.CLOUDFLARE_ACCOUNT_ID
+#   secrets.SUSQ_KV_NAMESPACE_ID   (or vars.SUSQ_KV_NAMESPACE_ID) from `wrangler kv namespace create SUSQ_KV`
+# Optional (synced to Cloudflare on every deploy when present, so nobody has to run wrangler by hand):
+#   secrets.DASHBOARD_PASSWORD, secrets.SUSQ_STATUS_PUSH_TOKEN  -> Pages project secrets
+#   secrets.SUSQ_REPORTS_GITHUB_TOKEN                           -> Worker secret GITHUB_TOKEN
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "dashboard/**"
+      - "worker/**"
+      - "contracts/fixtures/status_snapshot.json"
+      - ".github/workflows/deploy-cloudflare.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-cloudflare
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: dashboard } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: npm, cache-dependency-path: dashboard/package-lock.json }
+      - run: npm ci
+      - run: npm run check
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: dashboard } }
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      SUSQ_KV_NAMESPACE_ID: ${{ secrets.SUSQ_KV_NAMESPACE_ID || vars.SUSQ_KV_NAMESPACE_ID }}
+    steps:
+      - name: Check credentials
+        id: gate
+        working-directory: .
+        run: |
+          missing=""
+          [ -n "$CLOUDFLARE_API_TOKEN" ] || missing="$missing CLOUDFLARE_API_TOKEN"
+          [ -n "$CLOUDFLARE_ACCOUNT_ID" ] || missing="$missing CLOUDFLARE_ACCOUNT_ID"
+          [ -n "$SUSQ_KV_NAMESPACE_ID" ] || missing="$missing SUSQ_KV_NAMESPACE_ID"
+          if [ -n "$missing" ]; then
+            echo "::notice title=Cloudflare deploy skipped::missing:$missing (see docs/OPS.md#cloudflare)"
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.gate.outputs.deploy == 'true'
+        uses: actions/checkout@v4
+      - if: steps.gate.outputs.deploy == 'true'
+        uses: actions/setup-node@v4
+        with: { node-version: 24, cache: npm, cache-dependency-path: dashboard/package-lock.json }
+      - if: steps.gate.outputs.deploy == 'true'
+        run: npm ci
+
+      - name: Bind the KV namespace
+        if: steps.gate.outputs.deploy == 'true'
+        run: |
+          sed -i "s/SUSQ_KV_NAMESPACE_ID_PLACEHOLDER/${SUSQ_KV_NAMESPACE_ID}/" wrangler.toml ../worker/wrangler.jsonc
+          ! grep -q SUSQ_KV_NAMESPACE_ID_PLACEHOLDER wrangler.toml ../worker/wrangler.jsonc
+
+      - name: Ensure the Pages project exists (susquatch -> susquatch.pages.dev)
+        if: steps.gate.outputs.deploy == 'true'
+        run: npx wrangler pages project create susquatch --production-branch main || echo "project already exists"
+
+      - name: Sync optional dashboard secrets
+        if: steps.gate.outputs.deploy == 'true'
+        env:
+          DASHBOARD_PASSWORD: ${{ secrets.DASHBOARD_PASSWORD }}
+          SUSQ_STATUS_PUSH_TOKEN: ${{ secrets.SUSQ_STATUS_PUSH_TOKEN }}
+        run: |
+          [ -z "$DASHBOARD_PASSWORD" ] || printf '%s' "$DASHBOARD_PASSWORD" | npx wrangler pages secret put DASHBOARD_PASSWORD --project-name susquatch
+          [ -z "$SUSQ_STATUS_PUSH_TOKEN" ] || printf '%s' "$SUSQ_STATUS_PUSH_TOKEN" | npx wrangler pages secret put SUSQ_STATUS_PUSH_TOKEN --project-name susquatch
+
+      - name: Deploy the dashboard (Pages + Functions)
+        if: steps.gate.outputs.deploy == 'true'
+        run: npx wrangler pages deploy --project-name susquatch --branch main --commit-hash "$GITHUB_SHA" --commit-dirty=true
+
+      - name: Deploy the summary Worker (cron 14:00 UTC)
+        if: steps.gate.outputs.deploy == 'true'
+        run: npx wrangler deploy --config ../worker/wrangler.jsonc
+
+      - name: Sync the Worker's GitHub token (optional)
+        if: steps.gate.outputs.deploy == 'true'
+        env:
+          REPORTS_TOKEN: ${{ secrets.SUSQ_REPORTS_GITHUB_TOKEN }}
+        run: '[ -z "$REPORTS_TOKEN" ] || printf "%s" "$REPORTS_TOKEN" | npx wrangler secret put GITHUB_TOKEN --config ../worker/wrangler.jsonc'
