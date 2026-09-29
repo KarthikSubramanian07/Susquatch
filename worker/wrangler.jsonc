@@ -1,0 +1,30 @@
+{
+  "$schema": "../dashboard/node_modules/wrangler/config-schema.json",
+  // The daily summary + dead-man switch. Toolchain lives in dashboard/ (one npm install for both).
+  //   deploy: cd dashboard && npx wrangler deploy --config ../worker/wrangler.jsonc
+  "name": "susquatch-summary",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  // No public URL: the Worker only runs on its cron.
+  "workers_dev": false,
+  "preview_urls": false,
+  "triggers": {
+    // 14:00 UTC = 07:00 PT (PDT) / 06:00 PT after Nov 1. The server's self-check runs at 13:30 UTC.
+    "crons": ["0 14 * * *"]
+  },
+  "kv_namespaces": [
+    // Same namespace as the Pages project (dashboard/wrangler.toml). CI substitutes the id.
+    { "binding": "SUSQ_KV", "id": "SUSQ_KV_NAMESPACE_ID_PLACEHOLDER" }
+  ],
+  "vars": {
+    // push=false: keep the summary on the dashboard only, no GitHub comment.
+    "PUSH_TO_GITHUB": "true",
+    "REPORTS_REPO": "KarthikSubramanian07/susquatch-reports",
+    "SUMMARY_ISSUE_TITLE": "Daily summary",
+    // Heartbeat older than this = "server silent since ..." at the top of the summary.
+    "DEADMAN_MINUTES": "20",
+    "DASHBOARD_URL": "https://susquatch.pages.dev"
+  },
+  "observability": { "enabled": true }
+  // Secret (never here): npx wrangler secret put GITHUB_TOKEN --config ../worker/wrangler.jsonc
+}

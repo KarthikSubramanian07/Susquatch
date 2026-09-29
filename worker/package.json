@@ -1,0 +1,6 @@
+{
+  "name": "susquatch-summary-worker",
+  "private": true,
+  "type": "module",
+  "description": "Daily summary cron Worker. Toolchain and scripts live in ../dashboard (npm run check / deploy:worker)."
+}
