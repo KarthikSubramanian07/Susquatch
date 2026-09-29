@@ -1,0 +1,20 @@
+"$schema" = "./node_modules/wrangler/config-schema.json"
+# Cloudflare Pages project -> https://susquatch.pages.dev (the project name IS the subdomain).
+name = "susquatch"
+pages_build_output_dir = "./public"
+compatibility_date = "2026-09-01"
+
+# One KV namespace shared with the daily Worker (worker/wrangler.jsonc). The id is not a secret, but it is
+# account-specific: CI substitutes it from the SUSQ_KV_NAMESPACE_ID secret at deploy time.
+[[kv_namespaces]]
+binding = "SUSQ_KV"
+id = "SUSQ_KV_NAMESPACE_ID_PLACEHOLDER"
+
+[vars]
+# Heartbeat older than this = "server silent" (pushes are every 120-150 s).
+STALE_AFTER_S = "420"
+
+# Secrets (never in this file): set once per project, see docs/OPS.md#secrets
+#   npx wrangler pages secret put DASHBOARD_PASSWORD     --project-name susquatch   (>= 16 chars)
+#   npx wrangler pages secret put SUSQ_STATUS_PUSH_TOKEN --project-name susquatch   (>= 32 chars)
+# Local dev reads them from dashboard/.dev.vars (gitignored); `make dashboard-dev` creates one.
