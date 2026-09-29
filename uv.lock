@@ -922,6 +922,17 @@ wheels = [
 ]
 
 [[package]]
+name = "susq-models"
+version = "0.1.0"
+source = { directory = "cpp" }
+dependencies = [
+    { name = "numpy" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "numpy", specifier = ">=2.2" }]
+
+[[package]]
 name = "susquatch"
 version = "0.1.0"
 source = { editable = "." }
@@ -955,6 +966,9 @@ dev = [
     { name = "types-protobuf" },
     { name = "types-pyyaml" },
 ]
+models = [
+    { name = "susq-models" },
+]
 
 [package.metadata]
 requires-dist = [
@@ -987,6 +1001,7 @@ dev = [
     { name = "types-protobuf" },
     { name = "types-pyyaml" },
 ]
+models = [{ name = "susq-models", directory = "cpp" }]
 
 [[package]]
 name = "typer"

@@ -1,0 +1,27 @@
+# pybind11 module `susq_models` (sim, tourney, needle). Built by scikit-build-core from
+# cpp/pyproject.toml, or directly with -DSUSQ_BUILD_PYTHON=ON.
+if(NOT SUSQ_BUILD_PYTHON)
+  return()
+endif()
+
+find_package(Python 3.13 REQUIRED COMPONENTS Interpreter Development.Module)
+find_package(pybind11 CONFIG REQUIRED)
+
+pybind11_add_module(susq_models
+  module.cpp
+  sim_bindings.cpp
+  tourney_bindings.cpp
+  needle_bindings.cpp
+  research_api.cpp)
+target_link_libraries(susq_models PRIVATE susq_sim susq_tourney susq_needle)
+# Stamped into needle.Needle output headers, like the susq-needle binary.
+execute_process(COMMAND git rev-parse --short=12 HEAD
+  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+  OUTPUT_VARIABLE SUSQ_BINDINGS_GIT_SHA OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+if(NOT SUSQ_BINDINGS_GIT_SHA)
+  set(SUSQ_BINDINGS_GIT_SHA unknown)
+endif()
+target_compile_definitions(susq_models PRIVATE SUSQ_GIT_SHA="${SUSQ_BINDINGS_GIT_SHA}")
+susq_target_warnings(susq_models)
+
+install(TARGETS susq_models LIBRARY DESTINATION .)

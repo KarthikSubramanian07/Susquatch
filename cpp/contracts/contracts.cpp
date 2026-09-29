@@ -8,13 +8,16 @@ namespace susq::contracts {
 
 std::string Encode(const google::protobuf::Message& msg) {
   std::string out;
+  bool ok = false;
   {
     google::protobuf::io::StringOutputStream sos(&out);
     google::protobuf::io::CodedOutputStream cos(&sos);
     cos.SetSerializationDeterministic(true);
-    msg.SerializeToCodedStream(&cos);
+    ok = msg.SerializeToCodedStream(&cos);
   }
-  return out;
+  // A message missing nothing (proto3 has no required fields) cannot fail to serialize; if it ever
+  // does, return empty rather than a truncated buffer so the receiver rejects it instead of misreading.
+  return ok ? out : std::string();
 }
 
 bool Decode(std::string_view bytes, google::protobuf::Message* out) {

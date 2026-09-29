@@ -19,6 +19,7 @@ namespace susq::contracts {
 inline constexpr uint32_t kSchemaVersion = susq::v1::SCHEMA_VERSION_CURRENT;
 
 // Deterministic binary encoding (matches Python `SerializeToString(deterministic=True)` and prost).
+// Returns an empty string if serialization fails.
 std::string Encode(const google::protobuf::Message& msg);
 
 // Binary decode; unknown fields are preserved but never interpreted. Returns false on malformed input.

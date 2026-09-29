@@ -1,0 +1,38 @@
+[build-system]
+requires = ["scikit-build-core>=0.11", "pybind11>=3.0"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "susq-models"
+version = "0.1.0"
+description = "Susquatch C++20 models for Python: correlated race Monte Carlo, tournament field, election-night needle"
+readme = "README.md"
+license = "MIT"
+authors = [{ name = "Karthik Subramanian", email = "winnerkarthik07@gmail.com" }]
+requires-python = ">=3.13"
+dependencies = ["numpy>=2.2"]
+
+[tool.scikit-build]
+minimum-version = "build-system.requires"
+cmake.version = ">=3.25"
+cmake.build-type = "Release"
+build-dir = "build/{wheel_tag}"
+# The module is a single extension; keep the C++ tree out of the wheel.
+wheel.packages = []
+sdist.exclude = ["build"]
+
+[tool.uv]
+# Rebuild when any C++ source or the shared schema changes (uv otherwise keys only on pyproject.toml).
+cache-keys = [
+    { file = "pyproject.toml" },
+    { file = "**/CMakeLists.txt" },
+    { file = "cmake/*.cmake" },
+    { file = "**/*.cpp" },
+    { file = "**/*.hpp" },
+    { file = "../contracts/proto/susq/v1/*.proto" },
+]
+
+[tool.scikit-build.cmake.define]
+SUSQ_BUILD_PYTHON = "ON"
+SUSQ_BUILD_TESTS = "OFF"
+SUSQ_BUILD_NEEDLE_SERVICE = "OFF"
