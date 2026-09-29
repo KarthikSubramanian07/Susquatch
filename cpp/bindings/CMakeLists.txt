@@ -11,7 +11,8 @@ pybind11_add_module(susq_models
   module.cpp
   sim_bindings.cpp
   tourney_bindings.cpp
-  needle_bindings.cpp)
+  needle_bindings.cpp
+  research_api.cpp)
 target_link_libraries(susq_models PRIVATE susq_sim susq_tourney susq_needle)
 susq_target_warnings(susq_models)
 

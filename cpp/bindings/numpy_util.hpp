@@ -30,5 +30,6 @@ py::array_t<T> ToArray2D(const std::vector<T>& v, std::size_t rows, std::size_t 
 void BindSim(py::module_& m);
 void BindTourney(py::module_& m);
 void BindNeedle(py::module_& m);
+void BindResearchApi(py::module_& m);
 
 }  // namespace susq::bindings

@@ -20,5 +20,7 @@ PYBIND11_MODULE(susq_models, m) {
   auto needle = m.def_submodule("needle", "Election-night county expected-vote model.");
   susq::bindings::BindNeedle(needle);
   sys_modules["susq_models.needle"] = needle;
+  // Flat-array API consumed by py/susq/models/facade.py (SIM_API_VERSION / TOURNEY_API_VERSION 1).
+  susq::bindings::BindResearchApi(m);
   m.attr("__version__") = "0.1.0";
 }
