@@ -30,6 +30,9 @@ any of this to be safe (it fails safe on its own). This is how you help it win.
 - [ ] `ops/KILL` absent. No `ops/GO_LIVE` yet.
 - [ ] Clock: `chronyc tracking` offset < 50 ms.
 
+The bridge's own Oct 1 guide is [`bridge_py/README.md`](../bridge_py/README.md). With the key in `.env` it sleeps until the
+open by itself (`make logs S=bridge` shows `sleeping … until 2026-10-01T16:00:00+00:00`).
+
 **12:00 ET.** The bridge runs `measure_day1` on its own and writes `reports/DAY1.md`. Going live is a separate,
 deliberate act: say **"go live"** in a Claude Code session (the `/go-live` pre-flight), which ends with
 `echo 'go live' > ops/GO_LIVE` and `SUSQ_MODE=live`. Watch the first qualifying trade appear under *recent trades*.
