@@ -2053,6 +2053,15 @@ version = "0.1.0"
 [[package]]
 name = "susq-journal"
 version = "0.1.0"
+dependencies = [
+ "chrono",
+ "serde_json",
+ "susq-contracts",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tracing",
+]
 
 [[package]]
 name = "susq-live"
