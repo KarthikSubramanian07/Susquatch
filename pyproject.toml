@@ -52,7 +52,7 @@ packages = ["py/susq", "bridge_py/susq_bridge"]
 [tool.pytest.ini_options]
 testpaths = ["py/tests", "bridge_py/tests", "contracts/tests"]
 asyncio_mode = "auto"
-addopts = "-q --strict-markers"
+addopts = "-q --strict-markers --import-mode=importlib"
 markers = [
     "live: hits the real Super Market API (needs SUSQ_API_KEY); never runs in CI",
     "slow: long-running simulation or replay",
