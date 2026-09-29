@@ -233,6 +233,49 @@ impl MockPlatform {
         inner.state.submit(sub, now).0
     }
 
+    /// Replace `owner`'s resting liquidity on `exchange` with the given YES-space levels
+    /// (`(price, qty)`; non-positive sizes are skipped). New levels match against everyone else's
+    /// resting orders exactly like incoming orders, which is how the paper broker fills our resting
+    /// paper orders when the live book moves through them. Unknown exchanges are registered under
+    /// a placeholder market. Returns the number of levels placed.
+    pub fn replace_liquidity(
+        &self,
+        owner: &str,
+        exchange: &ExchangeId,
+        bids: &[(Pips, i64)],
+        asks: &[(Pips, i64)],
+    ) -> usize {
+        let now = self.clock.now();
+        let mut inner = self.inner.lock();
+        let state = &mut inner.state;
+        state.expire(now);
+        if !state.exchanges.contains_key(exchange) {
+            let market = MarketId::new(format!("unmapped-{exchange}"));
+            state.add_market(market, "", &[(exchange.clone(), String::new())]);
+        }
+        state.cancel_open(owner, |o| &o.exchange == exchange);
+        let levels = bids
+            .iter()
+            .map(|l| (Action::Buy, l))
+            .chain(asks.iter().map(|l| (Action::Sell, l)))
+            .filter(|(_, (_, qty))| *qty > 0);
+        let mut placed = 0;
+        for (action, &(price, quantity)) in levels {
+            let sub = Submission {
+                owner: owner.to_owned(),
+                exchange: exchange.clone(),
+                side: Side::Yes,
+                action,
+                quantity,
+                price,
+                expiration: None,
+            };
+            state.submit(sub, now);
+            placed += 1;
+        }
+        placed
+    }
+
     /// Replace the canonical relationships served by `GET /relationships`.
     pub fn set_relationships(&self, relationships: Vec<Relationship>) {
         self.inner.lock().state.relationships = relationships;

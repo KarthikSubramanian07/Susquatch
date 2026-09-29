@@ -714,3 +714,28 @@ proptest! {
         }
     }
 }
+
+#[tokio::test]
+async fn replacing_liquidity_fills_resting_orders_it_crosses() {
+    let (_, m) = mock();
+    let ex = ExchangeId::new("1");
+    m.replace_liquidity("market", &ex, &[(px(4000), 10)], &[(px(6000), 10)]);
+    let ack = m
+        .place_order(&placing("k", order("1", Side::Yes, Action::Buy, 5, 5000)))
+        .await
+        .expect("rests");
+    assert!(ack.open);
+    // The live book moves: someone now offers at 0.49, through our 0.50 bid.
+    let placed = m.replace_liquidity("market", &ex, &[(px(4000), 10), (px(3000), 0)], &[(px(4900), 3)]);
+    assert_eq!(placed, 2, "zero-size levels are skipped");
+    assert_eq!(m.position_of(CALLER, "1"), 3, "filled at our resting price");
+    assert_eq!(m.open_orders_of(CALLER)[0].quantity, 2.0);
+    // Replacing again drops the previous levels instead of stacking them.
+    m.replace_liquidity("market", &ex, &[], &[(px(6000), 1)]);
+    assert_eq!(m.open_orders_of("market").len(), 1);
+    // Unknown exchanges are registered on the fly.
+    assert_eq!(
+        m.replace_liquidity("market", &ExchangeId::new("999"), &[(px(100), 1)], &[]),
+        1
+    );
+}
