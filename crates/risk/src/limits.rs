@@ -4,8 +4,17 @@
 //! mark, NO at `1 − mark`), with every live order counted as if it filled at its limit. An order
 //! that does not increase an exchange's exposure is never blocked by a cap (reducing risk is always
 //! allowed, except on locked legs).
+//!
+//! **Buying power** (only when [`RiskContext::cash`] is known): a bundle must fit in cash minus what
+//! our live orders could consume (each at full notional). A bundle consumes the full notional of the
+//! shares it opens (closing shares are free) unless [`RiskContext::bundle_cost`] is set, which
+//! rust-live does only with `[risk] use_collateral_buying_power = true`: then it consumes the modeled
+//! ALL effective cost (see `susq_platform::collateral`).
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::{
+    collections::{BTreeMap, HashMap, HashSet},
+    fmt,
+};
 
 use chrono::{DateTime, Utc};
 use susq_core::{
@@ -38,6 +47,13 @@ pub enum Rejection {
     SelfCross(ExchangeId),
     #[error("no equity to size against")]
     NoEquity,
+    #[error("buying power: bundle needs {need:.2}, {available:.2} available")]
+    BuyingPower { need: f64, available: f64 },
+}
+
+/// Cash a bundle would consume under a collateral model, given signed positions (+YES / −NO).
+pub trait BundleCost: fmt::Debug {
+    fn cash_needed(&self, positions: &HashMap<ExchangeId, i64>, bundle: &OrderBundle) -> f64;
 }
 
 /// Cap fractions (of equity), from `[risk]` plus optional per-cluster overrides from targets.
@@ -107,6 +123,10 @@ pub struct RiskContext<'a> {
     pub locked: &'a HashSet<ExchangeId>,
     /// Glitch-trade notional already committed.
     pub glitch_used: f64,
+    /// Tournament cash, when known (`None`: buying power is left to the platform).
+    pub cash: Option<f64>,
+    /// Collateral-aware bundle cost; `None` = full opening notional (the default, conservative).
+    pub bundle_cost: Option<&'a dyn BundleCost>,
 }
 
 /// Signed position after every live order fills, per exchange.
@@ -116,6 +136,30 @@ fn projected_positions(ctx: &RiskContext<'_>) -> HashMap<ExchangeId, i64> {
         *out.entry(o.exchange_id.clone()).or_default() += o.book_side.yes_delta_sign() * o.remaining;
     }
     out
+}
+
+/// Full notional of the shares a bundle opens (closing shares, which net against a position and
+/// pay out, are free), legs applied in order.
+pub fn opening_notional(positions: &HashMap<ExchangeId, i64>, legs: &[OrderSpec]) -> f64 {
+    let mut held = positions.clone();
+    let mut total = 0.0;
+    for leg in legs {
+        let delta = leg.yes_delta();
+        let pos = held.get(&leg.exchange_id).copied().unwrap_or(0);
+        let closing = if pos * delta < 0 {
+            delta.abs().min(pos.abs())
+        } else {
+            0
+        };
+        let (side, yes) = leg.yes_space();
+        let open_px = match side {
+            BookSide::Bid => yes.prob(),
+            BookSide::Ask => 1.0 - yes.prob(),
+        };
+        total += (delta.abs() - closing) as f64 * open_px;
+        *held.entry(leg.exchange_id.clone()).or_default() += delta;
+    }
+    total
 }
 
 /// Money at risk of a signed position at a YES mark.
@@ -191,6 +235,7 @@ impl PreTrade {
                     > exposure(before.get(*ex).copied().unwrap_or(0), m) + 1e-9
             })
             .collect();
+        self.check_buying_power(ctx, bundle)?;
         if increases.is_empty() {
             return Ok(());
         }
@@ -220,6 +265,32 @@ impl PreTrade {
             if resting.chain(siblings).any(|(s, p)| crosses(side, price, s, p)) {
                 return Err(Rejection::SelfCross(leg.exchange_id.clone()));
             }
+        }
+        Ok(())
+    }
+
+    fn check_buying_power(&self, ctx: &RiskContext<'_>, bundle: &OrderBundle) -> Result<(), Rejection> {
+        let Some(cash) = ctx.cash else {
+            return Ok(());
+        };
+        let reserved: f64 = ctx
+            .live_orders
+            .iter()
+            .map(|o| {
+                let px = match o.book_side {
+                    BookSide::Bid => o.yes_price.prob(),
+                    BookSide::Ask => 1.0 - o.yes_price.prob(),
+                };
+                o.remaining.max(0) as f64 * px
+            })
+            .sum();
+        let need = match ctx.bundle_cost {
+            Some(model) => model.cash_needed(ctx.positions, bundle),
+            None => opening_notional(ctx.positions, &bundle.legs),
+        };
+        let available = cash - reserved;
+        if need > 1e-9 && need > available + 1e-9 {
+            return Err(Rejection::BuyingPower { need, available });
         }
         Ok(())
     }
@@ -425,6 +496,8 @@ mod tests {
                 markets: &self.markets,
                 locked: &self.locked,
                 glitch_used: 0.0,
+                cash: None,
+                bundle_cost: None,
             }
         }
     }
@@ -461,6 +534,80 @@ mod tests {
             check(&w, 10_000.0, vec![spec("1", Side::Yes, Action::Buy, 201, 5000)]),
             Err(Rejection::MarketCap { .. })
         ));
+    }
+
+    #[derive(Debug)]
+    struct Flat(f64);
+
+    impl BundleCost for Flat {
+        fn cash_needed(&self, _: &HashMap<ExchangeId, i64>, _: &OrderBundle) -> f64 {
+            self.0
+        }
+    }
+
+    fn check_cash(
+        w: &World,
+        cash: f64,
+        model: Option<&dyn BundleCost>,
+        legs: Vec<OrderSpec>,
+    ) -> Result<(), Rejection> {
+        let mut ctx = w.ctx(100_000.0);
+        ctx.cash = Some(cash);
+        ctx.bundle_cost = model;
+        PreTrade { limits: limits() }.check_bundle(&ctx, &OrderBundle { legs, atomic: true }, &w.tid)
+    }
+
+    #[test]
+    fn buying_power_counts_full_opening_notional_by_default() {
+        let w = World::new();
+        let buy = || vec![spec("1", Side::Yes, Action::Buy, 20, 5000)];
+        assert_eq!(check_cash(&w, 10.0, None, buy()), Ok(()));
+        assert!(matches!(
+            check_cash(&w, 9.99, None, buy()),
+            Err(Rejection::BuyingPower { .. })
+        ));
+        // Unknown cash: left to the platform.
+        assert_eq!(check(&w, 100_000.0, buy()), Ok(()));
+    }
+
+    #[test]
+    fn buying_power_reserves_live_orders_and_frees_closing_shares() {
+        let mut w = World::new();
+        w.live.push(LiveOrder {
+            exchange_id: ExchangeId::new("3"),
+            book_side: BookSide::Ask,
+            yes_price: Pips::new(6000).expect("valid"),
+            remaining: 10, // a resting NO buy at 0.40 reserves 4.0
+        });
+        let buy = || vec![spec("1", Side::Yes, Action::Buy, 20, 5000)];
+        assert!(matches!(
+            check_cash(&w, 13.0, None, buy()),
+            Err(Rejection::BuyingPower { .. })
+        ));
+        assert_eq!(check_cash(&w, 14.0, None, buy()), Ok(()));
+        // Buying NO against a YES position closes it: it needs no cash even when over-committed.
+        w.positions.insert(ExchangeId::new("2"), 30);
+        assert_eq!(
+            check_cash(&w, 0.0, None, vec![spec("2", Side::No, Action::Buy, 30, 5000)]),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn a_collateral_cost_model_replaces_full_notional() {
+        let w = World::new();
+        let legs = || {
+            vec![
+                spec("1", Side::No, Action::Buy, 10, 6000),
+                spec("2", Side::No, Action::Buy, 10, 4500),
+            ]
+        };
+        assert!(matches!(
+            check_cash(&w, 7.0, None, legs()),
+            Err(Rejection::BuyingPower { .. })
+        ));
+        assert_eq!(check_cash(&w, 7.0, Some(&Flat(6.0)), legs()), Ok(()));
+        assert_eq!(opening_notional(&HashMap::new(), &legs()), 10.5);
     }
 
     #[test]

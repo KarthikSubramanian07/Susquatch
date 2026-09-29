@@ -12,6 +12,10 @@
 //!
 //! Nothing is sent unless the generic [`verify`] proves `min over allowed outcomes of payoff − cost ≥
 //! min_edge` at the limit prices actually sent. Racer intents whose violation has closed are cancelled.
+//!
+//! The per-bundle budget (`max_bundle_notional_frac`) counts full notional unless
+//! [`ConstraintsRacer::with_collateral_buying_power`] is on (`[risk] use_collateral_buying_power`),
+//! in which case it counts [`effective_cost_per_share`]: the ALL collateral model's cash cost.
 
 use std::{
     collections::{HashMap, HashSet},
@@ -103,6 +107,34 @@ pub fn guaranteed_edge_pips(structure: Structure, legs: &[PricedLeg]) -> Option<
     Some(payoff - cost)
 }
 
+/// Cash one bundle share consumes under the ALL collateral model (price units), legs bought in order
+/// from flat: each leg's price may be advanced up to the payout floor the legs so far guarantee,
+/// minus what is already advanced (model assumption A1, see `susq_platform::collateral`). Only this
+/// relationship's own constraints are used and any existing position's floor is treated as already
+/// advanced, both of which can only over-state the cost.
+pub fn effective_cost_per_share(structure: Structure, legs: &[PricedLeg]) -> f64 {
+    let outcomes = structure.allowed_outcomes();
+    let mut advanced = 0.0;
+    let mut total = 0.0;
+    for i in 0..legs.len() {
+        let price = legs[i].price.prob();
+        let floor = outcomes
+            .iter()
+            .map(|o| {
+                legs[..=i]
+                    .iter()
+                    .filter(|l| o.get(l.node).is_some_and(|&yes| yes == (l.side == Side::Yes)))
+                    .count() as f64
+            })
+            .min_by(f64::total_cmp)
+            .unwrap_or(0.0);
+        let savings = price.min((floor - advanced).max(0.0));
+        advanced += savings;
+        total += price - savings;
+    }
+    total
+}
+
 /// Approve a bundle only if it earns at least `min_edge` (price units) per bundle share in every
 /// allowed outcome. Returns the guaranteed edge in price units.
 pub fn verify(structure: Structure, legs: &[PricedLeg], min_edge: f64) -> Option<f64> {
@@ -117,6 +149,8 @@ pub struct ConstraintsRacer {
     pub cfg: RacerCfg,
     /// Last time (ns) a bundle was emitted per relationship: the re-fire cooldown.
     last_fired_ns: Mutex<HashMap<String, i64>>,
+    /// Budget bundles on the modeled ALL effective cost instead of full notional.
+    collateral_buying_power: bool,
 }
 
 /// A bundle shape before sizing: which side of which exchange, under which structure.
@@ -132,7 +166,15 @@ impl ConstraintsRacer {
         Self {
             cfg,
             last_fired_ns: Mutex::new(HashMap::new()),
+            collateral_buying_power: false,
         }
+    }
+
+    /// Count the per-bundle budget on the modeled ALL effective cost (`[risk]
+    /// use_collateral_buying_power`); the relationship exposure cap stays on notional.
+    pub fn with_collateral_buying_power(mut self, on: bool) -> Self {
+        self.collateral_buying_power = on;
+        self
     }
 
     fn cooling_down(&self, rel_id: &str, now_ns: i64) -> bool {
@@ -192,7 +234,12 @@ impl ConstraintsRacer {
             return Err("edge below min_edge at the touch".into());
         };
         let cost = legs.iter().map(|l| l.price.prob()).sum::<f64>();
-        let cap = shares_for_cost(self.cfg.max_bundle_notional_frac * snap.equity, cost);
+        let budget_cost = if self.collateral_buying_power {
+            effective_cost_per_share(plan.structure, &legs)
+        } else {
+            cost
+        };
+        let cap = shares_for_cost(self.cfg.max_bundle_notional_frac * snap.equity, budget_cost);
         // Notional already held across this relationship's legs (marked at the prices we'd pay now).
         let held: f64 = plan
             .legs
@@ -611,6 +658,43 @@ mod tests {
         w.book("3", &[(3000, 20)], &[]);
         let d = racer().decide(&w.snap());
         assert_eq!(d.bundles[0].legs[0].quantity.get(), 5);
+    }
+
+    #[test]
+    fn collateral_budget_counts_only_the_modeled_effective_cost() {
+        let legs = [
+            PricedLeg {
+                node: 0,
+                side: Side::No,
+                price: Pips::new(6000).expect("valid"),
+            },
+            PricedLeg {
+                node: 1,
+                side: Side::No,
+                price: Pips::new(6500).expect("valid"),
+            },
+            PricedLeg {
+                node: 2,
+                side: Side::No,
+                price: Pips::new(7000).expect("valid"),
+            },
+        ];
+        // First NO leg has no floor behind it; after it every further NO leg is backed.
+        let eff = effective_cost_per_share(Structure::AtMostOne(3), &legs);
+        assert!((eff - 0.60).abs() < 1e-9, "{eff}");
+
+        let mut w = me_world(false);
+        w.equity = 1_000.0;
+        w.book("1", &[(4000, 30)], &[]);
+        w.book("2", &[(3500, 50)], &[]);
+        w.book("3", &[(3000, 20)], &[]);
+        let full = racer().decide(&w.snap());
+        let collateral = racer().with_collateral_buying_power(true).decide(&w.snap());
+        let qty = |d: &Decision| d.bundles[0].legs[0].quantity.get();
+        assert_eq!(qty(&full), 5);
+        // 10 SUSQies / 0.60 = 16 shares, then the relationship exposure cap (on notional) binds.
+        assert!(qty(&collateral) > qty(&full), "{:?}", collateral.notes);
+        assert!(qty(&collateral) <= 16);
     }
 
     #[test]

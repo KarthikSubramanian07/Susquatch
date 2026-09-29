@@ -109,6 +109,10 @@ pub struct RiskCfg {
     /// Bus validation errors per minute that trip the breaker.
     #[serde(default = "default_bus_error_breaker")]
     pub bus_error_breaker_per_min: u32,
+    /// ALL collateral: size buying power and the racer's bundle budget on the modeled effective
+    /// cost instead of full notional. Off until day-one evidence confirms the model.
+    #[serde(default)]
+    pub use_collateral_buying_power: bool,
 }
 
 fn default_bus_error_breaker() -> u32 {
@@ -519,6 +523,10 @@ mod tests {
             "2026-11-04T16:55:00+00:00"
         );
         assert_eq!(cfg.risk.clusters.get("state"), Some(&0.10));
+        assert!(
+            !cfg.risk.use_collateral_buying_power,
+            "collateral sizing ships off"
+        );
         assert_eq!(
             cfg.oms.idempotency_namespace.to_string(),
             "6f1c0e2a-7c55-4d7e-9a8e-5f2b3c1d0a99"

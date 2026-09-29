@@ -165,6 +165,8 @@ impl Harness {
             markets: &self.markets,
             locked: &locked,
             glitch_used: 0.0,
+            cash: None,
+            bundle_cost: None,
         };
         self.gw.submit(b, &risk(), &ctx)
     }
@@ -264,6 +266,8 @@ async fn terminal_errors_are_not_retried() {
         markets: &h.markets,
         locked: &locked,
         glitch_used: 0.0,
+        cash: None,
+        bundle_cost: None,
     };
     let out =
         h.gw.submit(&big, &limits_ok, &ctx)
