@@ -1,0 +1,14 @@
+# CA SoS 2026 general-election test windows, 8:00 a.m. PT (15:00Z; PDT until Nov 1). Start 10 min early.
+# Dates follow the published pattern (Wed E-13, Wed E-6, Sat E-3; brief/ERRATA.md E18). The official 2026 general
+# schedule (4-testing-schedule-v21.pdf) wasn't posted as of 2026-09-29; if it differs, edit these three lines.
+[Unit]
+Description=CA SoS test windows: Wed Oct 21, Wed Oct 28, Sat Oct 31 2026
+
+[Timer]
+OnCalendar=2026-10-21 14:50:00 UTC
+OnCalendar=2026-10-28 14:50:00 UTC
+OnCalendar=2026-10-31 14:50:00 UTC
+Persistent=true
+
+[Install]
+WantedBy=timers.target

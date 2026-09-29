@@ -129,8 +129,8 @@ for unit in "$SUSQ_HOME"/ops/systemd/*.service "$SUSQ_HOME"/ops/systemd/*.timer;
   sed -e "s|@SUSQ_HOME@|$SUSQ_HOME|g" -e "s|@SUSQ_USER@|$SUSQ_USER|g" "$unit" > "/etc/systemd/system/$(basename "$unit")"
 done
 systemctl daemon-reload
-systemctl enable susquatch.service susq-backup.timer susq-selfcheck.timer susq-priority-on.timer susq-priority-off.timer
-systemctl start susq-backup.timer susq-selfcheck.timer susq-priority-on.timer susq-priority-off.timer
+systemctl enable susquatch.service susq-backup.timer susq-selfcheck.timer susq-priority-on.timer susq-priority-off.timer susq-enr-capture.timer
+systemctl start susq-backup.timer susq-selfcheck.timer susq-priority-on.timer susq-priority-off.timer susq-enr-capture.timer
 
 step "start the stack (paper mode; live needs SUSQ_MODE=live AND ops/GO_LIVE)"
 if [ "${SUSQ_NO_START:-0}" = 1 ]; then
