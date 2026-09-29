@@ -152,22 +152,29 @@ election night (#8, #14), ops (#15), dashboard (#16).
 
 ## 7. Human steps (only Karthik can do these)
 
-Ordered by deadline. The private `susquatch-reports` repo and its pinned **Daily summary** issue already exist.
+Ordered by deadline. Already done for you: the private `susquatch-reports` repo with its pinned, labelled
+**Daily summary** issue; the dashboard + daily Worker deployed to `susquatch.pages.dev` (password in `.env` as
+`DASHBOARD_PASSWORD`); CA SoS test windows scheduled; Georgia's feed set to auto-discover the Nov 3 election.
 
 1. **Before Oct 1:** register at sig.thesuper.market (student eligibility), confirm the email, accept the Terms and Rules, and opt in to recruiting contact.
 2. **Before Oct 1:** create an API key (Settings → API Keys) with `read` + `trade`. Put it in `.env` as `SUSQ_API_KEY=…` and never paste it in chat.
-   Then run `uv run susq-bridge record` once to snapshot the markets, so the map can be built before open.
-3. **Before Oct 1:** decide where it runs on day one. The Mac (`make up`, colima) works now. The Oracle server is better but needs step 6.
-4. **Before Oct 1:** run `/parse-rules`, paste Info-tab text into `state/info_tabs/<id>.md` for the risky markets, and mark rows `verified: true`.
-   The sniper and scenario book trade only verified rows. The racer's NO-bundles don't need verification.
-5. **Oct 1, before 12:00 ET:** say **"go live"** in a Claude Code session (`/go-live` runs the pre-flight). Without it, everything stays paper.
-6. **This week:** sign up for Oracle Cloud Always Free (card hold only; **never** upgrade to Pay-As-You-Go), then `ops/cloud-init.yaml` + `ops/install.sh`.
-7. **This week:** Cloudflare. Add `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` as GitHub Actions secrets (permissions in `docs/OPS.md` §4),
-   enable R2, set the dashboard password secret, then merge-to-main deploys `susquatch.pages.dev`. Wrangler is already logged in locally, but deploying is your call.
-8. **This week:** a fine-grained GitHub token (Issues: write, Contents: read on `susquatch-reports` only), stored as the Worker secret.
-9. **Mid-October:** re-check the CA SoS media page for the 2026 test-window dates (see `brief/ERRATA.md` E18), and turn on Claude Code cloud routines for
-   `/daily-review` (daily) and `/weekly-strategy` (Sundays), reading `susquatch-reports`, with **extra usage OFF**.
-10. **Optional:** send the DDHQ student-access email (`docs/outreach/DDHQ_student_access.md`).
+   Then run `uv run susq-bridge record` once so the market map can be built before open.
+3. **Before Oct 1:** pick the day-one host. The Mac works now (`make up` with colima running). Oracle is step 6.
+4. **Before Oct 1:** run `/parse-rules`, paste Info-tab text for risky markets into `state/info_tabs/<id>.md`, and mark checked rows `verified: true`.
+5. **Oct 1, before 12:00 ET:** say **"go live"** (`/go-live` runs the pre-flight). Without it, everything stays in paper mode.
+6. **Oct 1, after the open:** read `reports/DAY1.md`. If its collateral section says so, set `[risk] use_collateral_buying_power = true`.
+7. **This week:** sign up for Oracle Cloud Always Free (card hold only; **never** upgrade to Pay-As-You-Go), then run `ops/install.sh`.
+8. **This week (optional, for zero-touch redeploys):** add a `CLOUDFLARE_API_TOKEN` GitHub secret (Pages, Workers Scripts and KV edit;
+   `docs/OPS.md` §4). The account id, KV id, dashboard password and push token are already set as secrets.
+9. **This week:** create a fine-grained GitHub token on `susquatch-reports` only (Issues: read and write; Contents: read), then run
+   `cd dashboard && npx wrangler secret put GITHUB_TOKEN --config ../worker/wrangler.jsonc`, or add it as `SUSQ_REPORTS_GITHUB_TOKEN`.
+   Until then the daily summary appears on the dashboard only.
+10. **Enable R2** in the Cloudflare dashboard (free tier; card on file), then `npx wrangler r2 bucket create susquatch-backups` and put an
+   R2 access key in `.env`, so nightly backups work.
+11. **Mid-October:** when `4-testing-schedule-v21.pdf` is posted, confirm Oct 21/28/31 (errata E18). Turn on Claude Code cloud routines for
+    `/daily-review` (daily) and `/weekly-strategy` (Sundays) with **extra usage OFF**.
+12. **Early November:** once Georgia lists the Nov 3 election, check `data/enr/last_health.json`, where `discovery.contests` should have no nulls.
+13. **Optional:** send the DDHQ student-access email (`docs/outreach/DDHQ_student_access.md`).
 
 ---
 

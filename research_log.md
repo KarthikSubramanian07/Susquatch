@@ -29,3 +29,11 @@ no order IDs, fills, or other players' names. Aggregates are fine.
 - **Data-source corrections:** CA SoS test dates (E18), Georgia's move off Clarity (E19), a Kalshi ticker/title mismatch (E20).
 - **Needle.** Interval coverage is nominal over 300 synthetic mail-first nights, and 3,000 counties recompute in 0.8 ms.
   Confirmed count corrections now flow from enr to needle (#14) instead of being dropped as regressions.
+- **CA test windows resolved.** The brief's Oct 22/29/Nov 1 are the 2025 special election's dates (schedule v19). Schedules v17–v20 all use
+  Wed E−13, Wed E−6, Sat E−3, which puts 2026 at **Oct 21, Oct 28, Oct 31**, 8–12 PT. A systemd timer now captures them (#18).
+- **Georgia** slugs are ad hoc (`GeneralPrimary51926`), so the feed now discovers the Nov 3 election by date and its ballot items by name.
+  Verified live on the May primary: 1,236 county results matching official splits (#20). Test payloads are withheld.
+- **ALL collateral** is modeled everywhere, but live sizing stays on full notional until day 1 shows the engine matches the model (#21).
+  Against the mock, the racer's bundle grows from 52 to 123 shares with collateral on, so this is worth getting right.
+- **Dashboard live** at susquatch.pages.dev, showing the real pre-open state. Lesson learned while deploying: never `source` a `.env` in a shell,
+  because an unquoted `a|b|batch` value runs `batch` (#19).
