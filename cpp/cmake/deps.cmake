@@ -17,3 +17,12 @@ if(SUSQ_BUILD_TESTS AND NOT TARGET GTest::gtest_main)
   endif()
   include(GoogleTest)
 endif()
+
+# Warning flags for first-party model targets (AGENT_BRIEF: -Wall -Wextra -Wpedantic clean).
+function(susq_target_warnings target)
+  if(MSVC)
+    target_compile_options(${target} PRIVATE /W4)
+  else()
+    target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic)
+  endif()
+endfunction()
