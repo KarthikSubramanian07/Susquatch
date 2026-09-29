@@ -1,0 +1,519 @@
+# Poll closing times, 2026 US general election (Tue 2026-11-03). Compiled from state statutes/election offices where fetchable, else 270toWin's 2026 schedule; UTC computed with IANA tzdata.
+[meta]
+election_date = "2026-11-03"
+compiled = "2026-09-28"
+utc_offsets_note = "DST ends 2026-11-01: EST=-05, CST=-06, MST=-07 (AZ year-round), PST=-08, AKST=-09, HST=-10"
+
+[states.AK]
+name = "Alaska"
+verified = true
+source = "https://www.elections.alaska.gov/doc/mp/2024/MediaPacket-2024-Primary.pdf"
+split_time_zone = true
+notes = "Division of Elections: polling places open 7am to 8pm local. Western Aleutians (west of 169.5W) are on Hawaii-Aleutian time. First unofficial results historically posted about 8:45-9pm AKT."
+closings = [
+  { zone = "Alaska time (most of state)", tz = "America/Anchorage", closes_local = "20:00", closes_utc = "2026-11-04T05:00:00Z" },
+  { zone = "Hawaii-Aleutian (western Aleutians)", tz = "America/Adak", closes_local = "20:00", closes_utc = "2026-11-04T06:00:00Z" },
+]
+
+[states.AL]
+name = "Alabama"
+verified = false
+source = "https://www.270towin.com/content/local-poll-closing-times-november-2026-general-election"
+split_time_zone = false
+notes = "7pm Central (270toWin 2026 local map). Official source not fetched."
+closings = [
+  { zone = "Central", tz = "America/Chicago", closes_local = "19:00", closes_utc = "2026-11-04T01:00:00Z" },
+]
+
+[states.AR]
+name = "Arkansas"
+verified = false
+source = "https://www.270towin.com/content/local-poll-closing-times-november-2026-general-election"
+split_time_zone = false
+notes = "7:30pm Central (270toWin 2026 local map). Official source not fetched."
+closings = [
+  { zone = "Central", tz = "America/Chicago", closes_local = "19:30", closes_utc = "2026-11-04T01:30:00Z" },
+]
+
+[states.AZ]
+name = "Arizona"
+verified = true
+source = "https://www.azleg.gov/ars/16/00565.htm"
+split_time_zone = false
+notes = "ARS 16-565: polls open 6am, close 7pm. Arizona stays on MST; the Navajo Nation observes DST but DST has ended by Nov 3, so all of AZ is UTC-7."
+closings = [
+  { zone = "Mountain Standard (no DST)", tz = "America/Phoenix", closes_local = "19:00", closes_utc = "2026-11-04T02:00:00Z" },
+]
+
+[states.CA]
+name = "California"
+verified = true
+source = "https://leginfo.legislature.ca.gov/faces/codes_displaySection.xhtml?lawCode=ELEC&sectionNum=14212"
+split_time_zone = false
+notes = "Elections Code 14212: polls open 7am to 8pm. SoS feed says data files are generated about every 5 minutes after 8pm PT."
+closings = [
+  { zone = "Pacific", tz = "America/Los_Angeles", closes_local = "20:00", closes_utc = "2026-11-04T04:00:00Z" },
+]
+
+[states.CO]
+name = "Colorado"
+verified = false
+source = "https://www.270towin.com/content/local-poll-closing-times-november-2026-general-election"
+split_time_zone = false
+notes = "7pm Mountain (270toWin). All-mail state with in-person vote centers. Official source not fetched."
+closings = [
+  { zone = "Mountain", tz = "America/Denver", closes_local = "19:00", closes_utc = "2026-11-04T02:00:00Z" },
+]
+
+[states.CT]
+name = "Connecticut"
+verified = false
+source = "https://www.270towin.com/content/local-poll-closing-times-november-2026-general-election"
+split_time_zone = false
+notes = "8pm Eastern (270toWin). Official source not fetched."
+closings = [
+  { zone = "Eastern", tz = "America/New_York", closes_local = "20:00", closes_utc = "2026-11-04T01:00:00Z" },
+]
+
+[states.DE]
+name = "Delaware"
+verified = false
+source = "https://www.270towin.com/content/local-poll-closing-times-november-2026-general-election"
+split_time_zone = false
+notes = "8pm Eastern (270toWin). Official source not fetched."
+closings = [
+  { zone = "Eastern", tz = "America/New_York", closes_local = "20:00", closes_utc = "2026-11-04T01:00:00Z" },
+]
+
+[states.FL]
+name = "Florida"
+verified = true
+source = "http://www.leg.state.fl.us/statutes/index.cfm?App_mode=Display_Statute&URL=0100-0199/0100/Sections/0100.011.html"
+split_time_zone = true
+notes = "FS 100.011: polls open 7am to 7pm local (customary time at the county seat). Panhandle west of the Apalachicola River is Central time. Voters in line at close may vote."
+closings = [
+  { zone = "Eastern (most of state)", tz = "America/New_York", closes_local = "19:00", closes_utc = "2026-11-04T00:00:00Z" },
+  { zone = "Central (western panhandle)", tz = "America/Chicago", closes_local = "19:00", closes_utc = "2026-11-04T01:00:00Z" },
+]
+
+[states.GA]
+name = "Georgia"
+verified = false
+source = "https://sos.ga.gov/how-to-guide/how-guide-voting"
+split_time_zone = false
+notes = "7am to 7pm Eastern per Georgia SoS (seen via search snippet; sos.ga.gov returned HTTP 403 to direct fetch on 2026-09-28). Matches 270toWin."
+closings = [
+  { zone = "Eastern", tz = "America/New_York", closes_local = "19:00", closes_utc = "2026-11-04T00:00:00Z" },
+]
+
+[states.HI]
+name = "Hawaii"
+verified = false
+source = "https://www.270towin.com/content/local-poll-closing-times-november-2026-general-election"
+split_time_zone = false
+notes = "7pm HST (270toWin). All-mail state with voter service centers. Official source not fetched."
+closings = [
+  { zone = "Hawaii", tz = "Pacific/Honolulu", closes_local = "19:00", closes_utc = "2026-11-04T05:00:00Z" },
+]
+
+[states.IA]
+name = "Iowa"
+verified = true
+source = "https://www.legis.iowa.gov/docs/code/49.73.pdf"
+split_time_zone = false
+notes = "Iowa Code 49.73: polls open 7am and close at 8pm for all elections."
+closings = [
+  { zone = "Central", tz = "America/Chicago", closes_local = "20:00", closes_utc = "2026-11-04T02:00:00Z" },
+]
+
+[states.ID]
+name = "Idaho"
+verified = true
+source = "https://legislature.idaho.gov/statutesrules/idstat/title34/t34ch11/sect34-1101/"
+split_time_zone = true
+notes = "Idaho Code 34-1101: polls close 8pm local. Northern panhandle is Pacific time. Electors in line at 8pm may vote."
+closings = [
+  { zone = "Mountain (southern Idaho)", tz = "America/Boise", closes_local = "20:00", closes_utc = "2026-11-04T03:00:00Z" },
+  { zone = "Pacific (northern panhandle)", tz = "America/Los_Angeles", closes_local = "20:00", closes_utc = "2026-11-04T04:00:00Z" },
+]
+
+[states.IL]
+name = "Illinois"
+verified = false
+source = "https://www.270towin.com/content/local-poll-closing-times-november-2026-general-election"
+split_time_zone = false
+notes = "7pm Central (270toWin). Official source not fetched."
+closings = [
+  { zone = "Central", tz = "America/Chicago", closes_local = "19:00", closes_utc = "2026-11-04T01:00:00Z" },
+]
+
+[states.IN]
+name = "Indiana"
+verified = false
+source = "https://www.270towin.com/content/local-poll-closing-times-november-2026-general-election"
+split_time_zone = true
+notes = "6pm local (270toWin). NW (Chicago area) and SW (Evansville area) counties are Central time. Official source not fetched (in.gov page 404)."
+closings = [
+  { zone = "Eastern (most of state)", tz = "America/Indiana/Indianapolis", closes_local = "18:00", closes_utc = "2026-11-03T23:00:00Z" },
+  { zone = "Central (NW and SW corners)", tz = "America/Chicago", closes_local = "18:00", closes_utc = "2026-11-04T00:00:00Z" },
+]
+
+[states.KS]
+name = "Kansas"
+verified = true
+source = "https://sos.ks.gov/elections/voter-information.html"
+split_time_zone = true
+notes = "KS SoS: polls must open 7am and close 7pm, but counties may close as late as 8pm local (K.S.A. 25-106). Greeley, Hamilton, Sherman and Wallace counties are Mountain time. Times below are the statutory default."
+closings = [
+  { zone = "Central (most of state)", tz = "America/Chicago", closes_local = "19:00", closes_utc = "2026-11-04T01:00:00Z" },
+  { zone = "Mountain (4 western counties)", tz = "America/Denver", closes_local = "19:00", closes_utc = "2026-11-04T02:00:00Z" },
+]
+
+[states.KY]
+name = "Kentucky"
+verified = false
+source = "https://www.270towin.com/content/local-poll-closing-times-november-2026-general-election"
+split_time_zone = true
+notes = "6pm local (270toWin). Western Kentucky is Central time. Official source not fetched."
+closings = [
+  { zone = "Eastern", tz = "America/New_York", closes_local = "18:00", closes_utc = "2026-11-03T23:00:00Z" },
+  { zone = "Central (western Kentucky)", tz = "America/Chicago", closes_local = "18:00", closes_utc = "2026-11-04T00:00:00Z" },
+]
+
+[states.LA]
+name = "Louisiana"
+verified = false
+source = "https://www.270towin.com/content/local-poll-closing-times-november-2026-general-election"
+split_time_zone = false
+notes = "8pm Central (270toWin). Official source not fetched."
+closings = [
+  { zone = "Central", tz = "America/Chicago", closes_local = "20:00", closes_utc = "2026-11-04T02:00:00Z" },
+]
+
+[states.MA]
+name = "Massachusetts"
+verified = false
+source = "https://www.270towin.com/content/local-poll-closing-times-november-2026-general-election"
+split_time_zone = false
+notes = "8pm Eastern (270toWin). Official source not fetched."
+closings = [
+  { zone = "Eastern", tz = "America/New_York", closes_local = "20:00", closes_utc = "2026-11-04T01:00:00Z" },
+]
+
+[states.MD]
+name = "Maryland"
+verified = false
+source = "https://www.270towin.com/content/local-poll-closing-times-november-2026-general-election"
+split_time_zone = false
+notes = "8pm Eastern (270toWin). Official source not fetched."
+closings = [
+  { zone = "Eastern", tz = "America/New_York", closes_local = "20:00", closes_utc = "2026-11-04T01:00:00Z" },
+]
+
+[states.ME]
+name = "Maine"
+verified = true
+source = "https://legislature.maine.gov/statutes/21-A/title21-Asec626.html"
+split_time_zone = false
+notes = "21-A MRSA 626: polls must close at 8pm (towns under 100 population may close once all registered voters have voted)."
+closings = [
+  { zone = "Eastern", tz = "America/New_York", closes_local = "20:00", closes_utc = "2026-11-04T01:00:00Z" },
+]
+
+[states.MI]
+name = "Michigan"
+verified = true
+source = "https://www.legislature.mi.gov/Laws/MCL?objectName=mcl-168-720"
+split_time_zone = true
+notes = "MCL 168.720: polls open 7am to 8pm local; electors in line at close may vote. Gogebic, Iron, Dickinson and Menominee counties (Upper Peninsula) are Central time."
+closings = [
+  { zone = "Eastern (most of state)", tz = "America/Detroit", closes_local = "20:00", closes_utc = "2026-11-04T01:00:00Z" },
+  { zone = "Central (4 UP counties)", tz = "America/Menominee", closes_local = "20:00", closes_utc = "2026-11-04T02:00:00Z" },
+]
+
+[states.MN]
+name = "Minnesota"
+verified = false
+source = "https://www.270towin.com/content/local-poll-closing-times-november-2026-general-election"
+split_time_zone = false
+notes = "8pm Central (270toWin). Official source not fetched."
+closings = [
+  { zone = "Central", tz = "America/Chicago", closes_local = "20:00", closes_utc = "2026-11-04T02:00:00Z" },
+]
+
+[states.MO]
+name = "Missouri"
+verified = false
+source = "https://www.270towin.com/content/local-poll-closing-times-november-2026-general-election"
+split_time_zone = false
+notes = "7pm Central (270toWin). Official source not fetched."
+closings = [
+  { zone = "Central", tz = "America/Chicago", closes_local = "19:00", closes_utc = "2026-11-04T01:00:00Z" },
+]
+
+[states.MS]
+name = "Mississippi"
+verified = false
+source = "https://www.270towin.com/content/local-poll-closing-times-november-2026-general-election"
+split_time_zone = false
+notes = "7pm Central (270toWin). Official source not fetched."
+closings = [
+  { zone = "Central", tz = "America/Chicago", closes_local = "19:00", closes_utc = "2026-11-04T01:00:00Z" },
+]
+
+[states.MT]
+name = "Montana"
+verified = false
+source = "https://www.270towin.com/content/local-poll-closing-times-november-2026-general-election"
+split_time_zone = false
+notes = "8pm Mountain (270toWin). Official source not fetched."
+closings = [
+  { zone = "Mountain", tz = "America/Denver", closes_local = "20:00", closes_utc = "2026-11-04T03:00:00Z" },
+]
+
+[states.NC]
+name = "North Carolina"
+verified = true
+source = "https://www.ncsbe.gov/voting/vote-person-election-day"
+split_time_zone = false
+notes = "NCSBE: polling places open 6:30am to 7:30pm; anyone in line at 7:30pm may vote."
+closings = [
+  { zone = "Eastern", tz = "America/New_York", closes_local = "19:30", closes_utc = "2026-11-04T00:30:00Z" },
+]
+
+[states.ND]
+name = "North Dakota"
+verified = true
+source = "https://ndlegis.gov/cencode/t16-1c01.pdf"
+split_time_zone = true
+notes = "NDCC 16.1-01: polls stay open until 7pm or a later hour (no later than 9pm) set per precinct by the city or county. 7pm local is the default and the 270toWin 2026 schedule; some precincts may close as late as 9pm local. Southwest ND is Mountain time."
+closings = [
+  { zone = "Central (most of state)", tz = "America/Chicago", closes_local = "19:00", closes_utc = "2026-11-04T01:00:00Z" },
+  { zone = "Mountain (southwest)", tz = "America/Denver", closes_local = "19:00", closes_utc = "2026-11-04T02:00:00Z" },
+]
+
+[states.NE]
+name = "Nebraska"
+verified = true
+source = "https://nebraskalegislature.gov/laws/statutes.php?statute=32-908"
+split_time_zone = true
+notes = "Neb. Rev. Stat. 32-908: Central zone 8am to 8pm, Mountain zone 7am to 7pm, so all polls close at the same instant."
+closings = [
+  { zone = "Central (most of state)", tz = "America/Chicago", closes_local = "20:00", closes_utc = "2026-11-04T02:00:00Z" },
+  { zone = "Mountain (western panhandle)", tz = "America/Denver", closes_local = "19:00", closes_utc = "2026-11-04T02:00:00Z" },
+]
+
+[states.NH]
+name = "New Hampshire"
+verified = false
+source = "https://gc.nh.gov/rsa/html/LXIII/659/659-4.htm"
+split_time_zone = false
+notes = "RSA 659:4 sets only a floor: polls close no earlier than 7pm. Many towns close at 7pm, many (including larger cities) at 8pm; 270toWin lists 8pm as latest. The 8pm upper bound was not verified from an official source (sos.nh.gov returned 403)."
+closings = [
+  { zone = "Eastern (towns closing at 7pm)", tz = "America/New_York", closes_local = "19:00", closes_utc = "2026-11-04T00:00:00Z" },
+  { zone = "Eastern (towns closing at 8pm)", tz = "America/New_York", closes_local = "20:00", closes_utc = "2026-11-04T01:00:00Z" },
+]
+
+[states.NJ]
+name = "New Jersey"
+verified = false
+source = "https://www.270towin.com/content/local-poll-closing-times-november-2026-general-election"
+split_time_zone = false
+notes = "8pm Eastern (270toWin). Official source not fetched."
+closings = [
+  { zone = "Eastern", tz = "America/New_York", closes_local = "20:00", closes_utc = "2026-11-04T01:00:00Z" },
+]
+
+[states.NM]
+name = "New Mexico"
+verified = false
+source = "https://www.270towin.com/content/local-poll-closing-times-november-2026-general-election"
+split_time_zone = false
+notes = "7pm Mountain (270toWin). Official source not fetched."
+closings = [
+  { zone = "Mountain", tz = "America/Denver", closes_local = "19:00", closes_utc = "2026-11-04T02:00:00Z" },
+]
+
+[states.NV]
+name = "Nevada"
+verified = true
+source = "https://www.leg.state.nv.us/nrs/nrs-293.html"
+split_time_zone = false
+notes = "NRS 293.273: polls open 7am and close 7pm."
+closings = [
+  { zone = "Pacific", tz = "America/Los_Angeles", closes_local = "19:00", closes_utc = "2026-11-04T03:00:00Z" },
+]
+
+[states.NY]
+name = "New York"
+verified = false
+source = "https://www.270towin.com/content/local-poll-closing-times-november-2026-general-election"
+split_time_zone = false
+notes = "9pm Eastern (270toWin). nysenate.gov statute page returned 403."
+closings = [
+  { zone = "Eastern", tz = "America/New_York", closes_local = "21:00", closes_utc = "2026-11-04T02:00:00Z" },
+]
+
+[states.OH]
+name = "Ohio"
+verified = true
+source = "https://www.ohiosos.gov/elections/voters/election-day-voting/"
+split_time_zone = false
+notes = "Ohio SoS: vote at your polling place between 6:30am and 7:30pm."
+closings = [
+  { zone = "Eastern", tz = "America/New_York", closes_local = "19:30", closes_utc = "2026-11-04T00:30:00Z" },
+]
+
+[states.OK]
+name = "Oklahoma"
+verified = false
+source = "https://www.270towin.com/content/local-poll-closing-times-november-2026-general-election"
+split_time_zone = false
+notes = "7pm Central (270toWin). Official source not fetched."
+closings = [
+  { zone = "Central", tz = "America/Chicago", closes_local = "19:00", closes_utc = "2026-11-04T01:00:00Z" },
+]
+
+[states.OR]
+name = "Oregon"
+verified = true
+source = "https://www.oregonlegislature.gov/bills_laws/ors/ors254.html"
+split_time_zone = true
+notes = "All-mail state. ORS 254.470: ballots must be at a drop site or county office by 8pm local; people in line at 8pm may still deposit. Most of Malheur County is Mountain time."
+closings = [
+  { zone = "Mountain (Malheur County)", tz = "America/Boise", closes_local = "20:00", closes_utc = "2026-11-04T03:00:00Z" },
+  { zone = "Pacific (rest of state)", tz = "America/Los_Angeles", closes_local = "20:00", closes_utc = "2026-11-04T04:00:00Z" },
+]
+
+[states.PA]
+name = "Pennsylvania"
+verified = false
+source = "https://www.270towin.com/content/local-poll-closing-times-november-2026-general-election"
+split_time_zone = false
+notes = "8pm Eastern (270toWin). Official source not fetched."
+closings = [
+  { zone = "Eastern", tz = "America/New_York", closes_local = "20:00", closes_utc = "2026-11-04T01:00:00Z" },
+]
+
+[states.RI]
+name = "Rhode Island"
+verified = false
+source = "https://www.270towin.com/content/local-poll-closing-times-november-2026-general-election"
+split_time_zone = false
+notes = "8pm Eastern (270toWin). Official source not fetched."
+closings = [
+  { zone = "Eastern", tz = "America/New_York", closes_local = "20:00", closes_utc = "2026-11-04T01:00:00Z" },
+]
+
+[states.SC]
+name = "South Carolina"
+verified = true
+source = "https://www.scstatehouse.gov/code/t07c013.php"
+split_time_zone = false
+notes = "SC Code 7-13-60: polls open 7am and close 7pm."
+closings = [
+  { zone = "Eastern", tz = "America/New_York", closes_local = "19:00", closes_utc = "2026-11-04T00:00:00Z" },
+]
+
+[states.SD]
+name = "South Dakota"
+verified = false
+source = "https://www.270towin.com/content/local-poll-closing-times-november-2026-general-election"
+split_time_zone = true
+notes = "7pm local (270toWin). West River is Mountain time. Official source not fetched."
+closings = [
+  { zone = "Central (East River)", tz = "America/Chicago", closes_local = "19:00", closes_utc = "2026-11-04T01:00:00Z" },
+  { zone = "Mountain (West River)", tz = "America/Denver", closes_local = "19:00", closes_utc = "2026-11-04T02:00:00Z" },
+]
+
+[states.TN]
+name = "Tennessee"
+verified = false
+source = "https://www.270towin.com/content/local-poll-closing-times-november-2026-general-election"
+split_time_zone = true
+notes = "Polls close at the same instant statewide per 270toWin: 8pm Eastern / 7pm Central. Official source not fetched."
+closings = [
+  { zone = "Eastern (East Tennessee)", tz = "America/New_York", closes_local = "20:00", closes_utc = "2026-11-04T01:00:00Z" },
+  { zone = "Central (Middle and West Tennessee)", tz = "America/Chicago", closes_local = "19:00", closes_utc = "2026-11-04T01:00:00Z" },
+]
+
+[states.TX]
+name = "Texas"
+verified = true
+source = "https://www.sos.state.tx.us/about/newsreleases/2025/103125.shtml"
+split_time_zone = true
+notes = "Texas SoS: voting hours on Election Day are 7am to 7pm at all polling places statewide. El Paso and Hudspeth counties are Mountain time."
+closings = [
+  { zone = "Central (most of state)", tz = "America/Chicago", closes_local = "19:00", closes_utc = "2026-11-04T01:00:00Z" },
+  { zone = "Mountain (El Paso, Hudspeth)", tz = "America/Denver", closes_local = "19:00", closes_utc = "2026-11-04T02:00:00Z" },
+]
+
+[states.UT]
+name = "Utah"
+verified = false
+source = "https://www.270towin.com/content/local-poll-closing-times-november-2026-general-election"
+split_time_zone = false
+notes = "8pm Mountain (270toWin). Mostly vote-by-mail. Official source not fetched."
+closings = [
+  { zone = "Mountain", tz = "America/Denver", closes_local = "20:00", closes_utc = "2026-11-04T03:00:00Z" },
+]
+
+[states.VA]
+name = "Virginia"
+verified = false
+source = "https://www.270towin.com/content/local-poll-closing-times-november-2026-general-election"
+split_time_zone = false
+notes = "7pm Eastern (270toWin). Official source not fetched."
+closings = [
+  { zone = "Eastern", tz = "America/New_York", closes_local = "19:00", closes_utc = "2026-11-04T00:00:00Z" },
+]
+
+[states.VT]
+name = "Vermont"
+verified = false
+source = "https://www.270towin.com/content/local-poll-closing-times-november-2026-general-election"
+split_time_zone = false
+notes = "7pm Eastern (270toWin). Official source not fetched."
+closings = [
+  { zone = "Eastern", tz = "America/New_York", closes_local = "19:00", closes_utc = "2026-11-04T00:00:00Z" },
+]
+
+[states.WA]
+name = "Washington"
+verified = false
+source = "https://www.270towin.com/content/local-poll-closing-times-november-2026-general-election"
+split_time_zone = false
+notes = "All-mail state; ballots due at drop boxes by 8pm Pacific (270toWin). Official source not fetched."
+closings = [
+  { zone = "Pacific", tz = "America/Los_Angeles", closes_local = "20:00", closes_utc = "2026-11-04T04:00:00Z" },
+]
+
+[states.WI]
+name = "Wisconsin"
+verified = false
+source = "https://www.270towin.com/content/local-poll-closing-times-november-2026-general-election"
+split_time_zone = false
+notes = "8pm Central (270toWin). Official source not fetched."
+closings = [
+  { zone = "Central", tz = "America/Chicago", closes_local = "20:00", closes_utc = "2026-11-04T02:00:00Z" },
+]
+
+[states.WV]
+name = "West Virginia"
+verified = false
+source = "https://www.270towin.com/content/local-poll-closing-times-november-2026-general-election"
+split_time_zone = false
+notes = "7:30pm Eastern (270toWin). Official source not fetched."
+closings = [
+  { zone = "Eastern", tz = "America/New_York", closes_local = "19:30", closes_utc = "2026-11-04T00:30:00Z" },
+]
+
+[states.WY]
+name = "Wyoming"
+verified = false
+source = "https://www.270towin.com/content/local-poll-closing-times-november-2026-general-election"
+split_time_zone = false
+notes = "7pm Mountain (270toWin). Official source not fetched."
+closings = [
+  { zone = "Mountain", tz = "America/Denver", closes_local = "19:00", closes_utc = "2026-11-04T02:00:00Z" },
+]
