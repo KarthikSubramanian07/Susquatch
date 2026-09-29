@@ -48,6 +48,16 @@ test: test-rust test-py ## Rust + Python tests
 
 ci: lint test ## What CI runs
 
+# ── contracts ────────────────────────────────────────────────────────────
+PROTOS := $(wildcard contracts/proto/susq/v1/*.proto)
+.PHONY: contracts contracts-check
+contracts: ## Regenerate Python contract types + golden fixtures (Rust/C++ generate at build time)
+	protoc -Icontracts/proto --python_out=py --pyi_out=py $(PROTOS)
+	$(UV) run python contracts/tools/make_fixtures.py
+
+contracts-check: contracts ## Fail if generated code or fixtures drifted from the schema
+	git diff --exit-code -- py/susq/v1 contracts/fixtures
+
 # ── ops ──────────────────────────────────────────────────────────────────
 .PHONY: docs-fetch secrets-scan
 docs-fetch: ## Snapshot the official API docs (flags changes)
