@@ -229,6 +229,8 @@ class StatusPusher:
                 )
             )
 
+        items.append(self._research_health(now))
+
         poller = _read_json(self.paths.poller_record)
         if poller and poller.get("last_ok_utc"):
             last = parse_utc(str(poller["last_ok_utc"]))
@@ -242,6 +244,34 @@ class StatusPusher:
                 )
             )
         return items
+
+    def _research_health(self, now: datetime) -> ops_pb2.HealthItem:
+        """The research scheduler's own job health (state/research/scheduler.json)."""
+        doc = _read_json(self.paths.scheduler_health)
+        if not doc or not doc.get("written_utc"):
+            return ops_pb2.HealthItem(name="research", state="down", detail="scheduler not running")
+        written = datetime.fromisoformat(str(doc["written_utc"]).replace("Z", "+00:00"))
+        age = (now - written).total_seconds()
+        written_ns = int(written.timestamp() * 1e9)
+        if age > self.cfg.stale_after_s:
+            return ops_pb2.HealthItem(
+                name="research",
+                state="down",
+                detail=f"no job has run for {_age_text(age)}",
+                last_ok_ns=written_ns,
+            )
+        jobs = doc.get("jobs") or {}
+        failing = sorted(k for k, v in jobs.items() if int((v or {}).get("consecutive_failures", 0)) >= 3)
+        if failing:
+            return ops_pb2.HealthItem(
+                name="research",
+                state="degraded",
+                detail="failing: " + ", ".join(failing),
+                last_ok_ns=written_ns,
+            )
+        return ops_pb2.HealthItem(
+            name="research", state="ok", detail=f"{len(jobs)} jobs ok", last_ok_ns=written_ns
+        )
 
     # ── pushing ────────────────────────────────────────────────────────────
     def _budget_used(self, today: str) -> int:

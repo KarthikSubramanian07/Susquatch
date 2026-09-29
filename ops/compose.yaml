@@ -1,13 +1,13 @@
 # Susquatch stack. aarch64-first (Oracle A1), identical on Apple Silicon via colima.
 #
 #   make up                     # = docker compose --project-directory . -f ops/compose.yaml up -d --build
-#   COMPOSE_PROFILES=bridge,scheduler   (in .env) picks the optional services below
+#   COMPOSE_PROFILES=bridge   (in .env) picks the optional services below
 #
-# Always on:   nats, status-pusher, kill-poller, watchdog (+ docker-proxy for it)
+# Always on:   nats, python-scheduler (research, never trades), status-pusher, kill-poller,
+#              watchdog (+ docker-proxy for it)
 # Profiles:    bridge     the Oct-1 Python bridge (retired after the Rust cutover)
 #              rust       rust-live (holds the trader lease after cutover)
 #              election   needle (Nov 3-4)
-#              scheduler  python-scheduler (collectors + daily sim/tourney)
 # The bridge and rust-live may both run: the trader lease guarantees only one of them ever places orders.
 #
 # Paths are relative to the project directory (the checkout). Nothing is published to the internet:
@@ -143,22 +143,19 @@ services:
     pids_limit: 128
     oom_score_adj: -300
 
+  # Research: collectors, fair values, telemetry, daily targets + report (docs/RESEARCH.md). Never trades.
   python-scheduler:
     <<: [*susq, *python-image]
-    profiles: [scheduler]
-    command: ["python", "-m", "susq.scheduler"]
-    environment:
-      <<: *susq-env
-      SUSQ_METRICS_ADDR: 0.0.0.0:9104
-    ports: ["127.0.0.1:9104:9104"]
+    command: ["susq", "research", "run"]
     depends_on:
       nats: { condition: service_healthy }
+    # The `fair` job runs every 15 s and every run rewrites state/research/scheduler.json: a stale file = hung.
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:9104/healthz', timeout=3)"]
+      test: ["CMD", "python", "-c", "import os,sys,time; sys.exit(time.time()-os.path.getmtime('/susq/state/research/scheduler.json')>180)"]
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 120s
+      start_period: 180s
     cpu_shares: 256
     cpus: 1.5
     mem_limit: 4g

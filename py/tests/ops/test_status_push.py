@@ -188,3 +188,28 @@ def test_backup_record_feeds_health(paths, clock, api) -> None:
     backup = next(h for h in pushed(route).health if h.name == "backup")
     assert backup.state == "degraded"
     assert "40h" in backup.detail
+
+
+def test_research_scheduler_health(paths, clock, api) -> None:
+    route = api.post("/api/push").respond(200)
+    p = make(paths, clock)
+    p.tick()
+    assert next(h for h in pushed(route).health if h.name == "research").state == "down"
+
+    paths.scheduler_health.parent.mkdir(parents=True, exist_ok=True)
+    doc = {
+        "written_utc": clock().isoformat(),
+        "jobs": {"collect": {"consecutive_failures": 0}, "fair": {"consecutive_failures": 4}},
+    }
+    paths.scheduler_health.write_text(json.dumps(doc))
+    clock.advance(200)
+    doc["written_utc"] = clock().isoformat()
+    paths.scheduler_health.write_text(json.dumps(doc))
+    p.tick()
+    research = next(h for h in pushed(route).health if h.name == "research")
+    assert research.state == "degraded"
+    assert research.detail == "failing: fair"
+
+    clock.advance(400)  # the file is now 400 s old: hung
+    p.tick()
+    assert next(h for h in pushed(route).health if h.name == "research").state == "down"

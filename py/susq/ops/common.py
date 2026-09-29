@@ -89,6 +89,11 @@ class OpsPaths:
         return self.home / "state" / "status.json"
 
     @property
+    def scheduler_health(self) -> Path:
+        """Written by the research scheduler (`susq research run`) after every job run."""
+        return self.home / "state" / "research" / "scheduler.json"
+
+    @property
     def lease_file(self) -> Path:
         return self.ops_state / "trader.lease"
 
