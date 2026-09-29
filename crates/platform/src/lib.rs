@@ -7,6 +7,7 @@
 
 pub mod adapter;
 pub mod error;
+pub mod mock;
 pub mod models;
 pub mod supermarket;
 
