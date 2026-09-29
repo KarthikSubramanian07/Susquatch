@@ -9,6 +9,18 @@ repository.workspace = true
 authors.workspace = true
 
 [dependencies]
+susq-core.workspace = true
+susq-contracts.workspace = true
+susq-platform.workspace = true
+chrono.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+tempfile.workspace = true
 
 [lints]
 workspace = true
