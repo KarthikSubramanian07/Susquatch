@@ -109,3 +109,14 @@ unkill: ## HUMAN ONLY: clear the dashboard Kill flag, then remove ops/KILL
 
 priority: ## Election-night CPU priority status (MODE=election|normal|auto)
 	ops/priority.sh $(or $(MODE),status)
+
+# ── dashboard + daily-summary Worker (Cloudflare; see docs/OPS.md) ──────
+.PHONY: dashboard-dev dashboard-test deploy-cloudflare
+dashboard-dev: ## Local dashboard on :8788 with seeded local KV (SEED=normal|killed|pending|stale|empty)
+	cd dashboard && npm install --no-fund --no-audit && SEED=$(or $(SEED),normal) npm run dev
+
+dashboard-test: ## Typecheck + tests for Pages Functions and the Worker
+	cd dashboard && npm ci --no-fund --no-audit && npm run check
+
+deploy-cloudflare: ## Deploy Pages + Worker through the GitHub workflow (one deploy path, no local creds)
+	gh workflow run deploy-cloudflare.yml --ref main && gh run list --workflow deploy-cloudflare.yml --limit 1
