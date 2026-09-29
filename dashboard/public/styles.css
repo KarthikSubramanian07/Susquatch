@@ -76,7 +76,6 @@ a:hover { text-decoration-color: var(--text-2); }
 .stages li.past { color: var(--muted); }
 .stages li.now { color: var(--text); background: var(--surface-2); }
 .stages li.now::before { opacity: 1; }
-.stages li + li { position: relative; }
 
 .meta { margin-left: auto; display: flex; align-items: center; gap: 18px; }
 .meta-item { display: flex; align-items: center; gap: 7px; font: 400 12px/1 var(--mono); color: var(--text-2); white-space: nowrap; }

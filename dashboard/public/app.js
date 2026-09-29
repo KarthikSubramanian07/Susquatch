@@ -69,7 +69,6 @@ async function refresh() {
       status: body.status,
       kill: body.kill,
       stale: body.stale,
-      staleAfterMs: body.staleAfterMs,
       serverNow: body.now,
       fetchedAt: Date.now(),
       error: null,
