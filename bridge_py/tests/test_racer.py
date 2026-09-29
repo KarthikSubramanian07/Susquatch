@@ -167,6 +167,34 @@ async def test_racer_trades_a_sum_above_one_violation(harness) -> None:  # type:
         await bridge.close()
 
 
+async def test_racer_stops_accumulating_at_the_relationship_exposure_cap(harness) -> None:  # type: ignore[no-untyped-def]
+    """Regression: a standing violation must not be re-traded without bound, one cooldown at a time."""
+    import dataclasses
+
+    await harness.write_market_map()
+    bridge = await harness.open_bridge("live")
+    try:
+        await harness.mock.post_admin("/_mock/violation", {"amount": 0.06})
+        await bridge.racer.load_relationships()
+        first = await bridge.racer.poll_once()
+        assert len(first) == 1
+        assert first[0].placed
+        await bridge.oms.reconcile()  # risk now sees the NO positions on both legs
+
+        # Cooldown elapsed and the violation is re-created, but the cap is already used up by what we hold.
+        bridge.racer._last_action.clear()
+        held = sum(abs(bridge.gateway.risk.position_value_pips(r.exchange_id)) for r in first[0].requests)
+        cap_frac = held / (bridge.gateway.risk.equity * 10_000)  # exactly what we already hold
+        bridge.racer.config = dataclasses.replace(
+            bridge.racer.config, max_relationship_notional_frac=cap_frac
+        )
+        await harness.mock.post_admin("/_mock/violation", {"amount": 0.06})
+        assert await bridge.racer.poll_once() == []
+        assert bridge.racer.stats.bundles == 1
+    finally:
+        await bridge.close()
+
+
 async def test_racer_refuses_unsafe_yes_bundle_when_an_independent_can_win(harness) -> None:  # type: ignore[no-untyped-def]
     tx_d, tx_r = "1307", "1308"
     await harness.mock.post_admin("/_mock/fair", {"exchangeId": tx_d, "fair": 0.40})

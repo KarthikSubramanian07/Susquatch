@@ -13,7 +13,10 @@
 //! Nothing is sent unless the generic [`verify`] proves `min over allowed outcomes of payoff − cost ≥
 //! min_edge` at the limit prices actually sent. Racer intents whose violation has closed are cancelled.
 
-use std::collections::HashSet;
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Mutex,
+};
 
 use susq_book::L2Book;
 use susq_core::{Action, ExchangeId, OrderBundle, Pips, Side, config::RacerCfg, price::PIPS_PER_UNIT};
@@ -108,9 +111,12 @@ pub fn verify(structure: Structure, legs: &[PricedLeg], min_edge: f64) -> Option
 }
 
 /// The constraints racer.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug)]
 pub struct ConstraintsRacer {
+    /// Strategy configuration.
     pub cfg: RacerCfg,
+    /// Last time (ns) a bundle was emitted per relationship: the re-fire cooldown.
+    last_fired_ns: Mutex<HashMap<String, i64>>,
 }
 
 /// A bundle shape before sizing: which side of which exchange, under which structure.
@@ -123,7 +129,29 @@ struct Plan<'b> {
 impl ConstraintsRacer {
     /// Racer with its config.
     pub fn new(cfg: RacerCfg) -> Self {
-        Self { cfg }
+        Self {
+            cfg,
+            last_fired_ns: Mutex::new(HashMap::new()),
+        }
+    }
+
+    fn cooling_down(&self, rel_id: &str, now_ns: i64) -> bool {
+        let cooldown_ns = i64::try_from(self.cfg.refire_cooldown_s)
+            .unwrap_or(i64::MAX)
+            .saturating_mul(1_000_000_000);
+        self.last_fired_ns
+            .lock()
+            .map(|m| {
+                m.get(rel_id)
+                    .is_some_and(|&t| now_ns.saturating_sub(t) < cooldown_ns)
+            })
+            .unwrap_or(true)
+    }
+
+    fn mark_fired(&self, rel_id: &str, now_ns: i64) {
+        if let Ok(mut m) = self.last_fired_ns.lock() {
+            m.insert(rel_id.to_owned(), now_ns);
+        }
     }
 
     fn plan<'b>(&self, snap: &Snapshot<'b>, rel: &Relationship) -> Result<Plan<'b>, String> {
@@ -165,9 +193,20 @@ impl ConstraintsRacer {
         };
         let cost = legs.iter().map(|l| l.price.prob()).sum::<f64>();
         let cap = shares_for_cost(self.cfg.max_bundle_notional_frac * snap.equity, cost);
-        let qty = depth_q.min(cap);
+        // Notional already held across this relationship's legs (marked at the prices we'd pay now).
+        let held: f64 = plan
+            .legs
+            .iter()
+            .zip(&legs)
+            .map(|((ex, _, _), leg)| snap.position(ex).unsigned_abs() as f64 * leg.price.prob())
+            .sum();
+        let room = (self.cfg.max_relationship_notional_frac * snap.equity - held).max(0.0);
+        let exposure_cap = shares_for_cost(room, cost);
+        let qty = depth_q.min(cap).min(exposure_cap);
         if qty < 1 {
-            return Err(format!("size < 1 (depth {depth_q}, budget cap {cap})"));
+            return Err(format!(
+                "size < 1 (depth {depth_q}, budget cap {cap}, relationship exposure cap {exposure_cap})"
+            ));
         }
         let legs = price_legs(plan, qty).ok_or("depth vanished while resizing")?;
         let edge =
@@ -231,6 +270,10 @@ impl ConstraintsRacer {
         {
             return;
         }
+        if self.cooling_down(rel_id, snap.now_ns) {
+            d.note(format!("racer {rel_id}: cooling down"));
+            return;
+        }
         let plan = match self.plan(snap, rel) {
             Ok(p) => p,
             Err(why) => {
@@ -276,6 +319,7 @@ impl ConstraintsRacer {
             plan.label,
             legs.len()
         ));
+        self.mark_fired(rel_id, snap.now_ns);
         d.bundles.push(OrderBundle { legs, atomic: true });
     }
 }
@@ -496,6 +540,66 @@ mod tests {
             b.legs[0].intent_id,
             format!("racer:rel-9:1:{}", w.now_ns / 1_000_000_000)
         );
+    }
+
+    fn standing_violation(w: &mut World) {
+        w.book("1", &[(4000, 1000)], &[(4200, 10)]);
+        w.book("2", &[(3500, 1000)], &[(3700, 10)]);
+        w.book("3", &[(3000, 1000)], &[(3200, 10)]);
+    }
+
+    #[test]
+    fn does_not_refire_on_a_standing_violation_within_the_cooldown() {
+        // Regression: in paper mode (fills don't consume liquidity) the racer fired 16 bundles in 20 s
+        // on one violation. After a bundle, the same relationship must wait `refire_cooldown_s`.
+        let racer = racer();
+        let mut w = me_world(false);
+        standing_violation(&mut w);
+        assert_eq!(racer.decide(&w.snap()).bundles.len(), 1);
+
+        w.now_ns += 10 * 1_000_000_000; // bundle filled, violation still standing, 10 s later
+        standing_violation(&mut w);
+        let d = racer.decide(&w.snap());
+        assert!(
+            d.bundles.is_empty(),
+            "re-fired inside the cooldown: {:?}",
+            d.notes
+        );
+        assert!(d.notes.iter().any(|n| n.contains("cooling down")));
+
+        w.now_ns += 25 * 1_000_000_000; // 35 s after the first bundle
+        standing_violation(&mut w); // fresh books at the new time
+        assert_eq!(racer.decide(&w.snap()).bundles.len(), 1, "cooldown should expire");
+    }
+
+    #[test]
+    fn relationship_exposure_cap_limits_accumulation() {
+        let mut w = me_world(false);
+        standing_violation(&mut w);
+        // 3% of 100k = 3,000 of room. Already holding 2,000 NO on each leg ≈ 0.60+0.65+0.70 → ~3,900 held.
+        for ex in ["1", "2", "3"] {
+            w.position(ex, -2_000);
+        }
+        let d = racer().decide(&w.snap());
+        assert!(
+            d.bundles.is_empty(),
+            "exceeded the relationship cap: {:?}",
+            d.notes
+        );
+        assert!(
+            d.notes.iter().any(|n| n.contains("relationship exposure cap 0")),
+            "{:?}",
+            d.notes
+        );
+
+        // A small existing position leaves room for a smaller bundle.
+        for ex in ["1", "2", "3"] {
+            w.position(ex, -1_000);
+        }
+        let d = racer().decide(&w.snap());
+        let q = d.bundles[0].legs[0].quantity.get();
+        // room = 3000 - 1000*(0.60+0.65+0.70) = 1050; 1050/1.95 = 538 > 1% budget (507) → budget binds.
+        assert!((1..=538).contains(&q), "q = {q}");
     }
 
     #[test]

@@ -237,7 +237,7 @@ class Racer:
             return None
         self.stats.violations += 1
         async with self._lock:  # one bundle at a time; dedupes bursts of the same violation
-            if time.time() - self._last_action.get(ev.relationship_id, 0.0) < self.config.order_ttl_s:
+            if time.time() - self._last_action.get(ev.relationship_id, 0.0) < self.config.refire_cooldown_s:
                 return None
             rel = self.relationships.get(ev.relationship_id)
             if rel is None:
@@ -316,7 +316,13 @@ class Racer:
         self, rel: Relationship, legs: list[Leg], outcomes: list[Outcome]
     ) -> tuple[Bundle | None, str]:
         equity_pips = int(self.gateway.risk.equity * PIPS_PER_UNIT)
-        max_notional = int(self.config.max_bundle_notional_frac * equity_pips)
+        # Per-bundle budget, further capped by what this relationship's legs already hold, so a standing
+        # violation can't accumulate unbounded exposure one cooldown at a time.
+        held = sum(abs(self.gateway.risk.position_value_pips(leg.exchange_id)) for leg in legs)
+        room = max(0, int(self.config.max_relationship_notional_frac * equity_pips) - held)
+        max_notional = min(int(self.config.max_bundle_notional_frac * equity_pips), room)
+        if max_notional <= 0:
+            return None, "relationship_exposure_cap"
         return build_bundle(
             rel.id,
             rel.type,

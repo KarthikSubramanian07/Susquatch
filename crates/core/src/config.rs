@@ -172,6 +172,10 @@ pub struct RacerCfg {
     pub min_edge: f64,
     pub max_bundle_notional_frac: f64,
     pub order_ttl_s: u64,
+    /// Minimum seconds between two bundles on the same relationship, even if it stays violated.
+    pub refire_cooldown_s: u64,
+    /// Cap on notional already held across a relationship's legs, as a fraction of equity.
+    pub max_relationship_notional_frac: f64,
 }
 
 impl Default for RacerCfg {
@@ -182,6 +186,8 @@ impl Default for RacerCfg {
             min_edge: 0.01,
             max_bundle_notional_frac: 0.01,
             order_ttl_s: 20,
+            refire_cooldown_s: 30,
+            max_relationship_notional_frac: 0.03,
         }
     }
 }

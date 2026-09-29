@@ -66,6 +66,8 @@ poll_interval_s = 3.0              # fallback when realtime is down; realtime is
 min_edge = 0.01                    # guaranteed-payoff margin after ticks, per bundle share
 max_bundle_notional_frac = 0.01
 order_ttl_s = 20
+refire_cooldown_s = 30             # never re-fire on the same relationship within this window
+max_relationship_notional_frac = 0.03  # cap on notional already held across a relationship's legs
 
 [strategies.sniper]
 enabled = true
