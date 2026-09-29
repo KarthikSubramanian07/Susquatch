@@ -1,0 +1,648 @@
+# Election-night results sources for `crates/enr` (poller) and `enr-capture` (archiver).
+#
+# Each [[sources]] entry is one public results site. `kind` selects the adapter:
+#   ca_sos      California SoS JSON (bulk media files or api.sos.ca.gov/returns/...)
+#   clarity     Clarity/Scytl ENR: polls <base_url>/current_ver.txt, fetches a snapshot only when
+#               the version changes (detail = "xml" for county x vote type, "json" for totals only)
+#   static_json any JSON document, mapped with the path language in adapters/json_map.rs
+# [[races]] maps a contest name exactly as the source prints it (case/whitespace-insensitive) to
+# our race id. Contests without a mapping are ignored. `source = "*"` applies to every source.
+# Endpoint formats and their verification dates are documented in docs/ELECTION_NIGHT.md.
+
+[defaults]
+poll_interval_s = 15.0          # jittered +-jitter_frac; failing sources back off exponentially
+jitter_frac = 0.2
+timeout_ms = 8000
+max_backoff_s = 120.0
+confirm_corrections_after = 2   # a decrease must repeat on 2 consecutive polls to be applied
+max_results_per_batch = 500
+
+[consistency]
+total_tol_frac = 0.02           # totals within 2 % are "the same count" ...
+abs_tol_votes = 50              # ... (floor, so tiny counties don't flap)
+share_tol_pts = 1.0             # ... and must agree on D two-party share within 1 pt
+
+# ── California Secretary of State ─────────────────────────────────────────────────────────
+# Bulk files (one per contest type, every county row included). Served by S3 behind CloudFront
+# with ETag/Last-Modified, so conditional GETs are cheap. SoS regenerates them about every
+# 5 minutes after polls close (Media Guide v20). Verified live 2026-09-28 (2026 general test data).
+[[sources]]
+id = "ca_sos"
+state = "CA"
+kind = "ca_sos"
+tz = "America/Los_Angeles"
+poll_interval_s = 20.0
+urls = [
+  "https://media.sos.ca.gov/media/governor.json",
+  "https://media.sos.ca.gov/media/us-rep.json",
+]
+
+# Same data via the REST API (AWS API Gateway). Kept as an independent second path so the
+# cross-source check can compare them; enable on election night.
+[[sources]]
+id = "ca_sos_api"
+state = "CA"
+kind = "ca_sos"
+tz = "America/Los_Angeles"
+enabled = false
+poll_interval_s = 30.0
+urls = [
+  "https://api.sos.ca.gov/returns/governor",
+  "https://api.sos.ca.gov/returns/us-rep/district/all",
+]
+
+# ── Clarity / Scytl ───────────────────────────────────────────────────────────────────────
+# 2024 South Carolina general (a real, final Clarity election) as the reference Clarity source:
+# enable it to exercise the adapter end to end. For 2026, replace the election id once SC
+# publishes it (the 2026 general is not listed yet: https://www.enr-scvotes.org/SC/elections.json).
+[[sources]]
+id = "clarity:SC"
+state = "SC"
+kind = "clarity"
+tz = "America/New_York"
+enabled = false
+base_url = "https://www.enr-scvotes.org/SC/122436"
+detail = "xml"
+
+# Iowa runs Clarity on its own domain; election ids are listed at
+# https://electionresults.iowa.gov/IA/elections.json (126082 = 2026 primary).
+[[sources]]
+id = "clarity:IA"
+state = "IA"
+kind = "clarity"
+tz = "America/Chicago"
+enabled = false
+base_url = "https://electionresults.iowa.gov/IA/126082"
+detail = "xml"
+
+# ── Georgia (Enhanced Voting; not Clarity since 2024) via the generic JSON mapper ───────────
+# 2024 presidential ballot item: county x vote method ("Advanced Voting", "Election Day",
+# "Absentee by Mail", "Provisional"). The endpoint is what results.sos.ga.gov itself calls; it is
+# not a published API. Swap the election slug and ballot-item id for 2026.
+[[sources]]
+id = "ga_sos"
+state = "GA"
+kind = "static_json"
+tz = "America/New_York"
+enabled = false
+urls = [
+  "https://results.sos.ga.gov/results/public/api/elections/Georgia/2024NovGen/data/ballot-item/01000000-d884-2e72-6367-08dcda4b86b5",
+]
+
+[sources.mapping]
+rows = "ballotItemWithBreakdown.breakdownResults[*]"
+race = "$.ballotItemWithBreakdown.name[0].text"
+county = "locality.name[0].text"
+candidates = "ballotOptions[*]"
+candidate_name = "name[0].text"
+candidate_party = "party.abbreviation"
+candidate_votes = "voteCount"
+candidate_breakdown = "groupResults[*]"
+breakdown_label = "groupName[0].text"
+breakdown_votes = "voteCount"
+precincts_reporting = "precinctReportingStatus.reportingUnits"
+precincts_total = "precinctReportingStatus.totalUnits"
+source_ts = "$.election.lastUpdated"
+
+# ── Race map ──────────────────────────────────────────────────────────────────────────────
+[[races]]
+source = "ca_sos"
+contest = "Governor"
+race_id = "2026-GOV-CA"
+
+[[races]]
+source = "ca_sos_api"
+contest = "Governor"
+race_id = "2026-GOV-CA"
+
+[[races]]
+source = "clarity:SC"
+contest = "President and Vice President"
+race_id = "2024-PRES-SC"
+
+[[races]]
+source = "ga_sos"
+contest = "President of the US"
+race_id = "2024-PRES-GA"
+
+# California House: the bulk files say "United States Representative District N", the REST API
+# says "U.S. House of Representatives District N". Both map to the same race id.
+[[races]]
+source = "ca_sos"
+contest = "United States Representative District 1"
+race_id = "2026-HOUSE-CA-1"
+
+[[races]]
+source = "ca_sos_api"
+contest = "U.S. House of Representatives District 1"
+race_id = "2026-HOUSE-CA-1"
+
+[[races]]
+source = "ca_sos"
+contest = "United States Representative District 2"
+race_id = "2026-HOUSE-CA-2"
+
+[[races]]
+source = "ca_sos_api"
+contest = "U.S. House of Representatives District 2"
+race_id = "2026-HOUSE-CA-2"
+
+[[races]]
+source = "ca_sos"
+contest = "United States Representative District 3"
+race_id = "2026-HOUSE-CA-3"
+
+[[races]]
+source = "ca_sos_api"
+contest = "U.S. House of Representatives District 3"
+race_id = "2026-HOUSE-CA-3"
+
+[[races]]
+source = "ca_sos"
+contest = "United States Representative District 4"
+race_id = "2026-HOUSE-CA-4"
+
+[[races]]
+source = "ca_sos_api"
+contest = "U.S. House of Representatives District 4"
+race_id = "2026-HOUSE-CA-4"
+
+[[races]]
+source = "ca_sos"
+contest = "United States Representative District 5"
+race_id = "2026-HOUSE-CA-5"
+
+[[races]]
+source = "ca_sos_api"
+contest = "U.S. House of Representatives District 5"
+race_id = "2026-HOUSE-CA-5"
+
+[[races]]
+source = "ca_sos"
+contest = "United States Representative District 6"
+race_id = "2026-HOUSE-CA-6"
+
+[[races]]
+source = "ca_sos_api"
+contest = "U.S. House of Representatives District 6"
+race_id = "2026-HOUSE-CA-6"
+
+[[races]]
+source = "ca_sos"
+contest = "United States Representative District 7"
+race_id = "2026-HOUSE-CA-7"
+
+[[races]]
+source = "ca_sos_api"
+contest = "U.S. House of Representatives District 7"
+race_id = "2026-HOUSE-CA-7"
+
+[[races]]
+source = "ca_sos"
+contest = "United States Representative District 8"
+race_id = "2026-HOUSE-CA-8"
+
+[[races]]
+source = "ca_sos_api"
+contest = "U.S. House of Representatives District 8"
+race_id = "2026-HOUSE-CA-8"
+
+[[races]]
+source = "ca_sos"
+contest = "United States Representative District 9"
+race_id = "2026-HOUSE-CA-9"
+
+[[races]]
+source = "ca_sos_api"
+contest = "U.S. House of Representatives District 9"
+race_id = "2026-HOUSE-CA-9"
+
+[[races]]
+source = "ca_sos"
+contest = "United States Representative District 10"
+race_id = "2026-HOUSE-CA-10"
+
+[[races]]
+source = "ca_sos_api"
+contest = "U.S. House of Representatives District 10"
+race_id = "2026-HOUSE-CA-10"
+
+[[races]]
+source = "ca_sos"
+contest = "United States Representative District 11"
+race_id = "2026-HOUSE-CA-11"
+
+[[races]]
+source = "ca_sos_api"
+contest = "U.S. House of Representatives District 11"
+race_id = "2026-HOUSE-CA-11"
+
+[[races]]
+source = "ca_sos"
+contest = "United States Representative District 12"
+race_id = "2026-HOUSE-CA-12"
+
+[[races]]
+source = "ca_sos_api"
+contest = "U.S. House of Representatives District 12"
+race_id = "2026-HOUSE-CA-12"
+
+[[races]]
+source = "ca_sos"
+contest = "United States Representative District 13"
+race_id = "2026-HOUSE-CA-13"
+
+[[races]]
+source = "ca_sos_api"
+contest = "U.S. House of Representatives District 13"
+race_id = "2026-HOUSE-CA-13"
+
+[[races]]
+source = "ca_sos"
+contest = "United States Representative District 14"
+race_id = "2026-HOUSE-CA-14"
+
+[[races]]
+source = "ca_sos_api"
+contest = "U.S. House of Representatives District 14"
+race_id = "2026-HOUSE-CA-14"
+
+[[races]]
+source = "ca_sos"
+contest = "United States Representative District 15"
+race_id = "2026-HOUSE-CA-15"
+
+[[races]]
+source = "ca_sos_api"
+contest = "U.S. House of Representatives District 15"
+race_id = "2026-HOUSE-CA-15"
+
+[[races]]
+source = "ca_sos"
+contest = "United States Representative District 16"
+race_id = "2026-HOUSE-CA-16"
+
+[[races]]
+source = "ca_sos_api"
+contest = "U.S. House of Representatives District 16"
+race_id = "2026-HOUSE-CA-16"
+
+[[races]]
+source = "ca_sos"
+contest = "United States Representative District 17"
+race_id = "2026-HOUSE-CA-17"
+
+[[races]]
+source = "ca_sos_api"
+contest = "U.S. House of Representatives District 17"
+race_id = "2026-HOUSE-CA-17"
+
+[[races]]
+source = "ca_sos"
+contest = "United States Representative District 18"
+race_id = "2026-HOUSE-CA-18"
+
+[[races]]
+source = "ca_sos_api"
+contest = "U.S. House of Representatives District 18"
+race_id = "2026-HOUSE-CA-18"
+
+[[races]]
+source = "ca_sos"
+contest = "United States Representative District 19"
+race_id = "2026-HOUSE-CA-19"
+
+[[races]]
+source = "ca_sos_api"
+contest = "U.S. House of Representatives District 19"
+race_id = "2026-HOUSE-CA-19"
+
+[[races]]
+source = "ca_sos"
+contest = "United States Representative District 20"
+race_id = "2026-HOUSE-CA-20"
+
+[[races]]
+source = "ca_sos_api"
+contest = "U.S. House of Representatives District 20"
+race_id = "2026-HOUSE-CA-20"
+
+[[races]]
+source = "ca_sos"
+contest = "United States Representative District 21"
+race_id = "2026-HOUSE-CA-21"
+
+[[races]]
+source = "ca_sos_api"
+contest = "U.S. House of Representatives District 21"
+race_id = "2026-HOUSE-CA-21"
+
+[[races]]
+source = "ca_sos"
+contest = "United States Representative District 22"
+race_id = "2026-HOUSE-CA-22"
+
+[[races]]
+source = "ca_sos_api"
+contest = "U.S. House of Representatives District 22"
+race_id = "2026-HOUSE-CA-22"
+
+[[races]]
+source = "ca_sos"
+contest = "United States Representative District 23"
+race_id = "2026-HOUSE-CA-23"
+
+[[races]]
+source = "ca_sos_api"
+contest = "U.S. House of Representatives District 23"
+race_id = "2026-HOUSE-CA-23"
+
+[[races]]
+source = "ca_sos"
+contest = "United States Representative District 24"
+race_id = "2026-HOUSE-CA-24"
+
+[[races]]
+source = "ca_sos_api"
+contest = "U.S. House of Representatives District 24"
+race_id = "2026-HOUSE-CA-24"
+
+[[races]]
+source = "ca_sos"
+contest = "United States Representative District 25"
+race_id = "2026-HOUSE-CA-25"
+
+[[races]]
+source = "ca_sos_api"
+contest = "U.S. House of Representatives District 25"
+race_id = "2026-HOUSE-CA-25"
+
+[[races]]
+source = "ca_sos"
+contest = "United States Representative District 26"
+race_id = "2026-HOUSE-CA-26"
+
+[[races]]
+source = "ca_sos_api"
+contest = "U.S. House of Representatives District 26"
+race_id = "2026-HOUSE-CA-26"
+
+[[races]]
+source = "ca_sos"
+contest = "United States Representative District 27"
+race_id = "2026-HOUSE-CA-27"
+
+[[races]]
+source = "ca_sos_api"
+contest = "U.S. House of Representatives District 27"
+race_id = "2026-HOUSE-CA-27"
+
+[[races]]
+source = "ca_sos"
+contest = "United States Representative District 28"
+race_id = "2026-HOUSE-CA-28"
+
+[[races]]
+source = "ca_sos_api"
+contest = "U.S. House of Representatives District 28"
+race_id = "2026-HOUSE-CA-28"
+
+[[races]]
+source = "ca_sos"
+contest = "United States Representative District 29"
+race_id = "2026-HOUSE-CA-29"
+
+[[races]]
+source = "ca_sos_api"
+contest = "U.S. House of Representatives District 29"
+race_id = "2026-HOUSE-CA-29"
+
+[[races]]
+source = "ca_sos"
+contest = "United States Representative District 30"
+race_id = "2026-HOUSE-CA-30"
+
+[[races]]
+source = "ca_sos_api"
+contest = "U.S. House of Representatives District 30"
+race_id = "2026-HOUSE-CA-30"
+
+[[races]]
+source = "ca_sos"
+contest = "United States Representative District 31"
+race_id = "2026-HOUSE-CA-31"
+
+[[races]]
+source = "ca_sos_api"
+contest = "U.S. House of Representatives District 31"
+race_id = "2026-HOUSE-CA-31"
+
+[[races]]
+source = "ca_sos"
+contest = "United States Representative District 32"
+race_id = "2026-HOUSE-CA-32"
+
+[[races]]
+source = "ca_sos_api"
+contest = "U.S. House of Representatives District 32"
+race_id = "2026-HOUSE-CA-32"
+
+[[races]]
+source = "ca_sos"
+contest = "United States Representative District 33"
+race_id = "2026-HOUSE-CA-33"
+
+[[races]]
+source = "ca_sos_api"
+contest = "U.S. House of Representatives District 33"
+race_id = "2026-HOUSE-CA-33"
+
+[[races]]
+source = "ca_sos"
+contest = "United States Representative District 34"
+race_id = "2026-HOUSE-CA-34"
+
+[[races]]
+source = "ca_sos_api"
+contest = "U.S. House of Representatives District 34"
+race_id = "2026-HOUSE-CA-34"
+
+[[races]]
+source = "ca_sos"
+contest = "United States Representative District 35"
+race_id = "2026-HOUSE-CA-35"
+
+[[races]]
+source = "ca_sos_api"
+contest = "U.S. House of Representatives District 35"
+race_id = "2026-HOUSE-CA-35"
+
+[[races]]
+source = "ca_sos"
+contest = "United States Representative District 36"
+race_id = "2026-HOUSE-CA-36"
+
+[[races]]
+source = "ca_sos_api"
+contest = "U.S. House of Representatives District 36"
+race_id = "2026-HOUSE-CA-36"
+
+[[races]]
+source = "ca_sos"
+contest = "United States Representative District 37"
+race_id = "2026-HOUSE-CA-37"
+
+[[races]]
+source = "ca_sos_api"
+contest = "U.S. House of Representatives District 37"
+race_id = "2026-HOUSE-CA-37"
+
+[[races]]
+source = "ca_sos"
+contest = "United States Representative District 38"
+race_id = "2026-HOUSE-CA-38"
+
+[[races]]
+source = "ca_sos_api"
+contest = "U.S. House of Representatives District 38"
+race_id = "2026-HOUSE-CA-38"
+
+[[races]]
+source = "ca_sos"
+contest = "United States Representative District 39"
+race_id = "2026-HOUSE-CA-39"
+
+[[races]]
+source = "ca_sos_api"
+contest = "U.S. House of Representatives District 39"
+race_id = "2026-HOUSE-CA-39"
+
+[[races]]
+source = "ca_sos"
+contest = "United States Representative District 40"
+race_id = "2026-HOUSE-CA-40"
+
+[[races]]
+source = "ca_sos_api"
+contest = "U.S. House of Representatives District 40"
+race_id = "2026-HOUSE-CA-40"
+
+[[races]]
+source = "ca_sos"
+contest = "United States Representative District 41"
+race_id = "2026-HOUSE-CA-41"
+
+[[races]]
+source = "ca_sos_api"
+contest = "U.S. House of Representatives District 41"
+race_id = "2026-HOUSE-CA-41"
+
+[[races]]
+source = "ca_sos"
+contest = "United States Representative District 42"
+race_id = "2026-HOUSE-CA-42"
+
+[[races]]
+source = "ca_sos_api"
+contest = "U.S. House of Representatives District 42"
+race_id = "2026-HOUSE-CA-42"
+
+[[races]]
+source = "ca_sos"
+contest = "United States Representative District 43"
+race_id = "2026-HOUSE-CA-43"
+
+[[races]]
+source = "ca_sos_api"
+contest = "U.S. House of Representatives District 43"
+race_id = "2026-HOUSE-CA-43"
+
+[[races]]
+source = "ca_sos"
+contest = "United States Representative District 44"
+race_id = "2026-HOUSE-CA-44"
+
+[[races]]
+source = "ca_sos_api"
+contest = "U.S. House of Representatives District 44"
+race_id = "2026-HOUSE-CA-44"
+
+[[races]]
+source = "ca_sos"
+contest = "United States Representative District 45"
+race_id = "2026-HOUSE-CA-45"
+
+[[races]]
+source = "ca_sos_api"
+contest = "U.S. House of Representatives District 45"
+race_id = "2026-HOUSE-CA-45"
+
+[[races]]
+source = "ca_sos"
+contest = "United States Representative District 46"
+race_id = "2026-HOUSE-CA-46"
+
+[[races]]
+source = "ca_sos_api"
+contest = "U.S. House of Representatives District 46"
+race_id = "2026-HOUSE-CA-46"
+
+[[races]]
+source = "ca_sos"
+contest = "United States Representative District 47"
+race_id = "2026-HOUSE-CA-47"
+
+[[races]]
+source = "ca_sos_api"
+contest = "U.S. House of Representatives District 47"
+race_id = "2026-HOUSE-CA-47"
+
+[[races]]
+source = "ca_sos"
+contest = "United States Representative District 48"
+race_id = "2026-HOUSE-CA-48"
+
+[[races]]
+source = "ca_sos_api"
+contest = "U.S. House of Representatives District 48"
+race_id = "2026-HOUSE-CA-48"
+
+[[races]]
+source = "ca_sos"
+contest = "United States Representative District 49"
+race_id = "2026-HOUSE-CA-49"
+
+[[races]]
+source = "ca_sos_api"
+contest = "U.S. House of Representatives District 49"
+race_id = "2026-HOUSE-CA-49"
+
+[[races]]
+source = "ca_sos"
+contest = "United States Representative District 50"
+race_id = "2026-HOUSE-CA-50"
+
+[[races]]
+source = "ca_sos_api"
+contest = "U.S. House of Representatives District 50"
+race_id = "2026-HOUSE-CA-50"
+
+[[races]]
+source = "ca_sos"
+contest = "United States Representative District 51"
+race_id = "2026-HOUSE-CA-51"
+
+[[races]]
+source = "ca_sos_api"
+contest = "U.S. House of Representatives District 51"
+race_id = "2026-HOUSE-CA-51"
+
+[[races]]
+source = "ca_sos"
+contest = "United States Representative District 52"
+race_id = "2026-HOUSE-CA-52"
+
+[[races]]
+source = "ca_sos_api"
+contest = "U.S. House of Representatives District 52"
+race_id = "2026-HOUSE-CA-52"
