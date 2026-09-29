@@ -12,6 +12,7 @@ use susq_core::{Action, BookSide, ExchangeId, MarketId, OrderId, Pips, Side, sid
 
 use super::{CALLER, MockConfig};
 use crate::{
+    collateral::{CollateralGraph, FillEconomics},
     error::{ApiError, PlatformResult},
     models::*,
 };
@@ -88,7 +89,7 @@ impl EngineOrder {
         }
     }
 
-    /// The `POST /orders` response for this order after `exec`.
+    /// The `POST /orders` response for this order after `exec` (`all` is filled in by the state).
     fn ack(&self, exec: &Execution) -> OrderAck {
         let stp = self.status == Status::SelfTradePrevented;
         OrderAck {
@@ -104,12 +105,7 @@ impl EngineOrder {
             quantity_traded: exec.traded as f64,
             total_cost: exec.notional,
             fill_price: (exec.traded > 0).then(|| exec.notional / exec.traded as f64),
-            all: Some(AllEconomics {
-                full_notional_cost: exec.notional,
-                effective_entry_cost: exec.cash_out,
-                net_buying_power_impact: exec.cash_out,
-                ..AllEconomics::default()
-            }),
+            all: None,
         }
     }
 }
@@ -120,8 +116,13 @@ struct Execution {
     traded: i64,
     /// Side-relative notional of the fills (the order's `totalCost`).
     notional: f64,
-    /// Net cash paid by the taker (negative when netting released cash).
+    /// Net cash paid by the taker (negative when netting released cash), after ALL collateral.
     cash_out: f64,
+    /// Nominal cost of the shares the taker opened.
+    opening_cost: f64,
+    /// ALL advance granted / repaid on the taker's fills.
+    savings: f64,
+    repayment: f64,
 }
 
 /// A new order before canonicalization.
@@ -261,7 +262,12 @@ pub(super) struct State {
     pub(super) constraints: Vec<ConstraintEval>,
     pub(super) leaderboard: Leaderboard,
     pub(super) realtime_token: RealtimeToken,
-    pub(super) collateral: Collateral,
+    /// Canned `GET /portfolio/collateral` (tests); `None` serves the modeled components.
+    pub(super) collateral_override: Option<Collateral>,
+    /// ALL collateral components of [`Self::relationships`].
+    pub(super) graph: CollateralGraph,
+    /// Outstanding ALL advance per owner, per component id.
+    pub(super) advances: HashMap<String, HashMap<String, f64>>,
 }
 
 impl State {
@@ -287,8 +293,87 @@ impl State {
             constraints: Vec::new(),
             leaderboard: Leaderboard::default(),
             realtime_token: RealtimeToken::default(),
-            collateral: Collateral::default(),
+            collateral_override: None,
+            graph: CollateralGraph::default(),
+            advances: HashMap::new(),
         }
+    }
+
+    /// Replace the relationships and the collateral components built from them.
+    pub(super) fn set_relationships(&mut self, relationships: Vec<Relationship>) {
+        self.graph = CollateralGraph::new(&relationships);
+        self.relationships = relationships;
+    }
+
+    /// The component `exchange` belongs to, when ALL collateral is modeled.
+    fn linked(&self, exchange: &ExchangeId) -> Option<&crate::collateral::Component> {
+        if self.cfg.collateral {
+            self.graph.component_of(exchange)
+        } else {
+            None
+        }
+    }
+
+    /// Outstanding ALL advance of `owner` on a component.
+    pub(super) fn outstanding(&self, owner: &str, component: &str) -> f64 {
+        self.advances
+            .get(owner)
+            .and_then(|m| m.get(component))
+            .copied()
+            .unwrap_or(0.0)
+    }
+
+    /// Guaranteed payout floor of `owner`'s positions in a component.
+    pub(super) fn floor_of(&self, owner: &str, component: &crate::collateral::Component) -> Option<f64> {
+        component.floor(&|e| self.position(owner, e))
+    }
+
+    /// `AllExecutionEconomics` for an order of `owner` on `exchange` (None when not linked).
+    fn all_economics(&self, owner: &str, exchange: &ExchangeId, exec: &Execution) -> Option<AllEconomics> {
+        let comp = self.linked(exchange)?;
+        Some(AllEconomics {
+            full_notional_cost: exec.opening_cost,
+            effective_entry_cost: exec.opening_cost - exec.savings,
+            collateral_savings: exec.savings,
+            relationship_ids: comp.relationship_ids.clone(),
+            component_id: Some(comp.id.clone()),
+            guaranteed_payout_floor_after: self.floor_of(owner, comp).unwrap_or(0.0),
+            outstanding_advance_after: self.outstanding(owner, &comp.id),
+            collateral_repayment: exec.repayment,
+            net_buying_power_impact: exec.cash_out,
+        })
+    }
+
+    /// Outstanding ALL advance of `owner` across every component (a liability).
+    pub(super) fn liability(&self, owner: &str) -> f64 {
+        self.advances.get(owner).map_or(0.0, |m| m.values().sum())
+    }
+
+    /// Modeled `GET /portfolio/collateral` rows of `owner`: every component it touches.
+    pub(super) fn collateral_of(&self, owner: &str) -> Collateral {
+        if !self.cfg.collateral {
+            return Collateral::default();
+        }
+        let data = self
+            .graph
+            .components()
+            .iter()
+            .filter(|c| {
+                self.outstanding(owner, &c.id) > 0.0
+                    || c.exchange_ids.iter().any(|e| self.position(owner, e) != 0)
+            })
+            .map(|c| CollateralComponent {
+                profile_id: owner.to_owned(),
+                tournament_id: Some(self.cfg.tournament_id.clone()),
+                outstanding_advance: self.outstanding(owner, &c.id),
+                component_id: c.id.clone(),
+                covered_exchange_ids: c.exchange_ids.clone(),
+                relationship_ids: c.relationship_ids.clone(),
+                guaranteed_payout_floor: self.floor_of(owner, c),
+                diagnostic: c.diagnostic.clone(),
+            })
+            .collect();
+        Collateral { data }
     }
 
     /// Register an open market and its exchanges.
@@ -383,7 +468,8 @@ impl State {
         } else {
             Status::Open
         };
-        let ack = order.ack(&exec);
+        let mut ack = order.ack(&exec);
+        ack.all = self.all_economics(&order.owner, &order.exchange, &exec);
         self.orders.insert(id, order);
         (OrderId(id), ack)
     }
@@ -532,7 +618,11 @@ impl State {
             let maker_owner = maker.owner.clone();
             taker.remaining -= qty;
             let yes_delta = taker.book_side.yes_delta_sign() * qty;
-            exec.cash_out += self.settle(&taker.owner, taker.id, &taker.exchange, yes_delta, px, now);
+            let (paid, econ) = self.settle(&taker.owner, taker.id, &taker.exchange, yes_delta, px, now);
+            exec.cash_out += paid;
+            exec.opening_cost += econ.full_cost;
+            exec.savings += econ.savings;
+            exec.repayment += econ.repayment;
             self.settle(&maker_owner, maker_id, &taker.exchange, -yes_delta, px, now);
             self.last_trade.insert(taker.exchange.clone(), px);
             exec.traded += qty;
@@ -555,7 +645,8 @@ impl State {
             .any(|m| m.owner == order.owner && m.crossed_by(order.book_side, order.yes_price))
     }
 
-    /// Book one owner's side of a trade: position, cash and fill record. Returns cash paid.
+    /// Book one owner's side of a trade: position, cash, ALL advance and fill record.
+    /// Returns the cash paid (net of any advance, plus any repayment) and the fill's economics.
     fn settle(
         &mut self,
         owner: &str,
@@ -564,12 +655,30 @@ impl State {
         yes_delta: i64,
         px: Pips,
         now: DateTime<Utc>,
-    ) -> f64 {
-        let paid = self
+    ) -> (f64, FillEconomics) {
+        let econ = match self.linked(exchange) {
+            Some(_) => {
+                let outstanding = self.advances.get(owner).cloned().unwrap_or_default();
+                let pos = |e: &ExchangeId| self.position(owner, e);
+                self.graph
+                    .fill(&pos, &outstanding, exchange, yes_delta, px.as_f64())
+            }
+            None => FillEconomics::default(),
+        };
+        let mut paid = self
             .holdings
             .entry((owner.to_owned(), exchange.clone()))
             .or_default()
             .apply(yes_delta, px.as_f64());
+        if let Some(component) = &econ.component_id {
+            paid += econ.repayment - econ.savings;
+            let book = self.advances.entry(owner.to_owned()).or_default();
+            if econ.outstanding_after > 0.0 {
+                book.insert(component.clone(), econ.outstanding_after);
+            } else {
+                book.remove(component);
+            }
+        }
         *self.cash.entry(owner.to_owned()).or_insert(0.0) -= paid;
         self.fills.push(FillRecord {
             id: self.next_fill_id,
@@ -581,7 +690,7 @@ impl State {
             at: now,
         });
         self.next_fill_id += 1;
-        paid
+        (paid, econ)
     }
 }
 

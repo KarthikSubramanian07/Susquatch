@@ -739,3 +739,110 @@ async fn replacing_liquidity_fills_resting_orders_it_crosses() {
         1
     );
 }
+
+// ── ALL collateral ───────────────────────────────────────────────────────────────────────────
+
+fn senate_pair() -> Relationship {
+    serde_json::from_value(serde_json::json!({
+        "id": "rel-senate",
+        "type": "mutually_exclusive",
+        "status": "active",
+        "isExhaustive": true,
+        "nodes": [
+            {"exchangeId": "1", "role": "member"},
+            {"exchangeId": "2", "role": "member"}
+        ]
+    }))
+    .expect("relationship")
+}
+
+fn no_bundle(m: &MockPlatform) -> MultiLegRequest {
+    // YES bids at 0.40 and 0.55: NO costs 0.60 + 0.45 = 1.05 and pays at least 1.
+    m.seed_order("a", "1", Side::Yes, Action::Buy, 10, px(4000));
+    m.seed_order("b", "2", Side::Yes, Action::Buy, 10, px(5500));
+    MultiLegRequest {
+        legs: vec![
+            order("1", Side::No, Action::Buy, 10, 6000),
+            order("2", Side::No, Action::Buy, 10, 4500),
+        ],
+        idempotency_key: "bundle".to_owned(),
+        relationship_constraint: None,
+    }
+}
+
+#[tokio::test]
+async fn relationship_linked_fills_report_all_and_get_the_advance() {
+    let (_, m) = mock();
+    m.set_relationships(vec![senate_pair()]);
+    let resp = m.place_multi_leg(&no_bundle(&m)).await.expect("placed");
+    let first = resp.results[0].data.all.clone().expect("linked leg has all");
+    let second = resp.results[1].data.all.clone().expect("linked leg has all");
+    assert_close(first.collateral_savings, 0.0);
+    assert_close(first.full_notional_cost, 6.0);
+    assert_close(second.full_notional_cost, 4.5);
+    assert_close(second.collateral_savings, 4.5);
+    assert_close(second.effective_entry_cost, 0.0);
+    assert_close(second.guaranteed_payout_floor_after, 10.0);
+    assert_close(second.outstanding_advance_after, 4.5);
+    assert_eq!(second.component_id.as_deref(), Some("1-2"));
+    assert_eq!(second.relationship_ids, vec!["rel-senate".to_owned()]);
+    assert_close(m.cash_of(CALLER), 1_000.0 - 6.0);
+
+    let coll = m.collateral(&tid()).await.expect("collateral");
+    assert_eq!(coll.data.len(), 1);
+    assert_eq!(coll.data[0].component_id, "1-2");
+    assert_close(coll.data[0].outstanding_advance, 4.5);
+    assert_eq!(coll.data[0].guaranteed_payout_floor, Some(10.0));
+
+    // Selling the second leg back removes the backing: the advance is repaid.
+    m.seed_order("c", "2", Side::Yes, Action::Sell, 10, px(5500));
+    let sell = m
+        .place_order(&placing("sell", order("2", Side::No, Action::Sell, 10, 4500)))
+        .await
+        .expect("placed");
+    let all = sell.all.expect("linked");
+    assert_close(all.collateral_repayment, 4.5);
+    assert_close(all.outstanding_advance_after, 0.0);
+}
+
+#[tokio::test]
+async fn unlinked_fills_have_no_relationship_quote() {
+    let (_, m) = mock();
+    m.set_relationships(vec![senate_pair()]);
+    m.seed_order("a", "3", Side::Yes, Action::Sell, 5, px(5000));
+    let ack = m
+        .place_order(&placing("k", order("3", Side::Yes, Action::Buy, 5, 5000)))
+        .await
+        .expect("placed");
+    assert_close(ack.quantity_traded, 5.0);
+    assert!(ack.all.is_none());
+    assert!(m.collateral(&tid()).await.expect("collateral").data.is_empty());
+}
+
+#[tokio::test]
+async fn collateral_off_is_plain_cash() {
+    let (_, m) = mock_with(MockConfig {
+        collateral: false,
+        ..config(200)
+    });
+    m.set_relationships(vec![senate_pair()]);
+    let resp = m.place_multi_leg(&no_bundle(&m)).await.expect("placed");
+    assert!(resp.results.iter().all(|r| r.data.all.is_none()));
+    assert_close(m.cash_of(CALLER), 1_000.0 - 10.5);
+    assert!(m.collateral(&tid()).await.expect("collateral").data.is_empty());
+}
+
+#[tokio::test]
+async fn canned_collateral_still_wins_when_set() {
+    let (_, m) = mock();
+    m.set_collateral(Collateral {
+        data: vec![CollateralComponent {
+            component_id: "150-160".into(),
+            ..CollateralComponent::default()
+        }],
+    });
+    assert_eq!(
+        m.collateral(&tid()).await.expect("collateral").data[0].component_id,
+        "150-160"
+    );
+}
