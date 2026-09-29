@@ -13,6 +13,15 @@ Write probes (live mode only, lease holder only, all 1 share, far from the marke
 Reads (any mode, with a key): both hosts, the tournament, a gentle rate-limit ramp on ``GET /account``
 (stops at the first 429), realtime connectivity, a spread/depth census over every market, the
 leaderboard, and whether constraint ``observedPrices`` track last trades or book mids.
+
+ALL collateral (``collateral`` section): compare the engine's ``all`` economics on a
+relationship-linked fill with the shared model (:mod:`susq.platform.collateral`). It uses the racer's
+fills from this process if there are any; otherwise, live only, a deliberate 1-share bundle buying NO
+on the two cheapest members of a mutually exclusive relationship (it pays at least 1 whatever
+happens, so it costs at most ``COLLATERAL_PROBE_MAX_LOSS`` more than it returns). It records whether
+``all`` came back non-null, the savings, and ``/portfolio/collateral`` before and after. The decision
+table says "set use_collateral_buying_power = true" only when every compared field matches the model
+within ``COLLATERAL_TOLERANCE``; otherwise it explains the mismatch and keeps the flag off.
 """
 
 from __future__ import annotations
@@ -21,7 +30,7 @@ import asyncio
 import contextlib
 import time
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -31,10 +40,11 @@ import httpx
 import orjson
 from susq.platform.client import SuperMarketClient
 from susq.platform.errors import ApiError, PlatformError
-from susq.platform.models import OrderBook, iso_utc
-from susq.platform.prices import TICK_PIPS, to_pips
+from susq.platform.models import Collateral, OrderBook, iso_utc
+from susq.platform.prices import PIPS_PER_UNIT, TICK_PIPS, to_pips
 from susq.platform.realtime import RealtimeClient
 
+from susq_bridge.collateral import ObservedEconomics
 from susq_bridge.config import BridgeConfig
 from susq_bridge.gateway import OrderSpec
 
@@ -42,6 +52,8 @@ if TYPE_CHECKING:
     from susq_bridge.runtime import Bridge
 
 __all__ = [
+    "COLLATERAL_PROBE_MAX_LOSS",
+    "COLLATERAL_TOLERANCE",
     "Day1Report",
     "Section",
     "decide",
@@ -75,6 +87,12 @@ class Day1Report:
 
     def get(self, name: str) -> Section | None:
         return next((s for s in self.sections if s.name == name), None)
+
+
+#: Largest engine-vs-model difference (SUSQies, per compared field) that still counts as a match.
+COLLATERAL_TOLERANCE = 0.01
+#: The deliberate collateral probe may cost at most this much more than its guaranteed payout of 1.
+COLLATERAL_PROBE_MAX_LOSS = 0.03
 
 
 def _pct(values: list[float], q: float) -> float | None:
@@ -290,6 +308,126 @@ async def probe_writes(bridge: Bridge, report: Day1Report) -> None:
     )
 
 
+def _collateral_rows(collateral: Collateral) -> list[dict[str, Any]]:
+    return [
+        {
+            "componentId": c.component_id,
+            "coveredExchangeIds": c.covered_exchange_ids,
+            "relationshipIds": c.relationship_ids,
+            "outstandingAdvance": c.outstanding_advance,
+            "guaranteedPayoutFloor": c.guaranteed_payout_floor,
+            "diagnostic": c.diagnostic,
+        }
+        for c in collateral.data
+    ]
+
+
+async def _collateral_probe_legs(bridge: Bridge) -> list[OrderSpec] | None:
+    """1 share of NO on the two highest-bid members of the cheapest mutually exclusive relationship.
+
+    NO on two members of an "at most one YES" set pays at least 1 in every outcome, so the probe's
+    worst case is its cost minus 1, capped at ``COLLATERAL_PROBE_MAX_LOSS``.
+    """
+    best: tuple[int, list[OrderSpec]] | None = None
+    for rel in bridge.racer.relationships.values():
+        if rel.type != "mutually_exclusive" or rel.status not in (None, "active"):
+            continue
+        members = rel.exchange_ids("member") or rel.exchange_ids()
+        if len(members) < 2:
+            continue
+        bids: list[tuple[int, str]] = []
+        for ex in members:
+            book = await bridge.market.book(ex, max_age_s=0.0, priority=True)
+            if book.bids:
+                bids.append((to_pips(book.bids[0].price), ex))
+        if len(bids) < 2:
+            continue
+        (b1, e1), (b2, e2) = sorted(bids, reverse=True)[:2]
+        cost = 2 * PIPS_PER_UNIT - b1 - b2
+        if cost > PIPS_PER_UNIT + round(COLLATERAL_PROBE_MAX_LOSS * PIPS_PER_UNIT):
+            continue
+        legs = [OrderSpec(e, "no", "buy", 1, PIPS_PER_UNIT - b, ttl_s=60) for b, e in ((b1, e1), (b2, e2))]
+        if best is None or cost < best[0]:
+            best = (cost, legs)
+    return best[1] if best else None
+
+
+def _linked_fills(observed: Iterable[ObservedEconomics]) -> list[ObservedEconomics]:
+    """Responses that actually filled on a relationship-linked exchange."""
+    return [o for o in observed if o.component_id is not None and o.quantity_traded > 0]
+
+
+async def probe_collateral(bridge: Bridge, report: Day1Report) -> None:
+    """Engine ``all`` economics vs the model on a relationship-linked fill (see module docs)."""
+    gw = bridge.gateway
+    tracker = gw.collateral
+    tid = bridge.tournament.id
+    await bridge.racer.load_relationships()
+    before = await gw.read("collateral", lambda: bridge.client.get_collateral(tid))
+    tracker.observe_collateral(before)
+    tracker.sync_positions(gw.risk.positions)
+    linked = _linked_fills(tracker.observed)
+    source, filled, with_all = "racer", len(linked) + tracker.linked_without_all, len(linked)
+    if not linked:
+        why = None
+        if bridge.mode != "live":
+            why = "paper mode: no live relationship-linked fill to compare"
+        elif (gate := await gw.gate()) is not None:
+            why = f"probe blocked: {gate}"
+        legs = None if why else await _collateral_probe_legs(bridge)
+        if why is None and legs is None:
+            why = (
+                "no mutually exclusive pair has NO+NO within "
+                f"{COLLATERAL_PROBE_MAX_LOSS} of its guaranteed payout; the racer's first bundle will do"
+            )
+        if why is not None or legs is None:
+            report.add(
+                "collateral",
+                "skipped",
+                f"{why}; /portfolio/collateral lists {len(before.data)} component(s)",
+                components=_collateral_rows(before),
+            )
+            return
+        seen = len(tracker.observed)
+        outcome = await gw.place_bundle(f"day1:collateral:{bridge.clock().date().isoformat()}", "day1", legs)
+        for res in outcome.results:
+            if res.open and res.order_id is not None:
+                await gw.cancel(res.order_id)
+        if not outcome.placed:
+            report.add("collateral", "failed", f"probe bundle not placed: {outcome.status} {outcome.reason}")
+            return
+        source = "probe"
+        filled = sum(1 for r in outcome.results if r.quantity_traded)
+        with_all = sum(1 for r in outcome.results if r.quantity_traded and r.all is not None)
+        linked = _linked_fills(list(tracker.observed)[seen:])
+    after = await gw.read("collateral", lambda: bridge.client.get_collateral(tid))
+    savings = round(sum(o.collateral_savings for o in linked), 6)
+    mismatches = [m for o in linked for m in o.mismatches(COLLATERAL_TOLERANCE)]
+    if not linked:
+        verdict = f"`all` came back null on {filled} relationship-linked fill(s): no relationship quote"
+    elif mismatches:
+        verdict = "engine differs from the model: " + "; ".join(mismatches)
+    else:
+        verdict = f"all {len(linked)} fill(s) match the model within {COLLATERAL_TOLERANCE}"
+    matches = bool(linked) and not mismatches and with_all == filled
+    report.add(
+        "collateral",
+        "ok" if matches else "failed",
+        f"{source}: `all` non-null on {with_all}/{filled} fills, savings {savings}; {verdict}; "
+        f"/portfolio/collateral {len(before.data)} -> {len(after.data)} component(s)",
+        source=source,
+        filled=filled,
+        allNonNull=with_all,
+        savings=savings,
+        matches=matches,
+        tolerance=COLLATERAL_TOLERANCE,
+        mismatches=mismatches,
+        legs=[o.journal() for o in linked],
+        before=_collateral_rows(before),
+        after=_collateral_rows(after),
+    )
+
+
 def _far_exchange(bridge: Bridge) -> str | None:
     """An exchange where a YES ask at 0.95 cannot fill (best bid well below)."""
     for ex, snap in sorted(bridge.market.prices.items()):
@@ -349,12 +487,27 @@ def decide(report: Day1Report) -> list[str]:
                 f"Row 7: no 429 up to {sustained} rps (probe cap); keep the adaptive limiter defaults."
             )
     recs.append("Row 5 (D drift vs Kalshi) needs a week of price snapshots: revisit Oct 7.")
+    recs.append(_collateral_recommendation(report.get("collateral")))
     if lb is not None and lb.status == "ok" and lb.data.get("topPnl") is not None:
         recs.append(
             f"Row 6: top leaderboard P&L today is {lb.data['topPnl']:+.0f} SUSQies; watch for >= 3x "
             "balances by mid-October (mark manipulation or illiquid marks)."
         )
     return recs
+
+
+def _collateral_recommendation(section: Section | None) -> str:
+    if section is None or section.status in ("skipped", "pending"):
+        why = section.summary if section is not None else "not probed"
+        return f"Collateral: not measured yet ({why}); keep [risk] use_collateral_buying_power = false."
+    if section.status == "ok" and section.data.get("matches"):
+        return (
+            f"Collateral: the engine's `all` economics matched the model within "
+            f"{section.data.get('tolerance')} SUSQies on {section.data.get('filled')} fill(s) "
+            f"(savings {section.data.get('savings')}): set use_collateral_buying_power = true in "
+            "config/susq.toml (experiment PR)."
+        )
+    return f"Collateral: keep [risk] use_collateral_buying_power = false. {section.summary}"
 
 
 # ── orchestration ───────────────────────────────────────────────────────────────────────────
@@ -374,7 +527,16 @@ async def measure_day1(
     """Run every probe that the current mode and credentials allow; never raises for a failed probe."""
     report = Day1Report(generated_at=clock().isoformat(), mode=bridge.mode if bridge else "none")
     if not config.has_api_key or bridge is None:
-        for name in ("hosts", "tournament", "tick", "no_mechanics", "rate_limit", "realtime", "census"):
+        for name in (
+            "hosts",
+            "tournament",
+            "tick",
+            "no_mechanics",
+            "rate_limit",
+            "realtime",
+            "census",
+            "collateral",
+        ):
             report.add(name, "skipped", "no API key")
         report.action_needed.append("Create an API key (read + trade) and put SUSQ_API_KEY in .env")
         report.recommendations = decide(report)
@@ -471,6 +633,8 @@ async def measure_day1(
             f"{cp['matchBookMid']} within half a tick of the book mid",
             **cp,
         )
+
+    await section("collateral", probe_collateral(bridge, report))
 
     report.add("fees", "pending", "needs the first fill (first_trade records totalCost vs quantity x price)")
     report.add(

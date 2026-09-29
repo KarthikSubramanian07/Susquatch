@@ -234,3 +234,49 @@ async def test_racer_sizes_on_effective_cost_only_with_the_flag(harness) -> None
     effective = await _racer_quantity(harness, collateral=True)
     assert full >= 1
     assert effective > full  # only the first leg consumes cash under the model
+
+
+def test_tracker_compares_each_fill_with_the_model() -> None:
+    tracker = CollateralTracker()
+    tracker.set_relationships([PAIR])
+    tracker.sync_positions({"1": -10})
+
+    def response(savings: float) -> PlaceOrderResult:
+        return PlaceOrderResult(
+            exchange_id="2",
+            side="no",
+            action="buy",
+            quantity_traded=10,
+            fill_price=0.45,
+            all=AllEconomics(
+                full_notional_cost=4.5,
+                effective_entry_cost=4.5 - savings,
+                collateral_savings=savings,
+                relationship_ids=["rel-1"],
+                component_id="1-2",
+                guaranteed_payout_floor_after=10.0,
+                outstanding_advance_after=savings,
+                collateral_repayment=0.0,
+                net_buying_power_impact=4.5 - savings,
+            ),
+        )
+
+    agree = tracker.observe("a", req("2", "no", 10, 5_500), response(4.5))
+    assert agree is not None
+    assert agree.mismatches(0.01) == []
+    assert tracker.positions == {"1": -10, "2": -10}  # shadowed until the next reconcile
+
+    tracker.sync_positions({"1": -10})
+    tracker.outstanding = {}
+    differ = tracker.observe("b", req("2", "no", 10, 5_500), response(0.0))  # engine gave nothing
+    assert differ is not None
+    problems = differ.mismatches(0.01)
+    assert any("collateralSavings: engine 0.0000 vs model 4.5000" in p for p in problems)
+
+
+def test_tracker_counts_linked_fills_without_a_quote() -> None:
+    tracker = CollateralTracker()
+    tracker.set_relationships([PAIR])
+    res = PlaceOrderResult(exchange_id="2", side="no", action="buy", quantity_traded=3, fill_price=0.45)
+    assert tracker.observe("c", req("2", "no", 3, 5_500), res) is None
+    assert tracker.linked_without_all == 1

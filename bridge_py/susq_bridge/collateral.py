@@ -3,8 +3,10 @@
 Two jobs, deliberately separate:
 
 * **observe** (always on): every order response's ``all`` block is folded into per-component
-  outstanding advances and kept for the day-one comparison; ``GET /portfolio/collateral`` reads
-  replace the outstanding map wholesale. The gateway journals each one as ``all_economics``.
+  outstanding advances and kept, next to what the model predicted for the same fill, for the
+  day-one comparison; ``GET /portfolio/collateral`` reads replace the outstanding map wholesale.
+  The gateway journals each one as ``all_economics``. Positions are shadowed between reconciles
+  (:meth:`CollateralTracker.sync_positions`) so each leg of a bundle is modeled after the previous.
 * **estimate** (used only when ``[risk] use_collateral_buying_power = true``):
   :meth:`CollateralTracker.effective_cost_pips` runs the shared model
   (:mod:`susq.platform.collateral`, the same code as the mock and the paper broker) over our current
@@ -19,11 +21,21 @@ from collections import deque
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
-from susq.platform.collateral import CollateralGraph, Relation, fill_economics
+from susq.platform.collateral import CollateralGraph, FillEconomics, Relation, fill_economics
 from susq.platform.models import Collateral, OrderRequest, PlaceOrderResult, Relationship
 from susq.platform.prices import PIPS_PER_UNIT
 
-__all__ = ["CollateralTracker", "FillLeg", "ObservedEconomics", "request_legs"]
+__all__ = ["COMPARED_FIELDS", "CollateralTracker", "FillLeg", "ObservedEconomics", "request_legs"]
+
+#: Fields compared between the engine's ``all`` and the model (SUSQies).
+COMPARED_FIELDS = (
+    "fullNotionalCost",
+    "collateralSavings",
+    "effectiveEntryCost",
+    "collateralRepayment",
+    "outstandingAdvanceAfter",
+    "guaranteedPayoutFloorAfter",
+)
 
 #: (exchange id, YES direction +1/-1, YES price pips, shares)
 FillLeg = tuple[str, int, int, int]
@@ -56,6 +68,46 @@ class ObservedEconomics:
     relationship_ids: tuple[str, ...]
     guaranteed_payout_floor_after: float
     outstanding_advance_after: float
+    #: What the model predicted for this fill (None: the exchange is outside every known relationship)
+    modeled: FillEconomics | None = None
+
+    def observed_fields(self) -> dict[str, float]:
+        return {
+            "fullNotionalCost": self.full_notional_cost,
+            "collateralSavings": self.collateral_savings,
+            "effectiveEntryCost": self.effective_entry_cost,
+            "collateralRepayment": self.collateral_repayment,
+            "outstandingAdvanceAfter": self.outstanding_advance_after,
+            "guaranteedPayoutFloorAfter": self.guaranteed_payout_floor_after,
+        }
+
+    def modeled_fields(self) -> dict[str, float] | None:
+        m = self.modeled
+        if m is None:
+            return None
+        return {
+            "fullNotionalCost": m.full_cost_pips / PIPS_PER_UNIT,
+            "collateralSavings": m.savings_pips / PIPS_PER_UNIT,
+            "effectiveEntryCost": m.effective_cost_pips / PIPS_PER_UNIT,
+            "collateralRepayment": m.repayment_pips / PIPS_PER_UNIT,
+            "outstandingAdvanceAfter": m.outstanding_after_pips / PIPS_PER_UNIT,
+            "guaranteedPayoutFloorAfter": (m.floor_after_pips or 0) / PIPS_PER_UNIT,
+        }
+
+    def mismatches(self, tolerance: float) -> list[str]:
+        """Human-readable differences beyond ``tolerance`` (SUSQies) between engine and model."""
+        modeled = self.modeled_fields()
+        if modeled is None:
+            return [
+                f"{self.exchange_id}: engine linked it to {self.component_id}, "
+                "the model knows no relationship"
+            ]
+        observed = self.observed_fields()
+        return [
+            f"{self.exchange_id} {name}: engine {observed[name]:.4f} vs model {modeled[name]:.4f}"
+            for name in COMPARED_FIELDS
+            if abs(observed[name] - modeled[name]) > tolerance
+        ]
 
     def journal(self) -> dict[str, object]:
         return {
@@ -73,7 +125,19 @@ class ObservedEconomics:
             "relationshipIds": list(self.relationship_ids),
             "guaranteedPayoutFloorAfter": self.guaranteed_payout_floor_after,
             "outstandingAdvanceAfter": self.outstanding_advance_after,
+            "modeled": self.modeled_fields(),
         }
+
+
+def _yes_fill(request: OrderRequest, result: PlaceOrderResult) -> tuple[int, int] | None:
+    """(YES direction, YES fill price pips) of a response, from its canonical side/action."""
+    if not result.quantity_traded or result.fill_price is None:
+        return None
+    side = result.side or request.side
+    action = result.action or request.action
+    yes_dir = 1 if (side == "yes") == (action == "buy") else -1
+    side_price = _pips(result.fill_price)
+    return yes_dir, side_price if side == "yes" else PIPS_PER_UNIT - side_price
 
 
 class CollateralTracker:
@@ -82,9 +146,13 @@ class CollateralTracker:
         self.relations: list[Relation] = []
         #: component id -> outstanding advance (pip-units), as last reported by the engine
         self.outstanding: dict[str, int] = {}
+        #: Our positions as of the last reconcile plus every fill observed since.
+        self.positions: dict[str, int] = {}
         self.observed: deque[ObservedEconomics] = deque(maxlen=keep)
         self.responses = 0
         self.with_all = 0
+        #: Fills the model links to a relationship that came back with ``all: null``.
+        self.linked_without_all = 0
         self.savings_pips = 0
 
     # ── relationships ───────────────────────────────────────────────────────────────────────
@@ -97,13 +165,29 @@ class CollateralTracker:
 
     # ── observe ─────────────────────────────────────────────────────────────────────────────
 
+    def sync_positions(self, positions: Mapping[str, int]) -> None:
+        """Authoritative positions from a reconcile (the shadow restarts from here)."""
+        self.positions = {ex: q for ex, q in positions.items() if q}
+
     def observe(
         self, intent_id: str, request: OrderRequest, result: PlaceOrderResult
     ) -> ObservedEconomics | None:
         """Fold one order response in. Returns the economics if the engine produced a quote."""
         self.responses += 1
+        fill = _yes_fill(request, result)
+        modeled = None
+        if fill is not None:
+            yes_qty = fill[0] * round(result.quantity_traded)
+            modeled = fill_economics(
+                self.graph, self.positions, self.outstanding, request.exchange_id, yes_qty, fill[1]
+            )
+            self.positions[request.exchange_id] = self.positions.get(request.exchange_id, 0) + yes_qty
+            if modeled.component is None:
+                modeled = None
         econ = result.all
         if econ is None:
+            if modeled is not None:  # the model links this fill, the engine produced no quote
+                self.linked_without_all += 1
             return None
         self.with_all += 1
         self.savings_pips += _pips(econ.collateral_savings)
@@ -124,6 +208,7 @@ class CollateralTracker:
             relationship_ids=tuple(econ.relationship_ids),
             guaranteed_payout_floor_after=econ.guaranteed_payout_floor_after or 0.0,
             outstanding_advance_after=econ.outstanding_advance_after or 0.0,
+            modeled=modeled,
         )
         self.observed.append(seen)
         return seen
@@ -163,6 +248,7 @@ class CollateralTracker:
         return {
             "responses": self.responses,
             "withAll": self.with_all,
+            "linkedWithoutAll": self.linked_without_all,
             "savings": self.savings_pips / PIPS_PER_UNIT,
             "outstanding": {k: v / PIPS_PER_UNIT for k, v in sorted(self.outstanding.items())},
             "relationships": len(self.relations),

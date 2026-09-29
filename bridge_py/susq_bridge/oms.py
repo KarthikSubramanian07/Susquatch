@@ -151,6 +151,7 @@ class Oms:
         self.gateway.risk.update_portfolio(
             portfolio.positions, portfolio.marks, portfolio.equity, portfolio.cash
         )
+        self.gateway.collateral.sync_positions(portfolio.positions)
         self.last_reconcile = self.clock()
         self.reconciles += 1
 
