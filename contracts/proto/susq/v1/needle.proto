@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+package susq.v1;
+
+import "susq/v1/bus.proto";
+import "susq/v1/common.proto";
+
+// Pre-election priors for the election-night county model (needle).
+// Produced by Python (py/susq/replay, from public historical county results + the sim),
+// consumed by the C++ needle service at start-up and by replays via pybind11.
+message NeedlePrior {
+  Header header = 1;
+  repeated RacePrior races = 2;
+  repeated CountyPrior counties = 3;
+  double national_shift_prior_sd = 4;   // pts of margin
+}
+
+message RacePrior {
+  string race_id = 1;
+  string state = 2;
+  double prior_margin_mean = 3;          // D - R, pts, two-party
+  double prior_margin_sd = 4;
+  double national_beta = 5;              // sensitivity of this race's margin to the national shift (~1)
+  bool independent_major = 6;            // a non-D/R candidate is competitive (e.g. NE Senate)
+  string poll_close_utc = 7;             // ISO-8601, last polls close in the state
+}
+
+message CountyPrior {
+  string race_id = 1;
+  string state = 2;
+  string county_fips = 3;
+  double expected_total_votes = 4;
+  double expected_total_sd_frac = 5;     // turnout uncertainty as a fraction of expected_total_votes
+  double prior_margin = 6;               // D - R pts for this county (two-party)
+  double prior_margin_sd = 7;
+  repeated VoteTypeShare vote_types = 8;
+}
+
+message VoteTypeShare {
+  VoteType vote_type = 1;
+  double share_of_total = 2;             // expected share of the county's total votes
+  double margin_offset = 3;              // pts relative to the county prior margin (mail vs E-day skew)
+  double typical_report_order = 4;       // 0 = reports first ... 1 = reports last
+}

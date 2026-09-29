@@ -4,7 +4,7 @@ use std::{env, path::PathBuf};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let root = PathBuf::from(env::var("CARGO_MANIFEST_DIR")?).join("../../contracts/proto");
-    let protos: Vec<PathBuf> = ["common", "targets", "bus", "ops"]
+    let protos: Vec<PathBuf> = ["common", "targets", "bus", "ops", "needle"]
         .iter()
         .map(|p| root.join(format!("susq/v1/{p}.proto")))
         .collect();

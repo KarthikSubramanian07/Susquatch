@@ -1,0 +1,46 @@
+{
+  "header": {
+    "schemaVersion": 1,
+    "producedAtNs": "1791475200000000000",
+    "producer": {
+      "name": "replay-builder",
+      "gitSha": "0123456789ab"
+    },
+    "seq": "1"
+  },
+  "races": [
+    {
+      "raceId": "2026-SEN-OH-S",
+      "state": "OH",
+      "priorMarginMean": 1.5,
+      "priorMarginSd": 5.0,
+      "nationalBeta": 1.0,
+      "pollCloseUtc": "2026-11-04T00:30:00Z"
+    }
+  ],
+  "counties": [
+    {
+      "raceId": "2026-SEN-OH-S",
+      "state": "OH",
+      "countyFips": "39049",
+      "expectedTotalVotes": 560000.0,
+      "expectedTotalSdFrac": 0.06,
+      "priorMargin": 28.0,
+      "priorMarginSd": 4.0,
+      "voteTypes": [
+        {
+          "voteType": "VOTE_TYPE_MAIL",
+          "shareOfTotal": 0.35,
+          "marginOffset": 9.0
+        },
+        {
+          "voteType": "VOTE_TYPE_ELECTION_DAY",
+          "shareOfTotal": 0.65,
+          "marginOffset": -4.8,
+          "typicalReportOrder": 0.6
+        }
+      ]
+    }
+  ],
+  "nationalShiftPriorSd": 2.75
+}

@@ -20,6 +20,7 @@ from susq.contracts import (
     common_pb2,
     encode,
     header,
+    needle_pb2,
     ops_pb2,
     targets_pb2,
     to_json,
@@ -256,6 +257,45 @@ def cases() -> dict[str, object]:
                 notes="Osborn (I): both party markets can resolve NO",
             ),
         ],
+    )
+    c["needle_prior"] = needle_pb2.NeedlePrior(
+        header=h("replay-builder", 1),
+        races=[
+            needle_pb2.RacePrior(
+                race_id="2026-SEN-OH-S",
+                state="OH",
+                prior_margin_mean=1.5,
+                prior_margin_sd=5.0,
+                national_beta=1.0,
+                poll_close_utc="2026-11-04T00:30:00Z",
+            )
+        ],
+        counties=[
+            needle_pb2.CountyPrior(
+                race_id="2026-SEN-OH-S",
+                state="OH",
+                county_fips="39049",
+                expected_total_votes=560_000,
+                expected_total_sd_frac=0.06,
+                prior_margin=28.0,
+                prior_margin_sd=4.0,
+                vote_types=[
+                    needle_pb2.VoteTypeShare(
+                        vote_type=bus_pb2.VOTE_TYPE_MAIL,
+                        share_of_total=0.35,
+                        margin_offset=9.0,
+                        typical_report_order=0.0,
+                    ),
+                    needle_pb2.VoteTypeShare(
+                        vote_type=bus_pb2.VOTE_TYPE_ELECTION_DAY,
+                        share_of_total=0.65,
+                        margin_offset=-4.8,
+                        typical_report_order=0.6,
+                    ),
+                ],
+            )
+        ],
+        national_shift_prior_sd=2.75,
     )
     return c
 

@@ -10,6 +10,7 @@
 
 #include "susq/v1/bus.pb.h"
 #include "susq/v1/common.pb.h"
+#include "susq/v1/needle.pb.h"
 #include "susq/v1/ops.pb.h"
 #include "susq/v1/targets.pb.h"
 

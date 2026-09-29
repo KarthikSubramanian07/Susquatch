@@ -7,6 +7,7 @@
   "kill": "susq.v1.Kill",
   "market_map": "susq.v1.MarketMap",
   "national_shift": "susq.v1.NationalShift",
+  "needle_prior": "susq.v1.NeedlePrior",
   "order_intent": "susq.v1.OrderIntent",
   "race_posteriors": "susq.v1.RacePosteriors",
   "status_snapshot": "susq.v1.StatusSnapshot",

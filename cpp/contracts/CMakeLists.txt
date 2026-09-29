@@ -4,7 +4,8 @@ set(SUSQ_PROTOS
   ${SUSQ_PROTO_ROOT}/susq/v1/common.proto
   ${SUSQ_PROTO_ROOT}/susq/v1/targets.proto
   ${SUSQ_PROTO_ROOT}/susq/v1/bus.proto
-  ${SUSQ_PROTO_ROOT}/susq/v1/ops.proto)
+  ${SUSQ_PROTO_ROOT}/susq/v1/ops.proto
+  ${SUSQ_PROTO_ROOT}/susq/v1/needle.proto)
 
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/gen)
 add_library(susq_contracts STATIC ${SUSQ_PROTOS} contracts.cpp)

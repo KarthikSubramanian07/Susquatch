@@ -17,6 +17,8 @@ from susq.contracts import (
     decode,
     encode,
     from_json,
+    idempotency_key,
+    needle_pb2,
     ops_pb2,
     target_content_sha256,
     targets_pb2,
@@ -37,6 +39,7 @@ TYPES = {
     "susq.v1.TraderLease": ops_pb2.TraderLease,
     "susq.v1.StatusSnapshot": ops_pb2.StatusSnapshot,
     "susq.v1.MarketMap": ops_pb2.MarketMap,
+    "susq.v1.NeedlePrior": needle_pb2.NeedlePrior,
 }
 MANIFEST: dict[str, str] = json.loads((FIX / "manifest.json").read_text())
 
@@ -78,3 +81,16 @@ def test_target_hash() -> None:
     assert target_content_sha256(tf) == tf.content_sha256
     tf.positions[0].target_qty += 1
     assert target_content_sha256(tf) != tf.content_sha256
+
+
+# Cross-language test vector (Rust asserts the same value in susq-oms).
+IDEM_NS = "6f1c0e2a-7c55-4d7e-9a8e-5f2b3c1d0a99"
+IDEM_INTENT = "racer:rel-9:1791475200"
+IDEM_PAYLOAD = "381|no|buy|37|1450|1791475230|t-uuid"
+
+
+def test_idempotency_key_vector() -> None:
+    assert idempotency_key(IDEM_NS, IDEM_INTENT, IDEM_PAYLOAD) == IDEM_EXPECTED
+
+
+IDEM_EXPECTED = "c5fe4b7e-7efc-55fb-82b5-1bd6356d699c"
