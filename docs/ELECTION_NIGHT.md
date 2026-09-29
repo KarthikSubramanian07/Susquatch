@@ -153,21 +153,68 @@ Other Clarity details:
 - `electionsettings.json` → `electiondetails.istestmode` flags test data. The adapter does not read it yet (see §6).
 - Georgia's statewide Clarity ids (105369, 115465, 54042) now return 403, because **Georgia moved to Enhanced Voting** (§1.3). Fulton County's own Clarity site still works.
 
-### 1.3 Georgia: Enhanced Voting (verified on 2024 data)
+### 1.3 Georgia: Enhanced Voting (verified live on the 2026 primary; 2026 general ids auto-discovered)
 
-- `https://results.sos.ga.gov/results/public/api/elections/Georgia/2024NovGen/data/ballot-item/<id>` returns
-  `ballotItemWithBreakdown.breakdownResults[]`, one per county. Each has `ballotOptions[].groupResults[]`, one per vote method
-  (Advanced Voting, Election Day, Absentee by Mail, Provisional), and `precinctReportingStatus`.
-- This is what the results site itself calls. It is unauthenticated but **not a published API**, so paths and ids can change.
-- It is wired through the generic JSON mapper as `ga_sos` (disabled until the 2026 ids exist), using the `candidate_breakdown` pivot.
-- The fixture test asserts the official Fulton County numbers per method: Harris advance 297,293, E-day Trump 25,789 and so on.
+These are the endpoints the results site itself calls, under `https://results.sos.ga.gov/results/public/api`. They are
+unauthenticated but **not a published API**, so paths and ids can change. All were checked on 2026-09-28 with plain GETs.
+
+| Endpoint | Returns |
+|---|---|
+| `/jurisdictions/Georgia` | `elections[]` (117 on 2026-09-28), each `{publicElectionId, electionDate, name[], dateText[]}` |
+| `/elections/Georgia/{publicElectionId}` | election metadata (`isProduction`, `isOfficialResults`, `lastUpdated`, …); 404 for an unknown id |
+| `/elections/Georgia/{publicElectionId}/data` | `{election, ballotItems[], localityElections[], …}`, about 1.7 MB for the primary; **204 with no body** for an unknown id |
+| `/elections/Georgia/{publicElectionId}/data/ballot-item/{ballotItemId}` | the same document plus `ballotItemWithBreakdown.breakdownResults[]`, one per county, each with `ballotOptions[].groupResults[]` per vote method (Advance(d) Voting, Election Day, Absentee by Mail, Provisional) and `precinctReportingStatus`; about 2.5 MB; **200 with `ballotItemWithBreakdown: null`** for an unknown ballot item |
+
+What we learned from the live data:
+- Election slugs are ad hoc (`2024NovGen`, `GeneralPrimary51926`, `06162026GeneralPrimaryRunoff`), and ballot-item ids are
+  GUIDs minted per election. Neither can be configured ahead of time. **The Nov 3 2026 general is not listed yet**, and
+  guessing `2026NovGen` returns 404.
+- Two elections can share a date: on 2026-05-19 the list has both the general primary and a PSC District 3 recount.
+- Contest names differ by election type. The primary has "US Senate - Rep" and "Governor - Dem"; the general should
+  print "US Senate" and "Governor" (the 2024 general printed "President of the US").
+- 7 of 159 counties in the primary Senate item publish candidate totals with **every vote method `null`**. The mapper
+  emits the unsplit remainder as `MIXED` rather than failing the payload (it used to fail).
+- Responses carry `cache-control: public, max-age=60` and no `ETag`, so conditional GETs rarely help here.
+
+**The `enhanced_voting` source kind** (`crates/enr/src/adapters/enhanced_voting.rs`) is configured by *what* to follow and
+finds *where* at runtime:
+
+1. It polls the jurisdiction list until an election with exactly `election_date` appears. Until then its health says
+   `discovery.phase = "awaiting_election"` and it makes one small request per `discovery_interval_s` (600 s).
+2. It fetches `/data` for every election on that date and follows the one whose `ballotItems[]` match the most configured
+   contest names. Matching is exact after folding case and whitespace; there is no fuzzy matching. Unmatched contests
+   are logged and skipped. A `/data` that is still empty gives `awaiting_data`, and no matches at all gives
+   `no_matching_contests`.
+3. It polls each resolved ballot item through the shared HTTP layer, which does conditional GETs, and through the
+   service's jittered backoff. Each item is mapped with the `[sources.mapping]` block, the same `candidate_breakdown`
+   pivot as before.
+4. It re-discovers every `discovery_interval_s`. A 404, a 204 or a payload that is not the expected ballot item requests
+   an early re-discovery, rate-limited to once a minute. A changed ballot-item id is counted in
+   `discovery.ballot_item_id_changes` and followed. If one of several same-day elections fails, the others still resolve.
+5. Every ballot-item payload's `election.isProduction` / `isOfficialResults` / `lastUpdated` is copied into the source's
+   health entry. `discovery.production_verified` is true only when the site explicitly says `isProduction: true`, so
+   test data is labelled and never passes as real returns. With `require_production = true`, payloads not flagged as
+   production are withheld and counted in `withheld_test_payloads`.
+
+The fixture tests (`crates/enr/tests/enhanced_voting.rs`) use payloads trimmed from the live site. They cover discovery
+found, not yet published, an election that appears later, a changed id, 404 and stale-payload re-discovery, name
+normalization, unmatched contests, test-data labelling and an end-to-end service run. They assert official Fulton
+County numbers per method: Dooley advance 10,797, E-day 10,711, mail 226, provisional 15. The 2024 fixture still checks
+Harris advance 297,293 and E-day Trump 25,789.
+
+Live verification (2026-09-28):
+- The shipped config (`2026-11-03`, "US Senate", "Governor") reports `awaiting_election` gracefully.
+- A temporary config for the primary (`2026-05-19`, "US Senate - Rep" and "Governor - Dem", plus a deliberately unmatched
+  "US Senate") chose `GeneralPrimary51926` over the same-day recount, logged "US Senate" as not on the ballot, and emitted
+  1,236 county results. That is 159 counties per contest: 152 Senate and 154 governor counties × 4 methods, and 7 and 5
+  unsplit counties as `MIXED`. Health showed `production_verified: true`.
 
 ### 1.4 Battleground results sites
 
 | State | Official site | Platform | Machine-readable endpoint | Confidence |
 |---|---|---|---|---|
 | CA | api.sos.ca.gov, media.sos.ca.gov | Custom SoS | §1.1 | High (tested) |
-| GA | results.sos.ga.gov | Enhanced Voting | §1.3 (2024 verified; 2026 ids not yet published) | High |
+| GA | results.sos.ga.gov | Enhanced Voting | §1.3 (2026 primary verified live; 2026 general ids auto-discovered once published) | High (tested) |
 | SC | enr-scvotes.org | Clarity | `/SC/122436/359624/…` fetched; 2026 id not listed yet | High |
 | IA | electionresults.iowa.gov/IA/ | Clarity | `/IA/elections.json`; `/IA/121508/current_ver.txt` = 344769 | High |
 | NC | er.ncsbe.gov | Custom NCSBE | `s3.amazonaws.com/dl.ncsbe.gov/ENRS/2024_11_05/results_pct_20241105.zip` (206 OK) | High |
@@ -247,7 +294,8 @@ AZ, western TX/KS, MI UP, …), 03:00Z (NV, MT, UT), 04:00Z (CA, WA, OR), 05:00Z
 1. **Adapters** fetch and parse. Parsers are pure functions over bytes, so every one is tested on recorded payloads.
    - `ca_sos`: bulk or REST.
    - `clarity`: version polling, `detail.xml` (default) or the JSON pair.
-   - `static_json`: a jq-like path mapper over any JSON, with `^N` ancestor bindings and a per-candidate vote-type **breakdown pivot**, configured entirely in TOML.
+   - `static_json`: a jq-like path mapper over any JSON, with `^N` ancestor bindings and a per-candidate vote-type **breakdown pivot**, configured entirely in TOML. A breakdown whose methods are all `null` falls back to the candidate total as `MIXED`.
+   - `enhanced_voting`: discovers the election by date and the ballot items by contest name, then maps each item with the same mapper (§1.3).
    - County names resolve to FIPS through the bundled Census 2020 table. Names are folded ("DeKalb" and "De Kalb", "St." and "Saint"); VA cities stay distinct; numeric codes are checked against the state prefix.
 2. **Validation** (never panics). Each rejection is counted with its reason:
    - an empty race, source or candidate; a bad state code or FIPS;
@@ -280,7 +328,9 @@ AZ, western TX/KS, MI UP, …), 03:00Z (NV, MT, UT), 04:00Z (CA, WA, OR), 05:00Z
 - Per-source health tracks:
   - polls, failures and consecutive failures;
   - 304s, malformed payloads, unresolved counties and version regressions;
-  - `last_ok_ns` and `last_new_data_ns`, which the executor can use for staleness.
+  - `last_ok_ns` and `last_new_data_ns`, which the executor can use for staleness;
+  - for `enhanced_voting` sources, a `discovery` block: phase, election id and name, contest to ballot-item ids, the site's
+    `isProduction` / `isOfficialResults` flags, `production_verified`, and discovery counters.
 
 ### Configuration: `config/enr_sources.toml`
 
@@ -290,10 +340,13 @@ AZ, western TX/KS, MI UP, …), 03:00Z (NV, MT, UT), 04:00Z (CA, WA, OR), 05:00Z
   - **CA SoS**, bulk files, enabled;
   - **CA SoS**, REST API, disabled, as an independent second path for cross-checks;
   - **Clarity SC 2024** and **Clarity IA 2026 primary**, both disabled as references;
-  - **Georgia Enhanced Voting 2024**, via the mapper, disabled.
+  - **Georgia Enhanced Voting** (`ga_sos`, kind `enhanced_voting`), enabled. It targets 2026-11-03 for "US Senate"
+    (`2026-SEN-GA`) and "Governor" (`2026-GOV-GA`) and discovers the election and its ballot items itself (§1.3).
+    A commented `ga_sos_runoff` block is ready for the Dec 1 general runoff.
 - The race map covers CA governor and all 52 CA House districts under both spellings.
 - **Before election night:** swap in 2026 election ids and contest names as each state publishes them, and add race rows for every
-  market we trade. Contests that aren't mapped are ignored.
+  market we trade. Contests that aren't mapped are ignored. Georgia is the exception: its ids are discovered, so only its
+  contest names need checking.
 
 ### `enr-capture` during the CA SoS test windows (runbook)
 
@@ -390,7 +443,13 @@ The first sample drill on 2026-09-28 used the reference backend, all three chaos
 ## 6. Open issues and what is not verified
 
 - **CA SoS 2026 general test dates:** unverified (§1.1). The 2026 general endpoint CSVs are not posted yet.
-- **2026 election ids** for Clarity (SC, IA) and Enhanced Voting (GA) are not published yet. The configs point at 2024 or primary references and are disabled.
+- **2026 election ids** for Clarity (SC, IA) are not published yet. Those configs point at 2024 or primary references and are disabled.
+  Georgia no longer needs manual ids: `ga_sos` discovers the Nov 3 general by date (§1.3). What is not verified is the general's
+  exact contest names ("US Senate" and "Governor" are assumed from the 2024 and primary naming). Once the SoS lists the election,
+  check `discovery.contests` in `last_health.json` for `null` entries.
+- **Georgia test data:** `ga_sos` ships with `require_production = false`, so SoS test payloads published before polls close would
+  flow to the bus, labelled only in health (`discovery.production_verified = false`). Set `require_production = true` for
+  election night unless something downstream reads that label.
 - **Adapters for custom SoS sites** (AZ, NV, TX, OH, MI, KS, AK, NC zip, NE CSV) are not built. Their JSON must be captured first; CSV/zip sources need a small adapter.
 - The **Clarity `istestmode` flag** is not read. Captured test data should be labelled by date rather than trusted.
 - **Poll-closing table:** 33 states are unverified (GA and NH are the important ones).
@@ -415,7 +474,9 @@ The first sample drill on 2026-09-28 used the reference backend, all three chaos
 - https://www.enr-scvotes.org/SC/122436/359624/…
 - https://electionresults.iowa.gov/IA/elections.json
 
-**Georgia:** https://results.sos.ga.gov/results/public/Georgia/elections/2024NovGen and `/results/public/api/elections/Georgia/2024NovGen/data/ballot-item/…`
+**Georgia:** https://results.sos.ga.gov/results/public/Georgia/elections/2024NovGen and `/results/public/api/elections/Georgia/2024NovGen/data/ballot-item/…`;
+`/results/public/api/jurisdictions/Georgia`, `/results/public/api/elections/Georgia/GeneralPrimary51926{,/data,/data/ballot-item/…}`
+and `/results/public/api/elections/Georgia/RECOUNTPSCDistrict3/data`
 
 **Other state sites:**
 - https://er.ncsbe.gov/
