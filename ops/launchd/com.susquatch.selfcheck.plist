@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Mac fallback: daily self-check before the 14:00 UTC summary (06:30 local PT). -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.susquatch.selfcheck</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/make</string><string>-C</string><string>__SUSQ_HOME__</string><string>selfcheck</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>SUSQ_HOME</key><string>__SUSQ_HOME__</string>
+    <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:__HOME__/.local/bin:/usr/bin:/bin</string>
+  </dict>
+  <key>StartCalendarInterval</key>
+  <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>30</integer></dict>
+  <key>StandardOutPath</key><string>__LOG_DIR__/susquatch-selfcheck.log</string>
+  <key>StandardErrorPath</key><string>__LOG_DIR__/susquatch-selfcheck.log</string>
+</dict>
+</plist>

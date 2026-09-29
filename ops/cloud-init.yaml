@@ -1,0 +1,48 @@
+#cloud-config
+# Oracle Cloud Always Free, Ampere A1 (VM.Standard.A1.Flex, 2 OCPU / 12 GB), Ubuntu 24.04 aarch64.
+# Paste this as "cloud-init script" when creating the instance (Advanced options -> Management).
+#
+# Replace the three __PLACEHOLDERS__ first. That's the only editing:
+#   __SSH_PUBLIC_KEY__     your laptop's public key (Oracle also asks for one; they can be the same)
+#   __DEPLOY_KEY__         a READ-ONLY GitHub deploy key for the private repo (ssh-keygen -t ed25519 -f susq_deploy)
+#                          (or delete that write_files entry and set SUSQ_GIT_TOKEN in runcmd instead)
+#   __REPO_URL__           git@github.com:KarthikSubramanian07/Susquatch.git
+#
+# Oracle's metadata service can hand user-data back to anything running on the instance, which is why
+# only a read-only deploy key goes here. Real secrets go into /opt/susquatch/.env over SSH afterwards.
+#
+# Boot -> ~10 min for packages -> ~15 min for the first native image builds. Then:
+#   ssh ubuntu@<ip>; sudo -u ubuntu nano /opt/susquatch/.env; sudo systemctl restart susquatch
+#   (or /opt/susquatch/ops/restore.sh to come back from the latest R2 backup)
+
+package_update: true
+package_upgrade: true
+package_reboot_if_required: false
+timezone: Etc/UTC
+
+users:
+  - default
+  - name: ubuntu
+    ssh_authorized_keys:
+      - __SSH_PUBLIC_KEY__
+
+ssh_pwauth: false
+
+write_files:
+  - path: /root/.ssh/susq_deploy_key
+    permissions: "0600"
+    owner: root:root
+    content: |
+      __DEPLOY_KEY__
+
+runcmd:
+  - [bash, -c, "mkdir -p /opt && ssh-keyscan -t ed25519 github.com >> /root/.ssh/known_hosts"]
+  - - bash
+    - -c
+    - >-
+      GIT_SSH_COMMAND='ssh -i /root/.ssh/susq_deploy_key'
+      git clone --branch main __REPO_URL__ /opt/susquatch
+      && SUSQ_HOME=/opt/susquatch SUSQ_USER=ubuntu SUSQ_REPO_URL=__REPO_URL__
+      /opt/susquatch/ops/install.sh 2>&1 | tee /var/log/susquatch-install.log
+
+final_message: "Susquatch cloud-init finished after $UPTIME s. See /var/log/susquatch-install.log"

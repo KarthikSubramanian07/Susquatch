@@ -1,0 +1,9 @@
+[Unit]
+Description=Nov 4 12:00 ET = 17:00 UTC: the lock. Restore normal priority, take the post-lock backup
+
+[Timer]
+OnCalendar=2026-11-04 17:00:00 UTC
+Persistent=true
+
+[Install]
+WantedBy=timers.target

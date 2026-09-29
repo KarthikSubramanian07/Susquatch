@@ -1,0 +1,9 @@
+[Unit]
+Description=Election-night CPU priority ON (Susquatch over the co-tenant's non-critical jobs)
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+Environment=SUSQ_HOME=@SUSQ_HOME@
+ExecStart=@SUSQ_HOME@/ops/priority.sh election

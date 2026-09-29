@@ -69,3 +69,43 @@ docs-fetch: ## Snapshot the official API docs (flags changes)
 
 secrets-scan: ## Full-history secret scan
 	gitleaks git --no-banner --redact --config .gitleaks.toml
+
+# ── server (Oracle A1 or the Mac fallback; see docs/OPS.md) ─────────────
+COMPOSE := docker compose --project-directory $(CURDIR) -f ops/compose.yaml
+# Host-side Python helpers: uv where it exists (Mac, dev), else the stack's own image (server).
+OPS_PY = $(if $(shell command -v $(UV)),$(UV) run python -m,$(COMPOSE) run --rm --no-deps -T status-pusher python -m)
+.PHONY: up down logs ps costs backup restore selfcheck unkill priority
+up: ## Start the stack (profiles from COMPOSE_PROFILES in .env)
+ifeq ($(shell uname -s),Darwin)
+	ops/launchd/mac-up.sh
+else
+	$(COMPOSE) up -d --build --remove-orphans
+	ops/priority.sh auto
+endif
+
+down: ## Stop the stack (ops/KILL is the way to stop trading; this stops everything)
+	$(COMPOSE) down
+
+logs: ## Follow logs of every service
+	$(COMPOSE) logs -f --tail=100
+
+ps: ## Service status + health
+	$(COMPOSE) ps
+
+costs: ## Free-tier audit: exits non-zero if anything would cost money
+	$(OPS_PY) susq.ops.costs
+
+backup: ## Back up state/journal/data/reports/targets to R2 now
+	ops/backup.sh
+
+restore: ## Restore the latest R2 backup (ARGS="--list" / "--archive NAME" / "--no-start")
+	ops/restore.sh $(ARGS)
+
+selfcheck: ## Disk, clock, expiries, lease, backups, quotas -> ACTION NEEDED items
+	$(OPS_PY) susq.ops.selfcheck
+
+unkill: ## HUMAN ONLY: clear the dashboard Kill flag, then remove ops/KILL
+	$(OPS_PY) susq.ops.kill_poller unkill
+
+priority: ## Election-night CPU priority status (MODE=election|normal|auto)
+	ops/priority.sh $(or $(MODE),status)

@@ -97,3 +97,20 @@ data = "data"
 reports = "reports"
 status = "state/status.json"
 market_map = "state/market_map.json"
+
+[ops]
+# Status push to the dashboard (Cloudflare KV free tier = 1,000 writes/day, shared with kill + summary).
+status_push_interval_s = 150
+status_push_interval_election_s = 120
+status_push_daily_budget = 800
+status_stale_after_s = 300          # status.json older than this = its writer is hung
+kill_poll_interval_s = 10
+# Election-night CPU priority window: Nov 3 18:00 ET -> Nov 4 12:00 ET (EST, after the Nov 1 DST change).
+priority_window_start_utc = "2026-11-03T23:00:00Z"
+priority_window_end_utc = "2026-11-04T17:00:00Z"
+# Backups (Cloudflare R2 free tier: 10 GB-month). Uploads refuse at guard_frac of the quota.
+backup_max_age_h = 30
+r2_quota_bytes = 10_000_000_000
+r2_guard_frac = 0.80
+backup_keep_daily = 7
+backup_keep_weekly = 4

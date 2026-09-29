@@ -1,0 +1,11 @@
+[Unit]
+Description=Election-night CPU priority OFF, then the deferred post-lock backup
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+Environment=SUSQ_HOME=@SUSQ_HOME@
+ExecStart=@SUSQ_HOME@/ops/priority.sh normal
+ExecStartPost=/usr/sbin/runuser -u @SUSQ_USER@ -- env SUSQ_HOME=@SUSQ_HOME@ @SUSQ_HOME@/ops/backup.sh --force
+TimeoutStartSec=2h
