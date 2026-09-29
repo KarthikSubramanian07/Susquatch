@@ -1,0 +1,1012 @@
+[
+ {
+  "events": [
+   {
+    "event_ticker": "SENATENH-28",
+    "series_ticker": "SENATENH",
+    "title": "New Hampshire Senate winner? (2028)",
+    "category": "Elections",
+    "markets": [
+     {
+      "ticker": "SENATENH-28-D",
+      "event_ticker": "SENATENH-28",
+      "title": "Will Democratics win the Senate race in New Hampshire?",
+      "yes_sub_title": "Democratic party",
+      "status": "active",
+      "yes_bid_dollars": "0.8800",
+      "yes_ask_dollars": "0.9210",
+      "last_price_dollars": "0.9120",
+      "yes_bid_size_fp": "500.00",
+      "yes_ask_size_fp": "500.00",
+      "volume_fp": "103.00",
+      "volume_24h_fp": "0.00",
+      "open_interest_fp": "10.00"
+     },
+     {
+      "ticker": "SENATENH-28-R",
+      "event_ticker": "SENATENH-28",
+      "title": "Will Republicans win the Senate race in New Hampshire?",
+      "yes_sub_title": "Republican party",
+      "status": "active",
+      "yes_bid_dollars": "0.0790",
+      "yes_ask_dollars": "0.1200",
+      "last_price_dollars": "0.0880",
+      "yes_bid_size_fp": "500.00",
+      "yes_ask_size_fp": "500.00",
+      "volume_fp": "859.50",
+      "volume_24h_fp": "0.00",
+      "open_interest_fp": "84.00"
+     }
+    ]
+   },
+   {
+    "event_ticker": "KXMIDTERMVOTETURN-WYSEN",
+    "series_ticker": "KXMIDTERMVOTETURN",
+    "title": "Wyoming Senate General Election: voter turnout",
+    "category": "Elections",
+    "markets": [
+     {
+      "ticker": "KXMIDTERMVOTETURN-WYSEN-170000",
+      "event_ticker": "KXMIDTERMVOTETURN-WYSEN",
+      "title": "Will the total vote count for all participants in Wyoming Senate General Election be above 170000?",
+      "yes_sub_title": "Above 170K",
+      "status": "active",
+      "yes_bid_dollars": "0.8300",
+      "yes_ask_dollars": "0.9000",
+      "last_price_dollars": "0.8900",
+      "yes_bid_size_fp": "0.40",
+      "yes_ask_size_fp": "200.00",
+      "volume_fp": "401.10",
+      "volume_24h_fp": "200.00",
+      "open_interest_fp": "401.00"
+     },
+     {
+      "ticker": "KXMIDTERMVOTETURN-WYSEN-180000",
+      "event_ticker": "KXMIDTERMVOTETURN-WYSEN",
+      "title": "Will the total vote count for all participants in Wyoming Senate General Election be above 180000?",
+      "yes_sub_title": "Above 180K",
+      "status": "active",
+      "yes_bid_dollars": "0.8200",
+      "yes_ask_dollars": "0.9000",
+      "last_price_dollars": "0.0000",
+      "yes_bid_size_fp": "40.00",
+      "yes_ask_size_fp": "160.01",
+      "volume_fp": "0.00",
+      "volume_24h_fp": "0.00",
+      "open_interest_fp": "0.00"
+     },
+     {
+      "ticker": "KXMIDTERMVOTETURN-WYSEN-190000",
+      "event_ticker": "KXMIDTERMVOTETURN-WYSEN",
+      "title": "Will the total vote count for all participants in Wyoming Senate General Election be above 190000?",
+      "yes_sub_title": "Above 190K",
+      "status": "active",
+      "yes_bid_dollars": "0.5800",
+      "yes_ask_dollars": "0.6600",
+      "last_price_dollars": "0.6300",
+      "yes_bid_size_fp": "10.00",
+      "yes_ask_size_fp": "200.00",
+      "volume_fp": "222.67",
+      "volume_24h_fp": "0.00",
+      "open_interest_fp": "222.67"
+     },
+     {
+      "ticker": "KXMIDTERMVOTETURN-WYSEN-200000",
+      "event_ticker": "KXMIDTERMVOTETURN-WYSEN",
+      "title": "Will the total vote count for all participants in Wyoming Senate General Election be above 200000?",
+      "yes_sub_title": "Above 200K",
+      "status": "active",
+      "yes_bid_dollars": "0.4500",
+      "yes_ask_dollars": "0.5400",
+      "last_price_dollars": "0.5100",
+      "yes_bid_size_fp": "200.00",
+      "yes_ask_size_fp": "200.00",
+      "volume_fp": "5.91",
+      "volume_24h_fp": "0.00",
+      "open_interest_fp": "5.91"
+     },
+     {
+      "ticker": "KXMIDTERMVOTETURN-WYSEN-210000",
+      "event_ticker": "KXMIDTERMVOTETURN-WYSEN",
+      "title": "Will the total vote count for all participants in Wyoming Senate General Election be above 210000?",
+      "yes_sub_title": "Above 210K",
+      "status": "active",
+      "yes_bid_dollars": "0.3400",
+      "yes_ask_dollars": "0.4300",
+      "last_price_dollars": "0.3800",
+      "yes_bid_size_fp": "200.00",
+      "yes_ask_size_fp": "200.00",
+      "volume_fp": "201.00",
+      "volume_24h_fp": "0.00",
+      "open_interest_fp": "201.00"
+     },
+     {
+      "ticker": "KXMIDTERMVOTETURN-WYSEN-220000",
+      "event_ticker": "KXMIDTERMVOTETURN-WYSEN",
+      "title": "Will the total vote count for all participants in Wyoming Senate General Election be above 220000?",
+      "yes_sub_title": "Above 220K",
+      "status": "active",
+      "yes_bid_dollars": "0.2400",
+      "yes_ask_dollars": "0.3300",
+      "last_price_dollars": "0.1900",
+      "yes_bid_size_fp": "200.00",
+      "yes_ask_size_fp": "200.00",
+      "volume_fp": "6.09",
+      "volume_24h_fp": "0.00",
+      "open_interest_fp": "6.09"
+     },
+     {
+      "ticker": "KXMIDTERMVOTETURN-WYSEN-230000",
+      "event_ticker": "KXMIDTERMVOTETURN-WYSEN",
+      "title": "Will the total vote count for all participants in Wyoming Senate General Election be above 230000?",
+      "yes_sub_title": "Above 230K",
+      "status": "active",
+      "yes_bid_dollars": "0.1600",
+      "yes_ask_dollars": "0.1800",
+      "last_price_dollars": "0.1700",
+      "yes_bid_size_fp": "200.00",
+      "yes_ask_size_fp": "100.00",
+      "volume_fp": "239.24",
+      "volume_24h_fp": "25.06",
+      "open_interest_fp": "232.06"
+     },
+     {
+      "ticker": "KXMIDTERMVOTETURN-WYSEN-240000",
+      "event_ticker": "KXMIDTERMVOTETURN-WYSEN",
+      "title": "Will the total vote count for all participants in Wyoming Senate General Election be above 240000?",
+      "yes_sub_title": "Above 240K",
+      "status": "active",
+      "yes_bid_dollars": "0.1000",
+      "yes_ask_dollars": "0.1500",
+      "last_price_dollars": "0.0000",
+      "yes_bid_size_fp": "200.00",
+      "yes_ask_size_fp": "20.00",
+      "volume_fp": "0.00",
+      "volume_24h_fp": "0.00",
+      "open_interest_fp": "0.00"
+     },
+     {
+      "ticker": "KXMIDTERMVOTETURN-WYSEN-250000",
+      "event_ticker": "KXMIDTERMVOTETURN-WYSEN",
+      "title": "Will the total vote count for all participants in Wyoming Senate General Election be above 250000?",
+      "yes_sub_title": "Above 250K",
+      "status": "active",
+      "yes_bid_dollars": "0.0500",
+      "yes_ask_dollars": "0.1000",
+      "last_price_dollars": "0.0600",
+      "yes_bid_size_fp": "200.00",
+      "yes_ask_size_fp": "10.00",
+      "volume_fp": "1174.32",
+      "volume_24h_fp": "0.00",
+      "open_interest_fp": "1156.32"
+     },
+     {
+      "ticker": "KXMIDTERMVOTETURN-WYSEN-260000",
+      "event_ticker": "KXMIDTERMVOTETURN-WYSEN",
+      "title": "Will the total vote count for all participants in Wyoming Senate General Election be above 260000?",
+      "yes_sub_title": "Above 260K",
+      "status": "active",
+      "yes_bid_dollars": "0.0200",
+      "yes_ask_dollars": "0.0800",
+      "last_price_dollars": "0.0000",
+      "yes_bid_size_fp": "235.00",
+      "yes_ask_size_fp": "200.00",
+      "volume_fp": "0.00",
+      "volume_24h_fp": "0.00",
+      "open_interest_fp": "0.00"
+     },
+     {
+      "ticker": "KXMIDTERMVOTETURN-WYSEN-270000",
+      "event_ticker": "KXMIDTERMVOTETURN-WYSEN",
+      "title": "Will the total vote count for all participants in Wyoming Senate General Election be above 270000?",
+      "yes_sub_title": "Above 270K",
+      "status": "active",
+      "yes_bid_dollars": "0.0000",
+      "yes_ask_dollars": "0.0800",
+      "last_price_dollars": "0.1100",
+      "yes_bid_size_fp": "0.00",
+      "yes_ask_size_fp": "234.77",
+      "volume_fp": "200.00",
+      "volume_24h_fp": "0.00",
+      "open_interest_fp": "200.00"
+     },
+     {
+      "ticker": "KXMIDTERMVOTETURN-WYSEN-280000",
+      "event_ticker": "KXMIDTERMVOTETURN-WYSEN",
+      "title": "Will the total vote count for all participants in Wyoming Senate General Election be above 280000?",
+      "yes_sub_title": "Above 280K",
+      "status": "active",
+      "yes_bid_dollars": "0.0000",
+      "yes_ask_dollars": "0.0700",
+      "last_price_dollars": "0.2300",
+      "yes_bid_size_fp": "0.00",
+      "yes_ask_size_fp": "200.00",
+      "volume_fp": "186.00",
+      "volume_24h_fp": "0.00",
+      "open_interest_fp": "186.00"
+     },
+     {
+      "ticker": "KXMIDTERMVOTETURN-WYSEN-300000",
+      "event_ticker": "KXMIDTERMVOTETURN-WYSEN",
+      "title": "Will the total vote count for all participants in Wyoming Senate General Election be above 300000?",
+      "yes_sub_title": "Above 300K",
+      "status": "active",
+      "yes_bid_dollars": "0.0000",
+      "yes_ask_dollars": "0.0500",
+      "last_price_dollars": "0.3900",
+      "yes_bid_size_fp": "0.00",
+      "yes_ask_size_fp": "200.00",
+      "volume_fp": "100.00",
+      "volume_24h_fp": "0.00",
+      "open_interest_fp": "100.00"
+     },
+     {
+      "ticker": "KXMIDTERMVOTETURN-WYSEN-310000",
+      "event_ticker": "KXMIDTERMVOTETURN-WYSEN",
+      "title": "Will the total vote count for all participants in Wyoming Senate General Election be above 310000?",
+      "yes_sub_title": "Above 310K",
+      "status": "active",
+      "yes_bid_dollars": "0.0000",
+      "yes_ask_dollars": "0.0500",
+      "last_price_dollars": "0.0000",
+      "yes_bid_size_fp": "0.00",
+      "yes_ask_size_fp": "200.00",
+      "volume_fp": "0.00",
+      "volume_24h_fp": "0.00",
+      "open_interest_fp": "0.00"
+     },
+     {
+      "ticker": "KXMIDTERMVOTETURN-WYSEN-320000",
+      "event_ticker": "KXMIDTERMVOTETURN-WYSEN",
+      "title": "Will the total vote count for all participants in Wyoming Senate General Election be above 320000?",
+      "yes_sub_title": "Above 320K",
+      "status": "active",
+      "yes_bid_dollars": "0.0000",
+      "yes_ask_dollars": "0.0400",
+      "last_price_dollars": "0.0500",
+      "yes_bid_size_fp": "0.00",
+      "yes_ask_size_fp": "200.00",
+      "volume_fp": "1.00",
+      "volume_24h_fp": "0.00",
+      "open_interest_fp": "1.00"
+     }
+    ]
+   },
+   {
+    "event_ticker": "CONTROLS-2026",
+    "series_ticker": "CONTROLS",
+    "title": "Which party will win the U.S. Senate?",
+    "category": "Elections",
+    "markets": [
+     {
+      "ticker": "CONTROLS-2026-D",
+      "event_ticker": "CONTROLS-2026",
+      "title": "Will Democrats win the U.S. Senate in 2026?",
+      "yes_sub_title": "Democratic Party",
+      "status": "active",
+      "yes_bid_dollars": "0.6100",
+      "yes_ask_dollars": "0.6200",
+      "last_price_dollars": "0.6200",
+      "yes_bid_size_fp": "67146.63",
+      "yes_ask_size_fp": "73035.54",
+      "volume_fp": "4801032.60",
+      "volume_24h_fp": "13590.07",
+      "open_interest_fp": "2306530.27"
+     },
+     {
+      "ticker": "CONTROLS-2026-R",
+      "event_ticker": "CONTROLS-2026",
+      "title": "Will Republicans win the U.S. Senate in 2026?",
+      "yes_sub_title": "Republican Party",
+      "status": "active",
+      "yes_bid_dollars": "0.3800",
+      "yes_ask_dollars": "0.3900",
+      "last_price_dollars": "0.3900",
+      "yes_bid_size_fp": "12605.97",
+      "yes_ask_size_fp": "56010.54",
+      "volume_fp": "5931989.47",
+      "volume_24h_fp": "15940.70",
+      "open_interest_fp": "3376191.06"
+     }
+    ]
+   },
+   {
+    "event_ticker": "CONTROLH-2026",
+    "series_ticker": "CONTROLH",
+    "title": "Which party will win the U.S. House?",
+    "category": "Elections",
+    "markets": [
+     {
+      "ticker": "CONTROLH-2026-D",
+      "event_ticker": "CONTROLH-2026",
+      "title": "Will Democrats win the House in 2026?",
+      "yes_sub_title": "Democratic Party",
+      "status": "active",
+      "yes_bid_dollars": "0.9150",
+      "yes_ask_dollars": "0.9160",
+      "last_price_dollars": "0.9160",
+      "yes_bid_size_fp": "12755.67",
+      "yes_ask_size_fp": "58901.80",
+      "volume_fp": "13918353.52",
+      "volume_24h_fp": "168870.90",
+      "open_interest_fp": "9135821.84"
+     },
+     {
+      "ticker": "CONTROLH-2026-R",
+      "event_ticker": "CONTROLH-2026",
+      "title": "Will Republicans win the House in 2026?",
+      "yes_sub_title": "Republican Party",
+      "status": "active",
+      "yes_bid_dollars": "0.0840",
+      "yes_ask_dollars": "0.0850",
+      "last_price_dollars": "0.0850",
+      "yes_bid_size_fp": "75422.91",
+      "yes_ask_size_fp": "68624.63",
+      "volume_fp": "24703931.46",
+      "volume_24h_fp": "324098.06",
+      "open_interest_fp": "16213157.34"
+     }
+    ]
+   },
+   {
+    "event_ticker": "GOVPARTYKS-27",
+    "series_ticker": "GOVPARTYKS",
+    "title": "Kansas Governor winner?",
+    "category": "Elections",
+    "markets": [
+     {
+      "ticker": "GOVPARTYKS-27-D",
+      "event_ticker": "GOVPARTYKS-27",
+      "title": "Will the Democratic party win the governorship in Kansas",
+      "yes_sub_title": "Cindy Holscher",
+      "status": "active",
+      "yes_bid_dollars": "0.2600",
+      "yes_ask_dollars": "0.2700",
+      "last_price_dollars": "0.2600",
+      "yes_bid_size_fp": "50481.96",
+      "yes_ask_size_fp": "201.00",
+      "volume_fp": "51035.93",
+      "volume_24h_fp": "158.89",
+      "open_interest_fp": "37160.66"
+     },
+     {
+      "ticker": "GOVPARTYKS-27-R",
+      "event_ticker": "GOVPARTYKS-27",
+      "title": "Will the Republican party win the governorship in Kansas",
+      "yes_sub_title": "Ty Masterson",
+      "status": "active",
+      "yes_bid_dollars": "0.7300",
+      "yes_ask_dollars": "0.7400",
+      "last_price_dollars": "0.7400",
+      "yes_bid_size_fp": "352.64",
+      "yes_ask_size_fp": "50314.50",
+      "volume_fp": "86843.75",
+      "volume_24h_fp": "979.25",
+      "open_interest_fp": "50066.55"
+     }
+    ]
+   },
+   {
+    "event_ticker": "GOVPARTYGA-26",
+    "series_ticker": "GOVPARTYGA",
+    "title": "Georgia Governor winner?",
+    "category": "Elections",
+    "markets": [
+     {
+      "ticker": "GOVPARTYGA-26-D",
+      "event_ticker": "GOVPARTYGA-26",
+      "title": "Will the Democratic party win the governorship in Georgia",
+      "yes_sub_title": "Keisha Lance Bottoms",
+      "status": "active",
+      "yes_bid_dollars": "0.5000",
+      "yes_ask_dollars": "0.5100",
+      "last_price_dollars": "0.5100",
+      "yes_bid_size_fp": "25.91",
+      "yes_ask_size_fp": "5727.35",
+      "volume_fp": "592874.14",
+      "volume_24h_fp": "2432.93",
+      "open_interest_fp": "271467.29"
+     },
+     {
+      "ticker": "GOVPARTYGA-26-R",
+      "event_ticker": "GOVPARTYGA-26",
+      "title": "Will the Republican party win the governorship in Georgia",
+      "yes_sub_title": "Rick Jackson",
+      "status": "active",
+      "yes_bid_dollars": "0.5000",
+      "yes_ask_dollars": "0.5200",
+      "last_price_dollars": "0.5200",
+      "yes_bid_size_fp": "150.86",
+      "yes_ask_size_fp": "141.92",
+      "volume_fp": "536534.34",
+      "volume_24h_fp": "6359.16",
+      "open_interest_fp": "383689.01"
+     }
+    ]
+   },
+   {
+    "event_ticker": "KXHOUSERACE-AL01-26",
+    "series_ticker": "KXHOUSERACE",
+    "title": "AL-01 House winner?",
+    "category": "Elections",
+    "markets": [
+     {
+      "ticker": "KXHOUSERACE-AL01-26-D",
+      "event_ticker": "KXHOUSERACE-AL01-26",
+      "title": "Will Democratic win the House race for AL-01?",
+      "yes_sub_title": "Clyde Jones",
+      "status": "active",
+      "yes_bid_dollars": "0.0230",
+      "yes_ask_dollars": "0.0710",
+      "last_price_dollars": "0.0580",
+      "yes_bid_size_fp": "41.02",
+      "yes_ask_size_fp": "6.00",
+      "volume_fp": "129.02",
+      "volume_24h_fp": "0.00",
+      "open_interest_fp": "114.02"
+     },
+     {
+      "ticker": "KXHOUSERACE-AL01-26-R",
+      "event_ticker": "KXHOUSERACE-AL01-26",
+      "title": "Will Republican win the House race for AL-01?",
+      "yes_sub_title": "Jerry Carl",
+      "status": "active",
+      "yes_bid_dollars": "0.9510",
+      "yes_ask_dollars": "0.9760",
+      "last_price_dollars": "0.9300",
+      "yes_bid_size_fp": "3.54",
+      "yes_ask_size_fp": "63.02",
+      "volume_fp": "2328.18",
+      "volume_24h_fp": "0.00",
+      "open_interest_fp": "629.28"
+     }
+    ]
+   },
+   {
+    "event_ticker": "SENATETX-26",
+    "series_ticker": "SENATETX",
+    "title": "Texas Senate winner?",
+    "category": "Elections",
+    "markets": [
+     {
+      "ticker": "SENATETX-26-R",
+      "event_ticker": "SENATETX-26",
+      "title": "Will Republicans win the Senate race in Texas?",
+      "yes_sub_title": "Ken Paxton",
+      "status": "active",
+      "yes_bid_dollars": "0.4000",
+      "yes_ask_dollars": "0.4100",
+      "last_price_dollars": "0.4100",
+      "yes_bid_size_fp": "28074.15",
+      "yes_ask_size_fp": "54384.63",
+      "volume_fp": "8898609.42",
+      "volume_24h_fp": "75157.23",
+      "open_interest_fp": "6019109.23"
+     },
+     {
+      "ticker": "SENATETX-26-D",
+      "event_ticker": "SENATETX-26",
+      "title": "Will Democratics win the Senate race in Texas?",
+      "yes_sub_title": "James Talarico",
+      "status": "active",
+      "yes_bid_dollars": "0.5900",
+      "yes_ask_dollars": "0.6000",
+      "last_price_dollars": "0.5900",
+      "yes_bid_size_fp": "46486.67",
+      "yes_ask_size_fp": "35938.16",
+      "volume_fp": "6251929.91",
+      "volume_24h_fp": "42749.51",
+      "open_interest_fp": "4258531.81"
+     }
+    ]
+   },
+   {
+    "event_ticker": "SENATEOHS-26",
+    "series_ticker": "SENATEOHS",
+    "title": "Ohio Senate winner?",
+    "category": "Elections",
+    "markets": [
+     {
+      "ticker": "SENATEOHS-26-R",
+      "event_ticker": "SENATEOHS-26",
+      "title": "Will Republicans win the Senate race in Ohio?",
+      "yes_sub_title": "Jon Husted",
+      "status": "active",
+      "yes_bid_dollars": "0.4200",
+      "yes_ask_dollars": "0.4300",
+      "last_price_dollars": "0.4300",
+      "yes_bid_size_fp": "20438.16",
+      "yes_ask_size_fp": "52922.56",
+      "volume_fp": "2200760.78",
+      "volume_24h_fp": "17613.43",
+      "open_interest_fp": "1604994.10"
+     },
+     {
+      "ticker": "SENATEOHS-26-D",
+      "event_ticker": "SENATEOHS-26",
+      "title": "Will Democratics win the Senate race in Ohio?",
+      "yes_sub_title": "Sherrod Brown",
+      "status": "active",
+      "yes_bid_dollars": "0.5800",
+      "yes_ask_dollars": "0.5900",
+      "last_price_dollars": "0.5900",
+      "yes_bid_size_fp": "5000.00",
+      "yes_ask_size_fp": "50541.29",
+      "volume_fp": "2335689.50",
+      "volume_24h_fp": "28359.33",
+      "open_interest_fp": "1730644.74"
+     }
+    ]
+   },
+   {
+    "event_ticker": "SENATENH-26",
+    "series_ticker": "SENATENH",
+    "title": "New Hampshire Senate winner?",
+    "category": "Elections",
+    "markets": [
+     {
+      "ticker": "SENATENH-26-R",
+      "event_ticker": "SENATENH-26",
+      "title": "Will Republicans win the Senate race in New Hampshire?",
+      "yes_sub_title": "John E. Sununu",
+      "status": "active",
+      "yes_bid_dollars": "0.1400",
+      "yes_ask_dollars": "0.1500",
+      "last_price_dollars": "0.1500",
+      "yes_bid_size_fp": "38248.01",
+      "yes_ask_size_fp": "37192.64",
+      "volume_fp": "982113.37",
+      "volume_24h_fp": "4754.52",
+      "open_interest_fp": "656350.36"
+     },
+     {
+      "ticker": "SENATENH-26-D",
+      "event_ticker": "SENATENH-26",
+      "title": "Will Democratics win the Senate race in New Hampshire?",
+      "yes_sub_title": "Chris Pappas",
+      "status": "active",
+      "yes_bid_dollars": "0.8500",
+      "yes_ask_dollars": "0.8600",
+      "last_price_dollars": "0.8600",
+      "yes_bid_size_fp": "21010.01",
+      "yes_ask_size_fp": "11731.62",
+      "volume_fp": "414535.14",
+      "volume_24h_fp": "180.77",
+      "open_interest_fp": "193349.01"
+     }
+    ]
+   }
+  ],
+  "cursor": "page2"
+ },
+ {
+  "events": [
+   {
+    "event_ticker": "SENATENE-26",
+    "series_ticker": "SENATENE",
+    "title": "Nebraska Senate winner?",
+    "category": "Elections",
+    "markets": [
+     {
+      "ticker": "SENATENE-26-R",
+      "event_ticker": "SENATENE-26",
+      "title": "Will Republicans win the Senate race in Nebraska?",
+      "yes_sub_title": "Pete Ricketts",
+      "status": "active",
+      "yes_bid_dollars": "0.7000",
+      "yes_ask_dollars": "0.7100",
+      "last_price_dollars": "0.7100",
+      "yes_bid_size_fp": "13737.88",
+      "yes_ask_size_fp": "26839.69",
+      "volume_fp": "1088873.24",
+      "volume_24h_fp": "12201.30",
+      "open_interest_fp": "802186.54"
+     },
+     {
+      "ticker": "SENATENE-26-D",
+      "event_ticker": "SENATENE-26",
+      "title": "Will Democratics win the Senate race in Nebraska?",
+      "yes_sub_title": "Cindy Burbank",
+      "status": "active",
+      "yes_bid_dollars": "0.0000",
+      "yes_ask_dollars": "0.0050",
+      "last_price_dollars": "0.0050",
+      "yes_bid_size_fp": "0.00",
+      "yes_ask_size_fp": "5092.99",
+      "volume_fp": "60527.46",
+      "volume_24h_fp": "154.22",
+      "open_interest_fp": "37397.39"
+     },
+     {
+      "ticker": "SENATENE-26-DOSB",
+      "event_ticker": "SENATENE-26",
+      "title": "Will Dan Osborn (as an independent)s win the Senate race in Nebraska?",
+      "yes_sub_title": "Dan Osborn",
+      "status": "active",
+      "yes_bid_dollars": "0.2800",
+      "yes_ask_dollars": "0.3000",
+      "last_price_dollars": "0.3000",
+      "yes_bid_size_fp": "11996.00",
+      "yes_ask_size_fp": "25097.21",
+      "volume_fp": "738259.06",
+      "volume_24h_fp": "2474.96",
+      "open_interest_fp": "417943.18"
+     }
+    ]
+   },
+   {
+    "event_ticker": "SENATEMI-26",
+    "series_ticker": "SENATEMI",
+    "title": "Michigan Senate winner?",
+    "category": "Elections",
+    "markets": [
+     {
+      "ticker": "SENATEMI-26-R",
+      "event_ticker": "SENATEMI-26",
+      "title": "Will Republicans win the Senate race in Michigan?",
+      "yes_sub_title": "Mike Rogers",
+      "status": "active",
+      "yes_bid_dollars": "0.2900",
+      "yes_ask_dollars": "0.3000",
+      "last_price_dollars": "0.3000",
+      "yes_bid_size_fp": "13434.75",
+      "yes_ask_size_fp": "26187.78",
+      "volume_fp": "2649465.18",
+      "volume_24h_fp": "46423.18",
+      "open_interest_fp": "1831477.71"
+     },
+     {
+      "ticker": "SENATEMI-26-D",
+      "event_ticker": "SENATEMI-26",
+      "title": "Will Democratics win the Senate race in Michigan?",
+      "yes_sub_title": "Abdul El-Sayed",
+      "status": "active",
+      "yes_bid_dollars": "0.7100",
+      "yes_ask_dollars": "0.7200",
+      "last_price_dollars": "0.7100",
+      "yes_bid_size_fp": "6996.87",
+      "yes_ask_size_fp": "32809.53",
+      "volume_fp": "1959578.84",
+      "volume_24h_fp": "15404.01",
+      "open_interest_fp": "1272768.70"
+     }
+    ]
+   },
+   {
+    "event_ticker": "SENATEME-26",
+    "series_ticker": "SENATEME",
+    "title": "Maine Senate winner?",
+    "category": "Elections",
+    "markets": [
+     {
+      "ticker": "SENATEME-26-R",
+      "event_ticker": "SENATEME-26",
+      "title": "Will Republicans win the Senate race in Maine?",
+      "yes_sub_title": "Susan Collins",
+      "status": "active",
+      "yes_bid_dollars": "0.4000",
+      "yes_ask_dollars": "0.4100",
+      "last_price_dollars": "0.4100",
+      "yes_bid_size_fp": "37839.59",
+      "yes_ask_size_fp": "75529.09",
+      "volume_fp": "3621771.27",
+      "volume_24h_fp": "86382.78",
+      "open_interest_fp": "1884932.54"
+     },
+     {
+      "ticker": "SENATEME-26-D",
+      "event_ticker": "SENATEME-26",
+      "title": "Will Democratics win the Senate race in Maine?",
+      "yes_sub_title": "Troy Jackson",
+      "status": "active",
+      "yes_bid_dollars": "0.5900",
+      "yes_ask_dollars": "0.6000",
+      "last_price_dollars": "0.6000",
+      "yes_bid_size_fp": "110140.00",
+      "yes_ask_size_fp": "36913.09",
+      "volume_fp": "3331052.99",
+      "volume_24h_fp": "98925.88",
+      "open_interest_fp": "1091406.62"
+     }
+    ]
+   },
+   {
+    "event_ticker": "SENATELA-26",
+    "series_ticker": "SENATELA",
+    "title": "Kentucky Senate winner?",
+    "category": "Elections",
+    "markets": [
+     {
+      "ticker": "SENATELA-26-R",
+      "event_ticker": "SENATELA-26",
+      "title": "Will Republicans win the Senate race in Kentucky?",
+      "yes_sub_title": "Andy Barr",
+      "status": "active",
+      "yes_bid_dollars": "0.9500",
+      "yes_ask_dollars": "0.9550",
+      "last_price_dollars": "0.9500",
+      "yes_bid_size_fp": "2949.95",
+      "yes_ask_size_fp": "358.00",
+      "volume_fp": "76293.32",
+      "volume_24h_fp": "274.05",
+      "open_interest_fp": "35689.13"
+     },
+     {
+      "ticker": "SENATELA-26-D",
+      "event_ticker": "SENATELA-26",
+      "title": "Will Democratics win the Senate race in Kentucky?",
+      "yes_sub_title": "Charles Booker",
+      "status": "active",
+      "yes_bid_dollars": "0.0450",
+      "yes_ask_dollars": "0.0520",
+      "last_price_dollars": "0.0520",
+      "yes_bid_size_fp": "2539.00",
+      "yes_ask_size_fp": "2646.15",
+      "volume_fp": "84335.04",
+      "volume_24h_fp": "4709.03",
+      "open_interest_fp": "50155.93"
+     }
+    ]
+   },
+   {
+    "event_ticker": "SENATEID-26",
+    "series_ticker": "SENATEID",
+    "title": "Idaho Senate winner?",
+    "category": "Elections",
+    "markets": [
+     {
+      "ticker": "SENATEID-26-R",
+      "event_ticker": "SENATEID-26",
+      "title": "Will Republicans win the Senate race in Idaho?",
+      "yes_sub_title": "Jim Risch",
+      "status": "active",
+      "yes_bid_dollars": "0.9220",
+      "yes_ask_dollars": "0.9230",
+      "last_price_dollars": "0.9260",
+      "yes_bid_size_fp": "35.00",
+      "yes_ask_size_fp": "585.00",
+      "volume_fp": "88359.23",
+      "volume_24h_fp": "12807.62",
+      "open_interest_fp": "66321.26"
+     },
+     {
+      "ticker": "SENATEID-26-D",
+      "event_ticker": "SENATEID-26",
+      "title": "Will Democratics win the Senate race in Idaho?",
+      "yes_sub_title": "David Roth",
+      "status": "active",
+      "yes_bid_dollars": "0.0030",
+      "yes_ask_dollars": "0.0040",
+      "last_price_dollars": "0.0040",
+      "yes_bid_size_fp": "25.00",
+      "yes_ask_size_fp": "379.80",
+      "volume_fp": "54929.31",
+      "volume_24h_fp": "1501.68",
+      "open_interest_fp": "27422.44"
+     },
+     {
+      "ticker": "SENATEID-26-TACH",
+      "event_ticker": "SENATEID-26",
+      "title": "Will Todd Achilless win the Senate race in Idaho?",
+      "yes_sub_title": "Todd Achilles",
+      "status": "active",
+      "yes_bid_dollars": "0.0700",
+      "yes_ask_dollars": "0.0900",
+      "last_price_dollars": "0.0900",
+      "yes_bid_size_fp": "27168.00",
+      "yes_ask_size_fp": "8803.66",
+      "volume_fp": "99578.07",
+      "volume_24h_fp": "4128.23",
+      "open_interest_fp": "89378.67"
+     }
+    ]
+   },
+   {
+    "event_ticker": "SENATEIA-26",
+    "series_ticker": "SENATEIA",
+    "title": "Iowa Senate winner?",
+    "category": "Elections",
+    "markets": [
+     {
+      "ticker": "SENATEIA-26-R",
+      "event_ticker": "SENATEIA-26",
+      "title": "Will Republicans win the Senate race in Iowa?",
+      "yes_sub_title": "Ashley Hinson",
+      "status": "active",
+      "yes_bid_dollars": "0.5800",
+      "yes_ask_dollars": "0.6000",
+      "last_price_dollars": "0.6000",
+      "yes_bid_size_fp": "6346.47",
+      "yes_ask_size_fp": "2607.60",
+      "volume_fp": "1467870.89",
+      "volume_24h_fp": "17331.99",
+      "open_interest_fp": "879600.34"
+     },
+     {
+      "ticker": "SENATEIA-26-D",
+      "event_ticker": "SENATEIA-26",
+      "title": "Will Democratics win the Senate race in Iowa?",
+      "yes_sub_title": "Josh Turek",
+      "status": "active",
+      "yes_bid_dollars": "0.4000",
+      "yes_ask_dollars": "0.4100",
+      "last_price_dollars": "0.4100",
+      "yes_bid_size_fp": "3008.69",
+      "yes_ask_size_fp": "10488.06",
+      "volume_fp": "1985662.39",
+      "volume_24h_fp": "23499.90",
+      "open_interest_fp": "1114452.86"
+     }
+    ]
+   },
+   {
+    "event_ticker": "SENATEAK-26",
+    "series_ticker": "SENATEAK",
+    "title": "Alaska Senate winner?",
+    "category": "Elections",
+    "markets": [
+     {
+      "ticker": "SENATEAK-26-R",
+      "event_ticker": "SENATEAK-26",
+      "title": "Will Republicans win the Senate race in Alaska?",
+      "yes_sub_title": "Republican party",
+      "status": "active",
+      "yes_bid_dollars": "0.3100",
+      "yes_ask_dollars": "0.3200",
+      "last_price_dollars": "0.3200",
+      "yes_bid_size_fp": "2.80",
+      "yes_ask_size_fp": "22917.00",
+      "volume_fp": "1206005.69",
+      "volume_24h_fp": "24795.52",
+      "open_interest_fp": "706309.53"
+     },
+     {
+      "ticker": "SENATEAK-26-D",
+      "event_ticker": "SENATEAK-26",
+      "title": "Will Democratics win the Senate race in Alaska?",
+      "yes_sub_title": "Democratic party",
+      "status": "active",
+      "yes_bid_dollars": "0.7000",
+      "yes_ask_dollars": "0.7100",
+      "last_price_dollars": "0.7100",
+      "yes_bid_size_fp": "63.00",
+      "yes_ask_size_fp": "24035.08",
+      "volume_fp": "645066.41",
+      "volume_24h_fp": "703.99",
+      "open_interest_fp": "373496.00"
+     }
+    ]
+   },
+   {
+    "event_ticker": "HOUSEPA7-26",
+    "series_ticker": "HOUSEPA7",
+    "title": "PA-07 House winner?",
+    "category": "Elections",
+    "markets": [
+     {
+      "ticker": "HOUSEPA7-26-D",
+      "event_ticker": "HOUSEPA7-26",
+      "title": "Will Democratic win the House race for PA-7?",
+      "yes_sub_title": "Bob Brooks",
+      "status": "active",
+      "yes_bid_dollars": "0.8200",
+      "yes_ask_dollars": "0.8300",
+      "last_price_dollars": "0.8300",
+      "yes_bid_size_fp": "22.13",
+      "yes_ask_size_fp": "688.07",
+      "volume_fp": "228512.63",
+      "volume_24h_fp": "11.93",
+      "open_interest_fp": "76428.67"
+     },
+     {
+      "ticker": "HOUSEPA7-26-R",
+      "event_ticker": "HOUSEPA7-26",
+      "title": "Will Republican win the House race for PA-7?",
+      "yes_sub_title": "Ryan Mackenzie",
+      "status": "active",
+      "yes_bid_dollars": "0.1700",
+      "yes_ask_dollars": "0.1800",
+      "last_price_dollars": "0.1800",
+      "yes_bid_size_fp": "709.59",
+      "yes_ask_size_fp": "431.00",
+      "volume_fp": "86208.60",
+      "volume_24h_fp": "100.38",
+      "open_interest_fp": "72219.30"
+     }
+    ]
+   },
+   {
+    "event_ticker": "HOUSENY17-26",
+    "series_ticker": "HOUSENY17",
+    "title": "NY-17 House winner?",
+    "category": "Elections",
+    "markets": [
+     {
+      "ticker": "HOUSENY17-26-D",
+      "event_ticker": "HOUSENY17-26",
+      "title": "Will Democratic win the House race for NY-17?",
+      "yes_sub_title": "Cait Conley",
+      "status": "active",
+      "yes_bid_dollars": "0.6400",
+      "yes_ask_dollars": "0.6500",
+      "last_price_dollars": "0.6500",
+      "yes_bid_size_fp": "279.03",
+      "yes_ask_size_fp": "5176.00",
+      "volume_fp": "56817.41",
+      "volume_24h_fp": "5600.19",
+      "open_interest_fp": "43893.75"
+     },
+     {
+      "ticker": "HOUSENY17-26-R",
+      "event_ticker": "HOUSENY17-26",
+      "title": "Will Republican win the House race for NY-17?",
+      "yes_sub_title": "Mike Lawler",
+      "status": "active",
+      "yes_bid_dollars": "0.3600",
+      "yes_ask_dollars": "0.3700",
+      "last_price_dollars": "0.3700",
+      "yes_bid_size_fp": "2935.42",
+      "yes_ask_size_fp": "764.34",
+      "volume_fp": "97653.75",
+      "volume_24h_fp": "1103.40",
+      "open_interest_fp": "62055.99"
+     }
+    ]
+   },
+   {
+    "event_ticker": "HOUSEAKAL-26",
+    "series_ticker": "HOUSEAKAL",
+    "title": "Alaska House winner?",
+    "category": "Elections",
+    "markets": [
+     {
+      "ticker": "HOUSEAKAL-26-D",
+      "event_ticker": "HOUSEAKAL-26",
+      "title": "Will Democratic win the House race for AK-AL?",
+      "yes_sub_title": "Democratic party",
+      "status": "active",
+      "yes_bid_dollars": "0.0200",
+      "yes_ask_dollars": "0.0420",
+      "last_price_dollars": "0.0430",
+      "yes_bid_size_fp": "250.00",
+      "yes_ask_size_fp": "50.00",
+      "volume_fp": "28138.35",
+      "volume_24h_fp": "43.84",
+      "open_interest_fp": "11307.70"
+     },
+     {
+      "ticker": "HOUSEAKAL-26-R",
+      "event_ticker": "HOUSEAKAL-26",
+      "title": "Will Republican win the House race for AK-AL?",
+      "yes_sub_title": "Republican party",
+      "status": "active",
+      "yes_bid_dollars": "0.8400",
+      "yes_ask_dollars": "0.8500",
+      "last_price_dollars": "0.8500",
+      "yes_bid_size_fp": "11.00",
+      "yes_ask_size_fp": "217.00",
+      "volume_fp": "27992.24",
+      "volume_24h_fp": "0.00",
+      "open_interest_fp": "8075.69"
+     },
+     {
+      "ticker": "HOUSEAKAL-26-BHIL",
+      "event_ticker": "HOUSEAKAL-26",
+      "title": "Will Bill Hill win the House race for AK-AL?",
+      "yes_sub_title": "Bill Hill",
+      "status": "active",
+      "yes_bid_dollars": "0.0900",
+      "yes_ask_dollars": "0.1000",
+      "last_price_dollars": "0.1000",
+      "yes_bid_size_fp": "791.00",
+      "yes_ask_size_fp": "154.85",
+      "volume_fp": "5881.42",
+      "volume_24h_fp": "94.07",
+      "open_interest_fp": "4154.88"
+     }
+    ]
+   }
+  ],
+  "cursor": ""
+ }
+]

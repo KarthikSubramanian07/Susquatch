@@ -1,0 +1,842 @@
+[
+ {
+  "slug": "which-party-will-win-the-senate-in-2026",
+  "title": "Which party will win the Senate in 2026?",
+  "markets": [
+   {
+    "id": "562793",
+    "question": "Will the Democratic Party control the Senate after the 2026 Midterm elections?",
+    "groupItemTitle": "Democratic Party",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"0.625\", \"0.375\"]",
+    "clobTokenIds": "[\"113287701564209339913693347405685749986285999146352375265161592243948562084773\", \"107118433685650702332040991454078902188473746599223732907923581436160160612542\"]",
+    "bestBid": 0.62,
+    "bestAsk": 0.63,
+    "lastTradePrice": 0.62,
+    "volumeNum": 3175897.320300999,
+    "active": true,
+    "closed": false
+   },
+   {
+    "id": "562794",
+    "question": "Will the Republican Party control the Senate after the 2026 Midterm elections?",
+    "groupItemTitle": "Republican Party",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"0.385\", \"0.615\"]",
+    "clobTokenIds": "[\"51939490109676186832507970701169130490548061087912630009168726706475001411420\", \"108587038225191871355030577171066853142535232042155117887981453750193713427381\"]",
+    "bestBid": 0.38,
+    "bestAsk": 0.39,
+    "lastTradePrice": 0.38,
+    "volumeNum": 2182718.0331769986,
+    "active": true,
+    "closed": false
+   },
+   {
+    "id": "562795",
+    "question": "Will Party A control the Senate after the 2026 Midterm elections?",
+    "groupItemTitle": "Party A",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": null,
+    "clobTokenIds": "[\"101013678279667053072299759176727232476254933885205251482758940017727056216936\", \"79567790673116367761535331050117811143019665137672364070496977107486370387555\"]",
+    "bestBid": 0,
+    "bestAsk": 1,
+    "lastTradePrice": 0,
+    "volumeNum": 0,
+    "active": false,
+    "closed": false
+   }
+  ]
+ },
+ {
+  "slug": "which-party-will-win-the-house-in-2026",
+  "title": "Which party will win the House in 2026?",
+  "markets": [
+   {
+    "id": "562802",
+    "question": "Will the Democratic Party control the House after the 2026 Midterm elections?",
+    "groupItemTitle": "Democratic Party",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"0.925\", \"0.075\"]",
+    "clobTokenIds": "[\"83247781037352156539108067944461291821683755894607244160607042790356561625563\", \"33156410999665902694791064431724433042010245771106314074312009703157423879038\"]",
+    "bestBid": 0.92,
+    "bestAsk": 0.93,
+    "lastTradePrice": 0.93,
+    "volumeNum": 7155128.988052999,
+    "active": true,
+    "closed": false
+   },
+   {
+    "id": "562803",
+    "question": "Will the Republican Party control the House after the 2026 Midterm elections?",
+    "groupItemTitle": "Republican Party",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"0.075\", \"0.925\"]",
+    "clobTokenIds": "[\"65139230827417363158752884968303867495725894165574887635816574090175320800482\", \"17371217118862125782438074585166210555214661810823929795910191856905580975576\"]",
+    "bestBid": 0.07,
+    "bestAsk": 0.08,
+    "lastTradePrice": 0.08,
+    "volumeNum": 5388280.504902001,
+    "active": true,
+    "closed": false
+   },
+   {
+    "id": "562804",
+    "question": "Will Party A control the House after the 2026 Midterm elections?",
+    "groupItemTitle": "Party A",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": null,
+    "clobTokenIds": "[\"70303402279443140172926218682114579985324187231253704051483086965820158099590\", \"45455367302330335194344177564546165557538318840688795997560393347365783694290\"]",
+    "bestBid": 0,
+    "bestAsk": 1,
+    "lastTradePrice": 0,
+    "volumeNum": 0,
+    "active": false,
+    "closed": false
+   }
+  ]
+ },
+ {
+  "slug": "georgia-governor-winner-2026",
+  "title": "Georgia Governor Election Winner",
+  "markets": [
+   {
+    "id": "629337",
+    "question": "Will the Democrats win the Georgia governor race in 2026?",
+    "groupItemTitle": "Keisha Lance Bottoms (D)",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"0.525\", \"0.475\"]",
+    "clobTokenIds": "[\"59980150909931986777748227027020522224275707387562276219060223816867188565245\", \"29426800815897155175757951733656404312185134543823956306564757069451562558732\"]",
+    "bestBid": 0.52,
+    "bestAsk": 0.53,
+    "lastTradePrice": 0.53,
+    "volumeNum": 72947.24010400001,
+    "active": true,
+    "closed": false
+   },
+   {
+    "id": "629338",
+    "question": "Will the Republicans win the Georgia governor race in 2026?",
+    "groupItemTitle": "Rick Jackson (R)",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"0.475\", \"0.525\"]",
+    "clobTokenIds": "[\"17555504943162344098534978138053308162738914357892515623100381936995379845407\", \"53502088681539225888217182746120417070419934602682782293991096287838014660594\"]",
+    "bestBid": 0.47,
+    "bestAsk": 0.48,
+    "lastTradePrice": 0.47,
+    "volumeNum": 61628.793024,
+    "active": true,
+    "closed": false
+   },
+   {
+    "id": "629339",
+    "question": "Will Option A win the Georgia governor race in 2026?",
+    "groupItemTitle": "Option A",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": null,
+    "clobTokenIds": "[\"93924379577335325550821428899157901276752459929497082631726389310572394966725\", \"69861231371743660435893481732460844359761865263318987134696682919974564938520\"]",
+    "bestBid": 0,
+    "bestAsk": 1,
+    "lastTradePrice": 0,
+    "volumeNum": 0,
+    "active": false,
+    "closed": false
+   }
+  ]
+ },
+ {
+  "slug": "idaho-senate-election-winner",
+  "title": "Idaho Senate Election Winner",
+  "markets": [
+   {
+    "id": "630705",
+    "question": "Will the Democrats win the Idaho Senate race in 2026?",
+    "groupItemTitle": "Democrat",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"0.0005\", \"0.9995\"]",
+    "clobTokenIds": "[\"106941193163110167696426338043140728938381127310653153528096347878604033727123\", \"80934691869338927255837304938089888360426615780964561477823921040289407849741\"]",
+    "bestBid": null,
+    "bestAsk": 0.001,
+    "lastTradePrice": 0.001,
+    "volumeNum": 18825.407162999993,
+    "active": true,
+    "closed": false
+   },
+   {
+    "id": "630706",
+    "question": "Will the Republicans win the Idaho Senate race in 2026?",
+    "groupItemTitle": "Jim Risch (R)",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"0.949\", \"0.051\"]",
+    "clobTokenIds": "[\"6756779810577885828704276397389282544084821591107025125954859235939281991675\", \"87565258770725265966392236652709967744698603916603639644457593228770340754031\"]",
+    "bestBid": 0.942,
+    "bestAsk": 0.956,
+    "lastTradePrice": 0.942,
+    "volumeNum": 65428.816316000004,
+    "active": true,
+    "closed": false
+   },
+   {
+    "id": "630707",
+    "question": "Will Todd Achilles win the Idaho Senate race in 2026?",
+    "groupItemTitle": "Todd Achilles (I)",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"0.0475\", \"0.9525\"]",
+    "clobTokenIds": "[\"109865291951183941149765892685776097643915392898762342965012269207177841238467\", \"57925461341104910435866398583612621937921844618146243318901522652628878376322\"]",
+    "bestBid": 0.043,
+    "bestAsk": 0.052,
+    "lastTradePrice": 0.059,
+    "volumeNum": 8255.689021,
+    "active": true,
+    "closed": false
+   },
+   {
+    "id": "630708",
+    "question": "Will Person B win the Idaho Senate race in 2026?",
+    "groupItemTitle": "Person B",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": null,
+    "clobTokenIds": "[\"92453077962951116812404026386240808872954682314348969270733922886318782780946\", \"28414373708685252848575167528860153534985251306333191647159340410070486220215\"]",
+    "bestBid": 0,
+    "bestAsk": 1,
+    "lastTradePrice": 0,
+    "volumeNum": 0,
+    "active": false,
+    "closed": false
+   }
+  ]
+ },
+ {
+  "slug": "iowa-senate-election-winner",
+  "title": "Iowa Senate Election Winner",
+  "markets": [
+   {
+    "id": "630733",
+    "question": "Will the Democrats win the Iowa Senate race in 2026?",
+    "groupItemTitle": "Josh Turek (D)",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"0.415\", \"0.585\"]",
+    "clobTokenIds": "[\"90689690530039118737607894922148077480097700217322320781526913496162509181445\", \"105412116375859456386463067772529895223931027977055063584054608854983174999392\"]",
+    "bestBid": 0.41,
+    "bestAsk": 0.42,
+    "lastTradePrice": 0.42,
+    "volumeNum": 335621.5312139998,
+    "active": true,
+    "closed": false
+   },
+   {
+    "id": "630734",
+    "question": "Will the Republicans win the Iowa Senate race in 2026?",
+    "groupItemTitle": "Ashley Hinson (R)",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"0.575\", \"0.425\"]",
+    "clobTokenIds": "[\"107844449523890311740907586041395758413047559802389895859202256336422357556837\", \"45697952169290210733788647908439282215277461482653377209044144054693714912010\"]",
+    "bestBid": 0.57,
+    "bestAsk": 0.58,
+    "lastTradePrice": 0.57,
+    "volumeNum": 293246.683816,
+    "active": true,
+    "closed": false
+   },
+   {
+    "id": "630735",
+    "question": "Will Person A win the Iowa Senate race in 2026?",
+    "groupItemTitle": "Person A",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": null,
+    "clobTokenIds": "[\"78952809178802700253917785699945948704178975175284885266841629471448934164562\", \"31711006414543354439697515568125331922256468516531341453547706196270518659619\"]",
+    "bestBid": 0,
+    "bestAsk": 1,
+    "lastTradePrice": 0,
+    "volumeNum": 0,
+    "active": false,
+    "closed": false
+   }
+  ]
+ },
+ {
+  "slug": "maine-senate-election-winner",
+  "title": "Maine Senate Election Winner",
+  "markets": [
+   {
+    "id": "630772",
+    "question": "Will the Democrats win the Maine Senate race in 2026?",
+    "groupItemTitle": "Troy Jackson (D)",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"0.605\", \"0.395\"]",
+    "clobTokenIds": "[\"7589880081658059374445882095611024032084645048848237404312287942463647821549\", \"6136336712352911156426560180855478229745540927722899997193789497766196705020\"]",
+    "bestBid": 0.6,
+    "bestAsk": 0.61,
+    "lastTradePrice": 0.61,
+    "volumeNum": 1157011.5359000002,
+    "active": true,
+    "closed": false
+   },
+   {
+    "id": "630773",
+    "question": "Will the Republicans win the Maine Senate race in 2026?",
+    "groupItemTitle": "Susan Collins (R)",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"0.385\", \"0.615\"]",
+    "clobTokenIds": "[\"2142948285506077695096498341598672159464223074468931276310105532825810210121\", \"43295283577056639281694071578249936735369407445693289764095672178175084599787\"]",
+    "bestBid": 0.38,
+    "bestAsk": 0.39,
+    "lastTradePrice": 0.38,
+    "volumeNum": 858412.1527490001,
+    "active": true,
+    "closed": false
+   },
+   {
+    "id": "630774",
+    "question": "Will Person A win the Maine Senate race in 2026?",
+    "groupItemTitle": "Person A",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": null,
+    "clobTokenIds": "[\"23234283565244092985145730618235764588484708383170624552784867948374961109082\", \"53662083779547731341978155081354862855914564516107608811343653339803515397333\"]",
+    "bestBid": 0,
+    "bestAsk": 1,
+    "lastTradePrice": 0,
+    "volumeNum": 0,
+    "active": false,
+    "closed": false
+   }
+  ]
+ },
+ {
+  "slug": "michigan-senate-election-winner",
+  "title": "Michigan Senate Election Winner",
+  "markets": [
+   {
+    "id": "630805",
+    "question": "Will the Democrats win the Michigan Senate race in 2026?",
+    "groupItemTitle": "Abdul El-Sayed (D)",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"0.705\", \"0.295\"]",
+    "clobTokenIds": "[\"71772627544132140586824126381855151743830987860593343955509593715269534710061\", \"64025664961497419708095468282573682984741903075312816516046832361290996190088\"]",
+    "bestBid": 0.7,
+    "bestAsk": 0.71,
+    "lastTradePrice": 0.7,
+    "volumeNum": 643207.695921,
+    "active": true,
+    "closed": false
+   },
+   {
+    "id": "630806",
+    "question": "Will the Republicans win the Michigan Senate race in 2026?",
+    "groupItemTitle": "Mike Rogers (R)",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"0.305\", \"0.695\"]",
+    "clobTokenIds": "[\"1046980875306043125128331871114794349002409233139736033870402475326170083426\", \"71610581811588451243087930916572592402913705975252472987256607890992191263885\"]",
+    "bestBid": 0.3,
+    "bestAsk": 0.31,
+    "lastTradePrice": 0.3,
+    "volumeNum": 504448.78064899985,
+    "active": true,
+    "closed": false
+   },
+   {
+    "id": "630807",
+    "question": "Will Person A win the Michigan Senate race in 2026?",
+    "groupItemTitle": "Person A",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": null,
+    "clobTokenIds": "[\"49527711578937364005759509043260849865841993808453605484522693893583023365571\", \"47608538836320626431103289127703292841561022193931630558812387936130730135386\"]",
+    "bestBid": 0,
+    "bestAsk": 1,
+    "lastTradePrice": 0,
+    "volumeNum": 0,
+    "active": false,
+    "closed": false
+   }
+  ]
+ },
+ {
+  "slug": "new-hampshire-senate-election-winner",
+  "title": "New Hampshire Senate Election Winner",
+  "markets": [
+   {
+    "id": "630844",
+    "question": "Will the Democrats win the New Hampshire Senate race in 2026?",
+    "groupItemTitle": "Chris Pappas (D)",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"0.865\", \"0.135\"]",
+    "clobTokenIds": "[\"82410058691149830741200014405570918770267839390767234397030380747995715352939\", \"28709552853916742051233428360468180906283732902940871675642481670799666825242\"]",
+    "bestBid": 0.86,
+    "bestAsk": 0.87,
+    "lastTradePrice": 0.87,
+    "volumeNum": 129960.20892400004,
+    "active": true,
+    "closed": false
+   },
+   {
+    "id": "630845",
+    "question": "Will the Republicans win the New Hampshire Senate race in 2026?",
+    "groupItemTitle": "John E. Sununu (R)",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"0.145\", \"0.855\"]",
+    "clobTokenIds": "[\"62227089537100115269143206481757249285124282589590263790284791475153705872216\", \"58757590052289479996371632351141005979216013605386057994994985198930000872621\"]",
+    "bestBid": 0.14,
+    "bestAsk": 0.15,
+    "lastTradePrice": 0.14,
+    "volumeNum": 132250.305876,
+    "active": true,
+    "closed": false
+   },
+   {
+    "id": "630846",
+    "question": "Will Person A win the New Hampshire Senate race in 2026?",
+    "groupItemTitle": "Person A",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": null,
+    "clobTokenIds": "[\"22406139571560773547438767369018241698289918032739753953330781745577530088902\", \"57663304523754994099139686625791610914899720735450392724481991261807959343076\"]",
+    "bestBid": 0,
+    "bestAsk": 1,
+    "lastTradePrice": 0,
+    "volumeNum": 0,
+    "active": false,
+    "closed": false
+   }
+  ]
+ },
+ {
+  "slug": "texas-senate-election-winner",
+  "title": "Texas Senate Election Winner",
+  "markets": [
+   {
+    "id": "630963",
+    "question": "Will the Democrats win the Texas Senate race in 2026?",
+    "groupItemTitle": "James Talarico (D)",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"0.605\", \"0.395\"]",
+    "clobTokenIds": "[\"15290572385458522370285732869432740297199321382471116558439914335588167718663\", \"25172545206000541692667496253531562288536270988826888609620735617040533835056\"]",
+    "bestBid": 0.6,
+    "bestAsk": 0.61,
+    "lastTradePrice": 0.61,
+    "volumeNum": 731557.6374780003,
+    "active": true,
+    "closed": false
+   },
+   {
+    "id": "630964",
+    "question": "Will the Republicans win the Texas Senate race in 2026?",
+    "groupItemTitle": "Ken Paxton (R)",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"0.395\", \"0.605\"]",
+    "clobTokenIds": "[\"21265207456609426291246075480390336499088453711419597084147957999650569091884\", \"9846414914422486942750462555692240718767368950832862364324602361738794436048\"]",
+    "bestBid": 0.39,
+    "bestAsk": 0.4,
+    "lastTradePrice": 0.4,
+    "volumeNum": 832918.760907,
+    "active": true,
+    "closed": false
+   },
+   {
+    "id": "630965",
+    "question": "Will Person A win the Texas Senate race in 2026?",
+    "groupItemTitle": "Person A",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": null,
+    "clobTokenIds": "[\"27118606220017336072956860540742213251846919026962789400037514873928866544111\", \"23139814268933400748773459305550661925367292434000821036649481239434884726861\"]",
+    "bestBid": 0,
+    "bestAsk": 1,
+    "lastTradePrice": 0,
+    "volumeNum": 0,
+    "active": false,
+    "closed": false
+   }
+  ]
+ },
+ {
+  "slug": "ohio-senate-election-winner",
+  "title": "Ohio Senate Election Winner",
+  "markets": [
+   {
+    "id": "631057",
+    "question": "Will the Democrats win the Ohio Senate race in 2026?",
+    "groupItemTitle": "Sherrod Brown (D)",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"0.575\", \"0.425\"]",
+    "clobTokenIds": "[\"83018072688154066292491996133599479395547801317505487833443670253228061205312\", \"79825167762459488478206414509755176562349257846652439268369145558426777722770\"]",
+    "bestBid": 0.57,
+    "bestAsk": 0.58,
+    "lastTradePrice": 0.58,
+    "volumeNum": 441182.58594500006,
+    "active": true,
+    "closed": false
+   },
+   {
+    "id": "631058",
+    "question": "Will the Republicans win the Ohio Senate race in 2026?",
+    "groupItemTitle": "Jon Husted (R)",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"0.425\", \"0.575\"]",
+    "clobTokenIds": "[\"69908185249078099348466099388148864764525845923415294308139153388799352317616\", \"23913381536137166406579511315285934624565002001604591688105636176511254870797\"]",
+    "bestBid": 0.42,
+    "bestAsk": 0.43,
+    "lastTradePrice": 0.43,
+    "volumeNum": 310853.03997000033,
+    "active": true,
+    "closed": false
+   },
+   {
+    "id": "631059",
+    "question": "Will Person A win the Ohio Senate race in 2026?",
+    "groupItemTitle": "Person A",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": null,
+    "clobTokenIds": "[\"90152774930944697392517395511752710095295806246639820809647595345777092647603\", \"68977942193044558265556523294091077722361296595265029077571022372679131231577\"]",
+    "bestBid": 0,
+    "bestAsk": 1,
+    "lastTradePrice": 0,
+    "volumeNum": 0,
+    "active": false,
+    "closed": false
+   }
+  ]
+ },
+ {
+  "slug": "nebraska-senate-election-winner",
+  "title": "Nebraska Senate Election Winner  ",
+  "markets": [
+   {
+    "id": "634891",
+    "question": "Will the Democrats win the Nebraska Senate race in 2026?",
+    "groupItemTitle": "Democrat",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"0.001\", \"0.999\"]",
+    "clobTokenIds": "[\"55269299240433422758148290868724152324629587438760275683104577693660207425448\", \"81262665299593332402996254810488669553080330014117799642811352427402737700753\"]",
+    "bestBid": null,
+    "bestAsk": 0.002,
+    "lastTradePrice": 0.001,
+    "volumeNum": 103624.10643099998,
+    "active": true,
+    "closed": false
+   },
+   {
+    "id": "634892",
+    "question": "Will the Republicans win the Nebraska Senate race in 2026?",
+    "groupItemTitle": "Pete Ricketts (R)",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"0.695\", \"0.305\"]",
+    "clobTokenIds": "[\"92576281548134350814800877416860562553699794074017301653635964206220838638047\", \"20545755397554366279105844241414821565747450256261992143596340747510834590543\"]",
+    "bestBid": 0.69,
+    "bestAsk": 0.7,
+    "lastTradePrice": 0.7,
+    "volumeNum": 241320.10856899995,
+    "active": true,
+    "closed": false
+   },
+   {
+    "id": "634893",
+    "question": "Will an independent win the Nebraska Senate race in 2026?",
+    "groupItemTitle": "Independent",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"0.305\", \"0.695\"]",
+    "clobTokenIds": "[\"47975366268282823322598946778919483335780002591367838795894307024076579116518\", \"89524111316754281233016446935787527194216234343076592935555965327756401377156\"]",
+    "bestBid": 0.3,
+    "bestAsk": 0.31,
+    "lastTradePrice": 0.3,
+    "volumeNum": 112882.80601799999,
+    "active": true,
+    "closed": false
+   },
+   {
+    "id": "634894",
+    "question": "Will Person B win the Nebraska Senate race in 2026?",
+    "groupItemTitle": "Person B",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": null,
+    "clobTokenIds": "[\"66062556627432584860975619605940917295490214194433501720084886635618731288568\", \"64859617586752109432492241336879657838291314440277486628901243942723434389790\"]",
+    "bestBid": 0,
+    "bestAsk": 1,
+    "lastTradePrice": 0,
+    "volumeNum": 0,
+    "active": false,
+    "closed": false
+   }
+  ]
+ },
+ {
+  "slug": "ny-17-house-election-winner",
+  "title": "NY-17 House Election Winner",
+  "markets": [
+   {
+    "id": "943440",
+    "question": "Will the Republican Party win the NY-17 House seat?",
+    "groupItemTitle": "Mike Lawler (R)",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"0.355\", \"0.645\"]",
+    "clobTokenIds": "[\"100483443247041044563874634953278400972311005965822139457018312114391318359850\", \"14582545730228428482912971347572544281875999426839094041667501419038246618585\"]",
+    "bestBid": 0.35,
+    "bestAsk": 0.36,
+    "lastTradePrice": 0.36,
+    "volumeNum": 14626.365823,
+    "active": true,
+    "closed": false
+   },
+   {
+    "id": "943441",
+    "question": "Will the Democratic Party win the NY-17 House seat?",
+    "groupItemTitle": "Cait Conley (D)",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"0.655\", \"0.345\"]",
+    "clobTokenIds": "[\"51139697479054469944236132595348770797766976112763062697989474877845630491882\", \"69541728889474243559228458257667024729753704232262882473518688610039296438225\"]",
+    "bestBid": 0.65,
+    "bestAsk": 0.66,
+    "lastTradePrice": 0.65,
+    "volumeNum": 9124.038351000003,
+    "active": true,
+    "closed": false
+   },
+   {
+    "id": "943442",
+    "question": "Will another party win the NY-17 House seat?",
+    "groupItemTitle": "Other",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": null,
+    "clobTokenIds": "[\"48636253321810416607613343724629918058208755317109499835055921783614315913798\", \"77461573058614529256708735506540424125085517134565227005663526183214639953039\"]",
+    "bestBid": 0,
+    "bestAsk": 1,
+    "lastTradePrice": 0,
+    "volumeNum": 0,
+    "active": false,
+    "closed": false
+   }
+  ]
+ },
+ {
+  "slug": "ak-al-house-election-winner",
+  "title": "AK-AL House Election Winner",
+  "markets": [
+   {
+    "id": "1279604",
+    "question": "Will the Republican Party win the AK-AL House seat?",
+    "groupItemTitle": "Republican Party",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"0.835\", \"0.165\"]",
+    "clobTokenIds": "[\"55824536479051011400121423796079002447209373774987169287762599768443101947717\", \"109526975425138418953452882953836641553265451755083634868506102684421578202080\"]",
+    "bestBid": 0.83,
+    "bestAsk": 0.84,
+    "lastTradePrice": 0.83,
+    "volumeNum": 20545.6151,
+    "active": true,
+    "closed": false
+   },
+   {
+    "id": "1279605",
+    "question": "Will the Democratic Party win the AK-AL House seat?",
+    "groupItemTitle": "Democratic Party",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"0.0375\", \"0.9625\"]",
+    "clobTokenIds": "[\"106387119478622283441026286722849456868957395499329392203969838246317853715637\", \"81824147248777253128121640144721366277671402790789611685831635841575575591064\"]",
+    "bestBid": 0.037,
+    "bestAsk": 0.038,
+    "lastTradePrice": 0.042,
+    "volumeNum": 35566.337991,
+    "active": true,
+    "closed": false
+   },
+   {
+    "id": "1279607",
+    "question": "Will Bill Hill win the AK-AL House seat?",
+    "groupItemTitle": "Bill Hill",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"0.1055\", \"0.8945\"]",
+    "clobTokenIds": "[\"25264395884794585041068738174790155913872374353541552562714054259339230907354\", \"32013709221385245652646660083575610480902059101950118436651521759850687773426\"]",
+    "bestBid": 0.088,
+    "bestAsk": 0.123,
+    "lastTradePrice": 0.077,
+    "volumeNum": 600.84966,
+    "active": true,
+    "closed": false
+   },
+   {
+    "id": "1279608",
+    "question": "Will Jim McDermott win the AK-AL House seat?",
+    "groupItemTitle": "Jim McDermott",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"0.0035\", \"0.9965\"]",
+    "clobTokenIds": "[\"85781622518217507258873019162239664839911327072948544349165375474732809439743\", \"90865153989541571603918416205653839790480571238070929398115869184731695936054\"]",
+    "bestBid": 0.001,
+    "bestAsk": 0.006,
+    "lastTradePrice": 0.01,
+    "volumeNum": 165.82,
+    "active": true,
+    "closed": false
+   },
+   {
+    "id": "1279606",
+    "question": "Will another party win the AK-AL House seat?",
+    "groupItemTitle": "Other",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": null,
+    "clobTokenIds": "[\"65186637129812516009078153835763272172771071796545517458353847661290394221932\", \"63929092994709128004084064037798816129811677934165619682450119947948965950188\"]",
+    "bestBid": 0,
+    "bestAsk": 1,
+    "lastTradePrice": 0,
+    "volumeNum": 0,
+    "active": false,
+    "closed": false
+   }
+  ]
+ },
+ {
+  "slug": "new-hampshire-senate-margin-of-victory-2026",
+  "title": "New Hampshire Senate Election Margin of Victory",
+  "markets": [
+   {
+    "id": "3343935",
+    "question": "Will the Republican Party candidate win the 2026 New Hampshire Senate election by 6% or more?",
+    "groupItemTitle": "Sununu 6%+",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"0.0025\", \"0.9975\"]",
+    "clobTokenIds": "[\"70746788989825809884465565578567236463704750444782169027788009807135230037639\", \"28005377627337331692542259977090017850967940467561557759797776720689477228270\"]",
+    "bestBid": 0.001,
+    "bestAsk": 0.004,
+    "lastTradePrice": 0.009,
+    "volumeNum": 437.27000000000004,
+    "active": true,
+    "closed": false
+   },
+   {
+    "id": "3343936",
+    "question": "Will the Republican Party candidate win the 2026 New Hampshire Senate election by 3%-6%?",
+    "groupItemTitle": "Sununu 3-6%",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"0.0295\", \"0.9705\"]",
+    "clobTokenIds": "[\"62789145538944890191285827646989396903726142771099809946706456025035863479747\", \"36271633180518243569710485229806291521839847699590545863628861846064782810259\"]",
+    "bestBid": 0.006,
+    "bestAsk": 0.053,
+    "lastTradePrice": 0.041,
+    "volumeNum": 310.44,
+    "active": true,
+    "closed": false
+   },
+   {
+    "id": "3343937",
+    "question": "Will the Republican Party candidate win the 2026 New Hampshire Senate election by 0%-3%?",
+    "groupItemTitle": "Sununu 0-3%",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"0.085\", \"0.915\"]",
+    "clobTokenIds": "[\"113801572659476724747934020193942599432227362488259151692593957301680546466376\", \"57895253966045815089163395961902123331516715183100324059475891536659388221462\"]",
+    "bestBid": 0.06,
+    "bestAsk": 0.11,
+    "lastTradePrice": 0.08,
+    "volumeNum": 1602.8588790000001,
+    "active": true,
+    "closed": false
+   },
+   {
+    "id": "3343938",
+    "question": "Will the Democratic Party candidate win the 2026 New Hampshire Senate election by 0%-3%?",
+    "groupItemTitle": "Pappas 0-3%",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"0.1155\", \"0.8845\"]",
+    "clobTokenIds": "[\"63507724462133231104787876735572829496489051711286122158266079845394213067342\", \"83569940818883084540978692094788375400485824258779936228729686700046587943228\"]",
+    "bestBid": 0.091,
+    "bestAsk": 0.14,
+    "lastTradePrice": 0.111,
+    "volumeNum": 560.809436,
+    "active": true,
+    "closed": false
+   },
+   {
+    "id": "3343939",
+    "question": "Will the Democratic Party candidate win the 2026 New Hampshire Senate election by 3%-6%?",
+    "groupItemTitle": "Pappas 3-6%",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"0.24\", \"0.76\"]",
+    "clobTokenIds": "[\"25504640231930422568050458302611854312325266612163293226530789689207903740631\", \"37584833903915533479410876740657173932074239006773775586461372727996854311936\"]",
+    "bestBid": 0.23,
+    "bestAsk": 0.25,
+    "lastTradePrice": 0.23,
+    "volumeNum": 3604.5359289999997,
+    "active": true,
+    "closed": false
+   },
+   {
+    "id": "3343940",
+    "question": "Will the Democratic Party candidate win the 2026 New Hampshire Senate election by 6%-9%?",
+    "groupItemTitle": "Pappas 6-9%",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"0.25\", \"0.75\"]",
+    "clobTokenIds": "[\"65288730679900258481147400267814353453357517822229521705044637806821187218492\", \"69467830095321388001569398408255085765307900481519938529424635939754265295436\"]",
+    "bestBid": 0.24,
+    "bestAsk": 0.26,
+    "lastTradePrice": 0.19,
+    "volumeNum": 2951.181177,
+    "active": true,
+    "closed": false
+   },
+   {
+    "id": "3343941",
+    "question": "Will the Democratic Party candidate win the 2026 New Hampshire Senate election by 9%-12%?",
+    "groupItemTitle": "Pappas 9-12%",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"0.2\", \"0.8\"]",
+    "clobTokenIds": "[\"24617079242619882907056356011188304385534547683795109257579947070463228955833\", \"44359248834789040051600806811267360433855812717653737495943538940786015607471\"]",
+    "bestBid": 0.17,
+    "bestAsk": 0.23,
+    "lastTradePrice": 0.13,
+    "volumeNum": 1508.811012,
+    "active": true,
+    "closed": false
+   },
+   {
+    "id": "3343942",
+    "question": "Will the Democratic Party candidate win the 2026 New Hampshire Senate election by 12%-15%?",
+    "groupItemTitle": "Pappas 12-15%",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"0.0585\", \"0.9415\"]",
+    "clobTokenIds": "[\"4893697283417348498352709076264561272266633415839828544936002182587132652021\", \"7428135683890117072705588808196247930288991044917566527584326910003502386809\"]",
+    "bestBid": 0.047,
+    "bestAsk": 0.07,
+    "lastTradePrice": 0.073,
+    "volumeNum": 328.936466,
+    "active": true,
+    "closed": false
+   },
+   {
+    "id": "3343943",
+    "question": "Will the Democratic Party candidate win the 2026 New Hampshire Senate election by 15%-18%?",
+    "groupItemTitle": "Pappas 15-18%",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"0.13\", \"0.87\"]",
+    "clobTokenIds": "[\"100519812653479001798882235735047699805688470672189167368555040393752768151162\", \"100734909704351464359560854687653617928692664294508464974613130404482976143517\"]",
+    "bestBid": 0.013,
+    "bestAsk": 0.247,
+    "lastTradePrice": 0.014,
+    "volumeNum": 429.35222100000004,
+    "active": true,
+    "closed": false
+   },
+   {
+    "id": "3343944",
+    "question": "Will the Democratic Party candidate win the 2026 New Hampshire Senate election by 18% or more?",
+    "groupItemTitle": "Pappas 18%+",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"0.04\", \"0.96\"]",
+    "clobTokenIds": "[\"114182274248169366093742935751643033897331590868921300952956166048109238853317\", \"67083529129533072791136759658237877368390993363597401382717260846358484597987\"]",
+    "bestBid": 0.009,
+    "bestAsk": 0.071,
+    "lastTradePrice": 0.047,
+    "volumeNum": 378.12,
+    "active": true,
+    "closed": false
+   },
+   {
+    "id": "3343945",
+    "question": "Will Person A win the 2026 New Hampshire Senate election?",
+    "groupItemTitle": "Person A",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"0.5\", \"0.5\"]",
+    "clobTokenIds": "[\"60165239391758151253630995351906933438571828059613474953149984950416891381445\", \"89821712162198716390008154105910131110402050622910747922745280090199509224903\"]",
+    "bestBid": 0,
+    "bestAsk": 1,
+    "lastTradePrice": 0,
+    "volumeNum": 0,
+    "active": false,
+    "closed": false
+   }
+  ]
+ }
+]
