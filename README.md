@@ -1,6 +1,8 @@
 <div align="center">
 
-# 🦶 Susquatch
+<img src="docs/img/logo.svg" width="96" alt="Susquatch logo: a trophy with a bell curve in the cup">
+
+# Susquatch
 
 **A large, elusive trading system that mostly sits very still in the woods,
 then comes out on election night.**
