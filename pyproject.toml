@@ -41,6 +41,12 @@ dev = [
     "types-pyyaml",
     "types-protobuf",
 ]
+# C++ models (sim, tourney, needle) via pybind11. Opt-in because it compiles C++:
+#   uv sync --group models   (needs cmake >= 3.25, a C++20 compiler and protobuf; see cpp/README.md)
+models = ["susq-models"]
+
+[tool.uv.sources]
+susq-models = { path = "cpp" }
 
 [build-system]
 requires = ["hatchling>=1.27"]

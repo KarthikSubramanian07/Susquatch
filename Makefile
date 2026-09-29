@@ -21,7 +21,7 @@ hooks: ## Install the git pre-commit hook (gitleaks + fmt)
 	@ln -sf ../../scripts/hooks/pre-commit .git/hooks/pre-commit && echo "pre-commit hook installed"
 
 # ── quality gates ────────────────────────────────────────────────────────
-.PHONY: fmt lint test test-rust test-py test-cpp ci
+.PHONY: fmt lint test test-rust test-py test-cpp models ci
 fmt: ## Format everything
 	$(CARGO) fmt --all
 	$(UV) run ruff format .
@@ -43,6 +43,10 @@ test-cpp: ## Configure, build and run C++ tests
 	cmake -S cpp -B $(CPP_BUILD) -DCMAKE_BUILD_TYPE=RelWithDebInfo
 	cmake --build $(CPP_BUILD) -j
 	ctest --test-dir $(CPP_BUILD) --output-on-failure
+
+models: ## Build the susq_models Python extension (C++ via pybind11) and run its tests
+	$(UV) sync --group models
+	$(UV) run --group models pytest cpp/tests_py
 
 test: test-rust test-py ## Rust + Python tests
 
