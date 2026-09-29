@@ -11,7 +11,14 @@ option(SUSQ_BUILD_TESTS "Build unit tests" ON)
 option(SUSQ_BUILD_NEEDLE_SERVICE "Build the needle NATS service" ON)
 option(SUSQ_BUILD_PYTHON "Build pybind11 modules" OFF)
 
-# Components are added by feat/cpp-models: sim/, tourney/, needle/, bindings/.
+if(SUSQ_BUILD_TESTS)
+  enable_testing()
+endif()
+include(cmake/deps.cmake)
+
+add_subdirectory(contracts)
+
+# Model components (feat/cpp-models): sim/, tourney/, needle/, bindings/.
 foreach(component sim tourney needle bindings)
   if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/${component}/CMakeLists.txt)
     add_subdirectory(${component})
