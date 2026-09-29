@@ -15,107 +15,125 @@
   <link rel="stylesheet" href="/styles.css">
   <script type="module" src="/app.js"></script>
 </head>
-<body>
+<body data-state="loading">
   <header class="bar">
     <div class="bar-inner">
       <a class="brand" href="/" aria-label="Susquatch dashboard"><img src="/favicon.svg" alt=""><span>susquatch</span></a>
       <span class="pill" id="mode">paper</span>
-      <ol class="stages" id="stages" aria-label="Stage">
-        <li data-stage="forage">forage</li>
-        <li data-stage="stalk">stalk</li>
-        <li data-stage="emerge">emerge</li>
-        <li data-stage="locked">locked</li>
-      </ol>
       <div class="meta">
         <span class="meta-item lease"><span class="k">lease</span><span id="lease">none</span></span>
-        <span class="meta-item" title="Time since the server last pushed status"><span class="dot" id="beat-dot"></span><span id="beat">no heartbeat</span></span>
+        <span class="meta-item beat" title="Time since the server last pushed status"><span class="dot" id="beat-dot"></span><span id="beat">no heartbeat</span></span>
         <span class="killstate" id="killstate">kill off</span>
         <button class="kill-btn" id="kill-open" type="button">Kill</button>
       </div>
     </div>
+    <div class="poll" id="poll" aria-hidden="true"></div>
   </header>
 
-  <div class="silent" id="killed" role="status" hidden>
-    <div class="silent-inner">
+  <!-- The contest calendar. Segment widths are set from the real dates; the marker is the clock. -->
+  <section class="phase" aria-label="Contest calendar">
+    <div class="phase-inner">
+      <ol class="track" id="stages">
+        <li data-stage="forage"><b>forage</b><time datetime="2026-10-01T16:00:00Z">Oct 1</time></li>
+        <li data-stage="stalk"><b>stalk</b><time datetime="2026-10-21T00:00:00Z">Oct 21</time></li>
+        <li data-stage="emerge"><b>emerge</b><time datetime="2026-11-04T00:00:00Z">Nov 3 · 7 pm ET</time></li>
+        <li data-stage="locked"><b>locked</b><time datetime="2026-11-04T17:00:00Z">Nov 4 · noon ET</time></li>
+      </ol>
+      <div class="marker" id="phase-now" aria-hidden="true"><i></i></div>
+      <div class="phase-clock num" id="phase-clock" aria-live="off"></div>
+    </div>
+  </section>
+
+  <div class="banner killed" id="killed" role="status" hidden>
+    <div class="banner-inner">
       <strong>Killed<span id="killed-reason"></span></strong>
-      <span>Every gateway cancelled its orders and froze. Un-kill over SSH: <span class="mono">make unkill</span></span>
+      <span>Every gateway cancelled its orders and froze. Un-kill over SSH: <code>make unkill</code></span>
     </div>
   </div>
 
-  <div class="silent" id="silent" role="alert" hidden>
-    <div class="silent-inner">
+  <div class="banner silent" id="silent" role="alert" hidden>
+    <div class="banner-inner">
       <strong id="silent-title">Server silent</strong>
       <span id="silent-sub">Numbers below are the last known state. The next daily summary leads with this.</span>
     </div>
   </div>
 
   <main>
-    <section class="card summary" aria-labelledby="summary-h">
-      <div class="card-head">
-        <span class="label" id="summary-h">today · <b id="summary-date">no summary yet</b></span>
-        <span class="label" id="summary-link"></span>
-      </div>
-      <div class="card-body">
-        <div class="action" id="action"></div>
-        <div class="digest" id="digest"></div>
-      </div>
-    </section>
-
-    <section class="card hero" aria-label="Money">
+    <section class="hero" aria-label="Money">
       <div class="hero-top">
         <div class="equity">
-          <span class="label">equity <span class="asof" id="asof" hidden></span></span>
-          <div class="big" id="equity">—</div>
-          <div class="sub" id="equity-sub">cash —</div>
+          <span class="label">equity <span class="asof num" id="asof" hidden></span></span>
+          <div class="big num skel" id="equity">—</div>
+          <div class="sub num" id="equity-sub">cash —</div>
         </div>
-        <div class="stats">
-          <div class="stat"><span class="label">day p&amp;l</span><span class="v" id="pnl-day">—</span><span class="s" id="pnl-day-s"></span></div>
-          <div class="stat"><span class="label">total p&amp;l</span><span class="v" id="pnl-total">—</span><span class="s" id="pnl-total-s"></span></div>
-          <div class="stat"><span class="label">rank / field</span><span class="v" id="rank">—</span><span class="s" id="rank-s"></span></div>
-        </div>
+        <dl class="stats">
+          <div class="stat"><dt class="label">day p&amp;l</dt><dd class="v num skel" id="pnl-day">—</dd><dd class="s num" id="pnl-day-s"></dd></div>
+          <div class="stat"><dt class="label">total p&amp;l</dt><dd class="v num skel" id="pnl-total">—</dd><dd class="s num" id="pnl-total-s"></dd></div>
+          <div class="stat"><dt class="label">rank</dt><dd class="v num skel" id="rank">—</dd><dd class="s num" id="rank-s"></dd></div>
+        </dl>
       </div>
-      <svg class="spark" id="spark" viewBox="0 0 400 76" preserveAspectRatio="none" aria-hidden="true"></svg>
-      <div class="spark-axis"><span id="spark-from"></span><span>now</span></div>
+      <div class="chart" id="chart">
+        <div class="spark-wrap">
+          <svg class="spark" id="spark" viewBox="0 0 400 76" preserveAspectRatio="none" aria-hidden="true"></svg>
+          <i class="spot end" id="spark-end" hidden></i>
+          <i class="spot cursor" id="spark-cursor" hidden></i>
+        </div>
+        <div class="scrub num" id="scrub" hidden><b id="scrub-v"></b><span id="scrub-t"></span></div>
+        <div class="spark-axis num"><span id="spark-from"></span><span id="spark-range"></span><span id="spark-now">now</span></div>
+      </div>
     </section>
 
-    <section class="card health-card" aria-labelledby="health-h">
-      <div class="card-head"><span class="label" id="health-h">health</span><span class="label" id="health-sum"></span></div>
-      <div class="health" id="health"></div>
-    </section>
-
-    <div class="cols">
-      <section class="card positions" aria-labelledby="pos-h">
-        <div class="card-head"><span class="label" id="pos-h">positions</span><span class="label" id="pos-sum"></span></div>
-        <div id="positions"></div>
+    <div class="ledger">
+      <section class="row" aria-labelledby="summary-h">
+        <div class="rail">
+          <h2 class="rail-h" id="summary-h">today</h2>
+          <span class="rail-s" id="summary-date">no summary yet</span>
+          <span class="rail-s" id="summary-link"></span>
+        </div>
+        <div class="body summary">
+          <div class="action" id="action"></div>
+          <div class="digest" id="digest"></div>
+        </div>
       </section>
-      <section class="card trades" aria-labelledby="trades-h">
-        <div class="card-head"><span class="label" id="trades-h">recent trades</span></div>
-        <div id="trades"></div>
+
+      <section class="row" aria-labelledby="health-h">
+        <div class="rail"><h2 class="rail-h" id="health-h">health</h2><span class="rail-s" id="health-sum"></span></div>
+        <div class="body health" id="health"></div>
+      </section>
+
+      <section class="row" aria-labelledby="pos-h">
+        <div class="rail"><h2 class="rail-h" id="pos-h">positions</h2><span class="rail-s" id="pos-sum"></span></div>
+        <div class="body" id="positions"></div>
+      </section>
+
+      <section class="row" aria-labelledby="trades-h">
+        <div class="rail"><h2 class="rail-h" id="trades-h">trades</h2><span class="rail-s" id="trades-sum"></span></div>
+        <div class="body" id="trades"></div>
+      </section>
+
+      <section class="row" aria-labelledby="events-h">
+        <div class="rail"><h2 class="rail-h" id="events-h">events</h2><span class="rail-s" id="events-sum">last 24 h</span></div>
+        <div class="body"><ul class="events" id="events"></ul></div>
       </section>
     </div>
-
-    <section class="card" aria-labelledby="events-h">
-      <div class="card-head"><span class="label" id="events-h">events · last 24 h</span><span class="label" id="events-sum"></span></div>
-      <ul class="events" id="events"></ul>
-    </section>
   </main>
 
   <footer id="footer"><span>loading…</span></footer>
 
   <dialog id="kill-dialog" aria-labelledby="kill-h">
     <form class="dlg" id="kill-form" method="dialog">
-      <div class="steps"><b>kill switch</b></div>
+      <div class="dlg-kicker"><span class="dot dead"></span>kill switch</div>
       <h2 id="kill-h">Kill Susquatch?</h2>
       <p>Every gateway cancels all open orders and freezes, typically within a minute
         (poll ~10 s + KV propagation). Instant alternative over SSH: <code>touch ops/KILL</code>.</p>
       <p>Un-killing is not possible from here. It takes SSH: <code>make unkill</code>.</p>
-      <label>reason (goes into ops/KILL and the daily summary)
+      <label>reason <span class="opt">goes into ops/KILL and the daily summary</span>
         <textarea id="kill-reason" required maxlength="300" placeholder="What did you see?"></textarea>
       </label>
       <div class="err" id="kill-err" hidden></div>
       <div class="actions">
         <button class="btn" type="button" id="kill-cancel">Cancel</button>
-        <button class="btn danger" type="submit" id="kill-confirm" disabled>Kill now</button>
+        <button class="btn danger hold" type="submit" id="kill-confirm" disabled><span>Hold to kill</span></button>
       </div>
     </form>
   </dialog>

@@ -205,7 +205,7 @@ which runs on Cloudflare, reports "server silent since …" the next morning.
   self-check / poller health, open ACTION NEEDED items) and pushes every 150 s (120 s in the election window). One push
   = **one KV write** of the `status` record: latest snapshot, a ~30 h equity history for the sparkline, and a ring of
   timestamped events.
-- **Kill.** Dashboard → two-step dialog with a reason → `kill` KV flag. The kill poller (10 s) writes `ops/KILL`, and every
+- **Kill.** Dashboard → dialog with a written reason, then a press-and-hold → `kill` KV flag. The kill poller (10 s) writes `ops/KILL`, and every
   gateway checks it before every write: cancel-all, then freeze. Typical latency is seconds; worst case is roughly
   10 s poll + KV's ~60 s global propagation. **`touch ops/KILL` over SSH is instant and always works.**
   The poller never deletes `ops/KILL`, and the browser cannot un-kill. **Un-kill = `make unkill` on the server**
@@ -263,4 +263,4 @@ The 2 OCPUs are shared with **calshi**, a separate project whose repo we don't e
 | Functions + Worker (auth, KV budget, kill, dead-man, GitHub) | `make dashboard-test` | 52 tests |
 | pusher → Functions → KV → poller → Worker cron, all real, all local | `make dashboard-dev` then `ops/tests/dashboard_e2e.sh` | 18 checks |
 | images build natively on aarch64; stack healthy; proxy permits only list + restart; watchdog heals then stops at 3 | `make up` under colima | by hand, 2026-09-28 |
-| dashboard visuals: normal, pending kill, killed, silent; desktop + phone | `npm run dev` + `node scripts/shots.mjs` | screenshots in `docs/img/` |
+| dashboard visuals: normal, pending kill, killed, silent; desktop + phone; hover scrub and mid-hold Kill | `npm run dev` + `node scripts/shots.mjs` (reduced motion, deterministic) | screenshots in `docs/img/`, reviewed 2026-09-29 |
