@@ -136,6 +136,24 @@ make help         # everything else
 Built against a calendar that doesn't move: trading opens **Oct 1, 2026 12:00 ET**. [`PLAN.md`](PLAN.md) tracks
 what's live, what's paper, and what's still in the woods.
 
+*As of 2026-09-29.* Everything below is built, merged, and tested **against a faithful mock exchange**. Nothing has
+touched the real API yet, because that needs a participant key, and the whole system defaults to paper mode until a human says "go live".
+
+| Piece | State | Tests |
+|---|---|---|
+| Contracts (protobuf → Rust / C++ / Python) | ✅ byte-identical golden round-trips | 18 + 5 + 17 |
+| Python platform client + mock exchange + paper broker | ✅ | part of 609 Python |
+| Oct 1 bridge (gateway, OMS, risk, lease, racer, sniper, `measure-day1`, first trade) | ✅ paper-verified | part of 609 Python |
+| `rust-live` (13 crates, `susq-live`) | ✅ paper-verified, also against the Python mock | 416 Rust |
+| `sim` · `tourney` · `needle` (C++20) + `susq_models` | ✅ calibrated, coverage-checked | 101 C++ |
+| Research: collectors, fair value, calibration, optimizer, telemetry, reports | ✅ live against public Kalshi/Polymarket | part of 609 Python |
+| Election night: `enr` pollers, replays, poll-close table, chaos drills | ✅ captured the real CA SoS 2026 test feed | part of 416 Rust / 609 Python |
+| Ops (Compose, backups, restore, self-check, `make costs`) | ✅ drills pass locally | 28 + 19 drill checks |
+| Dashboard + daily-summary Worker | ✅ built, **not yet deployed** | 52 + 18 e2e |
+
+The first real calibration landed without tuning: Senate control implied by the calibrated race marginals came out at
+**59.2–59.5 %**, against **62 %** on real-money markets. That is within the 2–4 point target from the spec.
+
 ## License
 
 [MIT](LICENSE). The code is ours. Competition Data is the Sponsor's, and none of it is in this repo.
