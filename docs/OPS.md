@@ -24,7 +24,7 @@ Three rules shape every decision below ([`brief/OPS_FREE_AUTONOMY.md`](../brief/
 ```
  ┌──────────────── Oracle Always Free A1 (aarch64, 2 OCPU / 12 GB), or the Mac fallback via colima ──────────────┐
  │  systemd: susquatch.service ── docker compose (ops/compose.yaml) ─────────────────────────────────────────────┐ │
- │    nats · bridge | rust-live · needle · python-scheduler            ← trading + models (other branches)       │ │
+ │    nats · python-scheduler (research) · bridge | rust-live · needle ← research, trading, models              │ │
  │    status-pusher ──── state/status.json ─▶ POST /api/push  (every 150 s, 120 s on election night)            │ │
  │    kill-poller   ◀─── GET /api/kill (every 10 s) ─▶ writes ops/KILL (never deletes it)                       │ │
  │    watchdog ── docker-proxy (list + restart only) ; post-lock ops/KILL at 16:55Z Nov 4                       │ │
@@ -53,14 +53,14 @@ Every piece is in the repo: [`ops/cloud-init.yaml`](../ops/cloud-init.yaml), [`o
 | `rust-live` | `ops/docker/rust.Dockerfile` | `rust` | 4096 | 1 GB | `:9101/healthz` | 30 s stop grace for cancel-all; OOM score −800 |
 | `bridge` | python | `bridge` | 4096 | 768 MB | `:9103/healthz` | `susq-bridge open`; retired after the cutover |
 | `needle` | `ops/docker/cpp.Dockerfile` | `election` | 3072 | 2 GB | `:9102/healthz` | cnats v3.14.0 built from source |
-| `python-scheduler` | python | `scheduler` | 256, **capped 1.5 CPU** | 4 GB | `:9104/healthz` | research can wait; OOM score +500 (dies first) |
+| `python-scheduler` | python | always | 256, **capped 1.5 CPU** | 4 GB | `state/research/scheduler.json` < 180 s old | `susq research run`; never trades; OOM score +500 (dies first) |
 | `status-pusher` | python | always | 1024 | 192 MB | loop | [`status_push.py`](../py/susq/ops/status_push.py) |
 | `kill-poller` | python | always | 2048 | 128 MB | loop | [`kill_poller.py`](../py/susq/ops/kill_poller.py) |
 | `watchdog` | python | always | 1024 | 128 MB | heartbeat file | [`watchdog.py`](../py/susq/ops/watchdog.py) |
 | `docker-proxy` | `wollomatic/socket-proxy:1` | always | 512 | 64 MB | n/a | allows `GET /containers/json` and `POST /containers/{id}/restart`, nothing else |
 
-Pick profiles with `COMPOSE_PROFILES` in `.env` (`bridge` on Oct 1; `rust` after the cutover; add `election` for Nov 3–4;
-`scheduler` when `susq.scheduler` lands). The bridge and rust-live may run side by side: the trader lease, enforced in
+Pick profiles with `COMPOSE_PROFILES` in `.env` (`bridge` on Oct 1; `rust` after the cutover; add `election` for Nov 3–4).
+The research scheduler always runs. The bridge and rust-live may run side by side: the trader lease, enforced in
 both gateways, guarantees only one of them ever places orders.
 
 **Hardening, all services:** read-only root filesystem, `cap_drop: ALL`, `no-new-privileges`, non-root user (the
@@ -69,7 +69,8 @@ metrics ports: Docker-published ports bypass ufw, so "don't publish" is the fire
 `ssh -L 9101:127.0.0.1:9101 ubuntu@<host>`.
 
 **Health contract for service owners.** Every process that should be supervised serves `GET /healthz` (200 = healthy)
-on the port above, bound to `SUSQ_METRICS_ADDR`. Compose marks it unhealthy after 3 failures, and the watchdog restarts
+on the port above, bound to `SUSQ_METRICS_ADDR` (the research scheduler proves liveness through its
+`scheduler.json` instead, which the status pusher also turns into the `research` health tile). Compose marks it unhealthy after 3 failures, and the watchdog restarts
 it (max 3 per hour, then an ACTION NEEDED item instead of a crash loop). A process that *exits* is restarted by
 Compose itself (`restart: unless-stopped`).
 
