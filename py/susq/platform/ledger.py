@@ -8,6 +8,10 @@ Shared by the mock exchange and the paper broker so both settle trades by exactl
 * Buying the side opposite to a held position **nets FIFO and pays 1 per cancelled pair**
   immediately. Economically that is identical to selling the held side: closing YES receives ``x``,
   closing NO receives ``1 - x``.
+* Settlement pays 1 per winning share and removes the holding.
+
+ALL collateral advances (cash backed by a relationship's guaranteed payout floor) are layered on top
+by :class:`susq.platform.collateral.CollateralAccount`; this module is plain cash accounting.
 
 All money is held as integer **pip-units** (1 SUSQie = 10 000 pip-units), so ledgers never drift.
 """
@@ -137,6 +141,23 @@ class Ledger:
         holding.realized_pips += realized
         self.cash_pips += cash_delta
         return Execution(cash_delta, closed, opened, realized)
+
+    def settle(self, exchange_id: str, yes_won: bool) -> tuple[int, int, int]:
+        """Resolve a holding: 1 per winning share, 0 per losing share; the lots are gone.
+
+        Returns ``(signed quantity settled, cost basis, payout)``, money in pip-units.
+        """
+        holding = self.holdings.get(exchange_id)
+        if holding is None or not holding.lots:
+            return 0, 0, 0
+        qty = holding.quantity
+        basis = holding.cost_basis_pips
+        wins = (qty > 0) == yes_won
+        payout = abs(qty) * PIPS_PER_UNIT if wins else 0
+        holding.lots.clear()
+        holding.realized_pips += payout - basis
+        self.cash_pips += payout
+        return qty, basis, payout
 
     def holdings_value_pips(self, marks: dict[str, int]) -> int:
         """Mark-to-market value of all non-flat holdings; missing marks value at cost."""
