@@ -2134,6 +2134,14 @@ dependencies = [
 [[package]]
 name = "susq-risk"
 version = "0.1.0"
+dependencies = [
+ "chrono",
+ "proptest",
+ "susq-contracts",
+ "susq-core",
+ "thiserror",
+ "tracing",
+]
 
 [[package]]
 name = "susq-strategies"
