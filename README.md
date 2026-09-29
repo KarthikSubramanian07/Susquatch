@@ -92,8 +92,13 @@ There are **no real-time alerts** by design. The system has to fail safe on its 
   <br><sub><i>Rendered from a synthetic status fixture. Every number here is demo data, not results.</i></sub>
 </p>
 
-A password-protected Cloudflare Pages site at `susquatch.pages.dev`: mode, stage, lease, heartbeat, equity, rank, health,
-positions, trades, events and a two-step **Kill**. If the server goes quiet, the page turns clay and says since when.
+A password-protected Cloudflare Pages site at `susquatch.pages.dev`, built like a ledger rather than a wall of cards: one
+column of numbers, a mono rail down the left, and hairlines between sections. Across the top runs the Cup's calendar,
+forage → stalk → emerge → locked, with a marker at *now* and a countdown to the lock. Equity tweens when it changes, the
+day's curve draws itself in and can be scrubbed, a hairline under the header fills up until the next poll, and the
+heartbeat dot rings when a fresh push lands. Clay is reserved for the three things a human must look at: **ACTION NEEDED**,
+*server silent since…*, and **Kill**, which takes a written reason and a press-and-hold. It is plain HTML, CSS and one
+module: no framework, no build, nothing rendered with `innerHTML`.
 Once a day a cron Worker, running on Cloudflare rather than the server, writes the summary (ACTION NEEDED first, usually
 empty) to the dashboard and to a pinned GitHub issue, so a dead server still gets reported. All of it costs $0, and
 `make costs` fails the build if that ever stops being true. See [`docs/OPS.md`](docs/OPS.md) and
