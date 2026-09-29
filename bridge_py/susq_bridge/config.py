@@ -67,6 +67,8 @@ class RiskConfig:
     reject_breaker_per_min: int
     max_order_notional_frac: float
     clusters: dict[str, float] = field(default_factory=dict)
+    #: Size buying power on modeled ALL effective cost instead of full notional (default off).
+    use_collateral_buying_power: bool = False
 
 
 @dataclass(frozen=True)
@@ -193,6 +195,7 @@ def load_config(home: Path | None = None, env: Mapping[str, str] | None = None) 
             reject_breaker_per_min=int(risk["reject_breaker_per_min"]),
             max_order_notional_frac=float(risk["max_order_notional_frac"]),
             clusters={k: float(v) for k, v in risk.get("clusters", {}).items()},
+            use_collateral_buying_power=bool(risk.get("use_collateral_buying_power", False)),
         ),
         oms=OmsConfig(
             default_ttl_s=float(raw["oms"]["default_ttl_s"]),

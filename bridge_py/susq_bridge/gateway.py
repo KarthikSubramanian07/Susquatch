@@ -13,7 +13,8 @@ Every write runs the same gauntlet, in this order:
 8. **retry policy** - only documented codes (429, 409 REQUEST_IN_FLIGHT >= 90 s, 502, 503, 5xx and
    network errors), always with the same idempotency key, exponential backoff with jitter,
    never past the order's own expiry;
-9. post-process: intent state, OMS tracking, journal.
+9. post-process: intent state, OMS tracking, journal, and the ``all`` (ALL collateral) economics of
+   every response, recorded whatever ``[risk] use_collateral_buying_power`` says.
 """
 
 from __future__ import annotations
@@ -36,10 +37,12 @@ from susq.platform.models import (
     OrderBook,
     OrderRequest,
     PlaceOrderResult,
+    Relationship,
 )
 from susq.platform.paper import PaperBroker
 from susq.platform.prices import to_pips
 
+from susq_bridge.collateral import CollateralTracker, request_legs
 from susq_bridge.config import BridgeConfig
 from susq_bridge.intents import IntentStore
 from susq_bridge.journal import Journal
@@ -108,6 +111,7 @@ class Portfolio:
     positions: dict[str, int]
     marks: dict[str, int]
     equity: float
+    cash: float | None = None
 
 
 class GatewayBooks:
@@ -168,9 +172,18 @@ class Gateway:
         self.action_needed: list[str] = []
         self._background: set[asyncio.Task[Any]] = set()
         risk.on_trip = self._on_trip
+        #: ALL collateral: real economics from every response + the model behind the opt-in sizing.
+        self.collateral = CollateralTracker()
+        risk.cost_model = lambda reqs: self.collateral.effective_cost_pips(risk.positions, request_legs(reqs))
 
     def attach(self, oms: Oms) -> None:
         self.oms = oms
+
+    def set_relationships(self, relationships: Sequence[Relationship]) -> None:
+        """Feed ``GET /relationships`` to the collateral model (and to the paper broker's copy)."""
+        relations = self.collateral.set_relationships(relationships)
+        if self.paper is not None:
+            self.paper.set_relationships(relations)
 
     # ── gates ───────────────────────────────────────────────────────────────────────────────
 
@@ -378,6 +391,8 @@ class Gateway:
     ) -> None:
         state = ops_pb2.INTENT_STATE_ACKED if result.open else ops_pb2.INTENT_STATE_DONE
         self.intents.update(intent_id, state, order_id=result.order_id or 0)
+        if (econ := self.collateral.observe(intent_id, request, result)) is not None:
+            self.journal.event("all_economics", {**econ.journal(), "strategy": strategy, "mode": self.mode})
         if self.oms is not None:
             self.oms.on_placed(intent_id, strategy, request, result, input_ts)
         if result.quantity_traded:
@@ -425,9 +440,13 @@ class Gateway:
             requests, reasons = [self._request(s, expiration, quantity) for s in specs], []
             pending: list[Any] = list(self.oms.open_orders())
             allowed = quantity
-            for spec, req in zip(specs, requests, strict=True):
+            for i, (spec, req) in enumerate(zip(specs, requests, strict=True)):
                 decision = self.risk.check(
-                    req, pending, fair_pips=spec.fair_pips, max_notional=spec.max_notional
+                    req,
+                    pending,
+                    fair_pips=spec.fair_pips,
+                    max_notional=spec.max_notional,
+                    prior_legs=requests[:i],
                 )
                 if not decision.accepted:
                     reasons.append(decision.reason)
@@ -601,16 +620,31 @@ class Gateway:
             opens = await self.paper.list_open_orders(self.tournament_id)
             positions = {ex: h.quantity for ex, h in self.paper.ledger.holdings.items() if h.quantity}
             self.paper.marks.update(marks)
-            return Portfolio(opens, positions, dict(marks), self.paper.account_value())
+            self.collateral.observe_collateral(self.paper.get_collateral())
+            return Portfolio(
+                opens, positions, dict(marks), self.paper.account_value(), self.paper.ledger.cash
+            )
         opens = await self.read("open_orders", lambda: self.client.list_open_orders(self.tournament_id))
         pos = await self.read("positions", lambda: self.client.get_positions(slug))
         pnl = await self.read("pnl", lambda: self.client.get_pnl(slug, period="all"))
+        if self.risk.uses_collateral:
+            # Only worth the extra read when the advances feed sizing; order responses keep the
+            # outstanding map current in between.
+            coll = await self.read("collateral", lambda: self.client.get_collateral(self.tournament_id))
+            self.collateral.observe_collateral(coll)
         positions = {p.exchange_id: round(p.quantity) for p in pos.positions if round(p.quantity)}
         pmarks = dict(marks)
         for p in pos.positions:
             if p.current_price is not None:
                 pmarks[p.exchange_id] = to_pips(p.current_price)
-        return Portfolio(opens, positions, pmarks, pnl.total_account_value)
+        # Cash = account value - holdings value. If the engine nets the ALL advance out of account
+        # value (undocumented), this under-states cash: the safe direction.
+        cash = (
+            pnl.total_account_value - pnl.total_holdings_value
+            if pnl.total_holdings_value is not None
+            else None
+        )
+        return Portfolio(opens, positions, pmarks, pnl.total_account_value, cash)
 
 
 @dataclass(frozen=True, slots=True)
@@ -618,6 +652,8 @@ class _PendingView:
     """A not-yet-sent bundle leg, counted by risk as if it were resting."""
 
     request: OrderRequest
+    #: Marks a bundle leg that risk's collateral cost model prices itself (never reserved twice).
+    pending: bool = True
 
     @property
     def exchange_id(self) -> str:

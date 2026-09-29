@@ -11,14 +11,23 @@ Exposure is measured in money (pip-units, 1 SUSQie = 10 000) the conservative wa
 
 ``check`` never returns a quantity that would push any cap past its limit; when a cap binds it
 shrinks the order to the largest compliant size instead of rejecting outright.
+
+**Buying power** (only once the portfolio has reported ``cash``): what the order would consume must
+fit in cash minus what our resting orders could consume (every resting order at full notional).
+By default an order consumes the full notional of the shares it opens (closing shares are free),
+exactly the conservative rule the platform applies without collateral. With
+``[risk] use_collateral_buying_power = true`` it consumes the *modeled effective cost* instead
+(``cost_model``: nominal minus the ALL advance the relationship component's floor would back; see
+:mod:`susq_bridge.collateral`), and legs of the same bundle are costed together, in order. Exposure
+caps always stay on full notional.
 """
 
 from __future__ import annotations
 
 import math
 from collections import deque
-from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass, field
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from typing import Protocol
 
@@ -52,6 +61,17 @@ def _side_price(yes_dir: int, yes_price: int) -> int:
     return yes_price if yes_dir > 0 else PIPS_PER_UNIT - yes_price
 
 
+def _largest(limit: int, fits: Callable[[int], bool]) -> int:
+    """Largest ``q`` in ``[0, limit]`` with ``fits(q)`` (``fits`` monotone, ``fits(0)`` assumed)."""
+    if fits(limit):
+        return limit
+    lo, hi = 0, limit
+    while hi - lo > 1:
+        mid = (lo + hi) // 2
+        lo, hi = (mid, hi) if fits(mid) else (lo, mid)
+    return lo
+
+
 @dataclass
 class RiskEngine:
     config: RiskConfig
@@ -65,6 +85,10 @@ class RiskEngine:
     marks: dict[str, int] = field(default_factory=dict)
     frozen_reason: str | None = None
     glitch_used_pips: int = 0
+    #: Tournament cash from the last portfolio read (None until known: buying power unchecked).
+    cash: float | None = None
+    #: Cash (pip-units) a sequence of requests would consume under the ALL collateral model.
+    cost_model: Callable[[Sequence[OrderRequest]], int] | None = None
     _rejects: deque[datetime] = field(default_factory=deque)
     _equity: deque[tuple[datetime, float]] = field(default_factory=deque)
     on_trip: Callable[[str], None] | None = None
@@ -75,10 +99,18 @@ class RiskEngine:
     def frozen(self) -> bool:
         return self.frozen_reason is not None
 
-    def update_portfolio(self, positions: Mapping[str, int], marks: Mapping[str, int], equity: float) -> None:
+    def update_portfolio(
+        self,
+        positions: Mapping[str, int],
+        marks: Mapping[str, int],
+        equity: float,
+        cash: float | None = None,
+    ) -> None:
         self.positions = {ex: q for ex, q in positions.items() if q}
         self.marks.update(marks)
         self.equity = equity
+        if cash is not None:
+            self.cash = cash
         self.observe_equity(equity)
 
     def trip(self, reason: str) -> None:
@@ -143,8 +175,13 @@ class RiskEngine:
         *,
         fair_pips: int | None = None,
         max_notional: float | None = None,
+        prior_legs: Sequence[OrderRequest] = (),
     ) -> Decision:
-        """Accept (possibly smaller) or reject ``order``. Never mutates state (see :meth:`commit`)."""
+        """Accept (possibly smaller) or reject ``order``. Never mutates state (see :meth:`commit`).
+
+        ``prior_legs`` are the earlier legs of the same atomic bundle (already in ``open_orders`` as
+        pending views); the collateral cost model prices this leg after them.
+        """
         orders = list(open_orders)
         if order.tournament_id != self.tournament_id:
             return Decision(False, 0, "tournament_mismatch")
@@ -193,6 +230,9 @@ class RiskEngine:
             used = sum(self.market_exposure_pips(e, orders) for e in members)
             limits[f"cluster:{cluster}"] = room(frac * equity_pips, used)
 
+        if self.cash is not None:
+            limits["buying_power"] = self.buying_power_room(order, orders, prior_legs, closing, unit)
+
         glitch = False
         if fair_pips is not None:
             through = (fair_pips - order.yes_price_pips) * order.yes_direction
@@ -206,6 +246,38 @@ class RiskEngine:
             return Decision(False, 0, f"cap: {', '.join(binding)}", binding, glitch)
         return Decision(True, qty, None if qty == order.quantity else "reduced", binding, glitch)
 
+    @property
+    def uses_collateral(self) -> bool:
+        return self.config.use_collateral_buying_power and self.cost_model is not None
+
+    def buying_power_room(
+        self,
+        order: OrderRequest,
+        orders: Sequence[OrderView],
+        prior_legs: Sequence[OrderRequest],
+        closing: int,
+        unit: int,
+    ) -> int:
+        """Largest quantity whose cash consumption fits in cash minus resting-order reservations."""
+        assert self.cash is not None
+        collateral = self.uses_collateral
+        reserved = sum(
+            o.remaining * _side_price(o.yes_dir, o.yes_price)
+            for o in orders
+            # Pending legs of this bundle are costed by the model below, not reserved twice.
+            if not (collateral and getattr(o, "pending", False))
+        )
+        # Over-committed or not, shares that cost nothing (closing a position) always fit.
+        available = max(0, math.floor(self.cash * PIPS_PER_UNIT) - reserved)
+        if not collateral:
+            return closing + available // unit if unit else order.quantity
+        assert self.cost_model is not None
+        model = self.cost_model
+        base = model(prior_legs)
+        return _largest(
+            order.quantity, lambda q: model([*prior_legs, replace(order, quantity=q)]) - base <= available
+        )
+
     def commit(self, order: OrderRequest, decision: Decision) -> None:
         """Book an accepted order's glitch budget (exposure itself is tracked through open orders)."""
         if decision.accepted and decision.glitch:
@@ -215,6 +287,8 @@ class RiskEngine:
     def snapshot(self) -> dict[str, object]:
         return {
             "equity": self.equity,
+            "cash": self.cash,
+            "collateralBuyingPower": self.uses_collateral,
             "frozen": self.frozen_reason,
             "glitch_used": self.glitch_used_pips / PIPS_PER_UNIT,
             "positions": dict(self.positions),
