@@ -166,16 +166,21 @@ TEST(NatsIntegration, RoundTripRejectsGarbageReconnectsAndStopsCleanly) {
   const std::string url = "nats://127.0.0.1:" + port;
   auto nats = std::make_unique<Child>(std::vector<std::string>{server, "-a", "127.0.0.1", "-p", port});
   ASSERT_TRUE(nats->ok());
+  // Connecting the client first also waits until the server accepts connections.
+  Client client(url);
+  ASSERT_TRUE(client.ok()) << "could not connect to " << url;
   Child needle({SUSQ_NEEDLE_BIN, "--prior", std::string(SUSQ_FIXTURES_DIR) + "/needle_prior.json", "--nats", url,
                 "--heartbeat-ms", "200"});
   ASSERT_TRUE(needle.ok());
-  Client client(url);
-  ASSERT_TRUE(client.ok()) << "could not connect to " << url;
 
-  // Heartbeats flow with a proper header and increasing seq.
-  auto hb1 = NextHeartbeat(client, 5s);
+  // Heartbeats flow with a proper header and increasing seq. Any published before needle's own
+  // connection completed say "degraded:bus_disconnected" and arrive first; wait for a healthy one.
+  std::optional<susq::v1::Heartbeat> hb1;
+  for (int i = 0; i < 25 && !(hb1 && hb1->status() == "ok"); ++i) hb1 = NextHeartbeat(client, 1s);
+  ASSERT_TRUE(hb1.has_value());
+  EXPECT_EQ(hb1->status(), "ok");
   auto hb2 = NextHeartbeat(client, 2s);
-  ASSERT_TRUE(hb1 && hb2);
+  ASSERT_TRUE(hb2.has_value());
   EXPECT_EQ(hb1->header().producer().name(), "needle");
   EXPECT_EQ(hb1->header().schema_version(), susq::contracts::kSchemaVersion);
   EXPECT_GT(hb2->header().seq(), hb1->header().seq());
