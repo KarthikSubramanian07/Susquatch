@@ -1,6 +1,7 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
+#include <optional>
 #include <stdexcept>
 #include <string>
 
@@ -9,6 +10,10 @@
 #include "susq/contracts.hpp"
 #include "susq/needle/model.hpp"
 #include "susq/needle/service.hpp"
+
+#ifndef SUSQ_GIT_SHA
+#define SUSQ_GIT_SHA "unknown"
+#endif
 
 namespace susq::bindings {
 namespace {
@@ -38,6 +43,55 @@ py::dict RaceDict(const RaceEstimate& e) {
   d["n_counties_reporting"] = e.n_counties_reporting;
   return d;
 }
+
+
+// Serialized-protobuf facade used by the replay tooling (py/susq/replay/backends.py): the
+// service core exactly as susq-needle runs it, minus the transport.
+class Needle {
+ public:
+  explicit Needle(NeedleParams params) : params_(params) {}
+
+  void LoadPrior(const py::bytes& data) {
+    susq::v1::NeedlePrior prior;
+    if (!susq::contracts::Decode(std::string(data), &prior)) throw py::value_error("not a binary NeedlePrior");
+    if (!prior.has_header() || !susq::contracts::HeaderOk(prior.header())) {
+      throw py::value_error("NeedlePrior: missing header or unsupported schema_version");
+    }
+    ServiceOptions opts;
+    opts.git_sha = SUSQ_GIT_SHA;
+    service_.emplace(NeedleModel(prior, params_), opts);
+    last_.reset();
+  }
+
+  py::bytes Ingest(const py::bytes& data) {
+    NeedleService& svc = Service();
+    susq::v1::CountyResultsBatch batch;
+    if (!susq::contracts::Decode(std::string(data), &batch)) {
+      svc.HandleBatchBytes(std::string(data), 0);  // counts it as malformed
+      throw py::value_error("not a binary CountyResultsBatch");
+    }
+    // Stamp outputs with the batch's own time so replays are reproducible.
+    auto out = svc.HandleBatch(batch, batch.has_header() ? batch.header().produced_at_ns() : 0);
+    if (!out) throw py::value_error("CountyResultsBatch without a header or with a foreign schema_version");
+    last_ = std::move(out);
+    return py::bytes(susq::contracts::Encode(last_->race_posteriors));
+  }
+
+  py::object NationalShiftBytes() const {
+    if (!last_) return py::none();
+    return py::bytes(susq::contracts::Encode(last_->national_shift));
+  }
+
+  NeedleService& Service() {
+    if (!service_) throw std::runtime_error("call load_prior() first");
+    return *service_;
+  }
+
+ private:
+  NeedleParams params_;
+  std::optional<NeedleService> service_;
+  std::optional<BatchOutputs> last_;
+};
 
 }  // namespace
 
@@ -152,6 +206,38 @@ void BindNeedle(py::module_& m) {
         susq::v1::NationalShift msg;
         self.FillNationalShift(&msg);
         return py::bytes(susq::contracts::Encode(msg));
+      });
+
+  py::class_<Needle>(m, "Needle",
+                     "Serialized-protobuf interface for replays: load_prior(NeedlePrior bytes), then "
+                     "ingest(CountyResultsBatch bytes) -> RacePosteriors bytes, with headers and seq exactly "
+                     "as the susq-needle service publishes them.")
+      .def(py::init<NeedleParams>(), py::arg("params") = NeedleParams{})
+      .def("load_prior", &Needle::LoadPrior, py::arg("data"), "Binary susq.v1.NeedlePrior; resets all state.")
+      .def("ingest", &Needle::Ingest, py::arg("data"),
+           "Binary susq.v1.CountyResultsBatch in, binary susq.v1.RacePosteriors out. Raises ValueError "
+           "(and counts the drop) for undecodable or foreign-schema batches.")
+      .def("national_shift", &Needle::NationalShiftBytes,
+           "Binary susq.v1.NationalShift from the last accepted batch, or None.")
+      .def("races",
+           [](Needle& self) {
+             py::list out;
+             for (const auto& e : self.Service().model().races()) out.append(RaceDict(e));
+             return out;
+           })
+      .def("counters", [](Needle& self) {
+        const auto& svc = self.Service().counters();
+        const auto& mc = self.Service().model().counters();
+        py::dict d;
+        d["batches_ok"] = svc.batches_ok;
+        d["malformed"] = svc.malformed;
+        d["bad_header"] = svc.bad_header;
+        d["results_accepted"] = mc.accepted;
+        d["duplicate_batch"] = mc.duplicate_batch;
+        d["regression"] = mc.regression;
+        d["unknown_race"] = mc.unknown_race;
+        d["invalid"] = mc.invalid;
+        return d;
       });
 }
 

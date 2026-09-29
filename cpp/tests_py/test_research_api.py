@@ -69,8 +69,10 @@ def test_simulate_threshold_shape_and_floor() -> None:
     )
     assert t.shape == (10_000,)
     assert (t >= 1.0).all()
-    # Whenever the 2-cent contract pays, some of 300 YOLOs almost surely hold it: T = 50.
-    assert np.mean(t[outcomes[:, 0] == 1] == 50.0) > 0.99
+    # When the 2-cent contract pays, T = 50 iff one of the 300 YOLOs picked it.
+    w = prices[0] / prices.sum()
+    expected = 1 - (1 - w) ** 300
+    assert np.mean(t[outcomes[:, 0] == 1] == 50.0) == pytest.approx(expected, abs=0.02)
 
 
 def test_research_facade_picks_the_native_engine() -> None:

@@ -82,3 +82,30 @@ def test_batch_json_and_proto_bytes_roundtrip(model: needle.NeedleModel, fixture
 def test_invalid_prior_raises() -> None:
     with pytest.raises(ValueError, match="header"):
         needle.NeedleModel('{"races": []}')
+
+
+def test_serialized_needle_matches_the_replay_contract(fixtures_dir: Path) -> None:
+    """py/susq/replay/backends.py: Needle().load_prior(bytes); ingest(bytes) -> bytes."""
+    n = needle.Needle()
+    with pytest.raises(RuntimeError, match="load_prior"):
+        n.ingest(b"")
+    n.load_prior((fixtures_dir / "needle_prior.binpb").read_bytes())
+    out = n.ingest((fixtures_dir / "county_results_batch.binpb").read_bytes())
+    assert isinstance(out, bytes)
+    assert n.races()[0]["n_batches"] == 1
+    assert isinstance(n.national_shift(), bytes)
+    with pytest.raises(ValueError, match="CountyResultsBatch"):
+        n.ingest(b"\xff\xff\xff\xff")
+    assert n.counters()["malformed"] == 1
+    bus_pb2 = pytest.importorskip("susq.v1.bus_pb2")
+    post = bus_pb2.RacePosteriors.FromString(out)
+    assert post.header.producer.name == "needle"
+    assert post.header.seq == 1
+    assert post.header.produced_at_ns == 1791475200000000000  # the batch's own timestamp
+    assert post.races[0].race_id == OH
+
+
+def test_replay_backend_selects_the_cpp_needle() -> None:
+    backends = pytest.importorskip("susq.replay.backends")
+    backend, why = backends.select_backend("cpp")
+    assert backend.name == "cpp-needle", why
