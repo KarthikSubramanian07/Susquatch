@@ -87,6 +87,8 @@ pub struct Engine {
     sends: Vec<JoinHandle<SendOutcome>>,
     due: Due,
     kill_handled: bool,
+    /// The last-order cancel-all already ran.
+    gate_closed_handled: bool,
     needle_epoch: u64,
     market_map_mtime: Option<std::time::SystemTime>,
 }
@@ -114,6 +116,7 @@ impl Engine {
             sends: Vec::new(),
             due: Due::default(),
             kill_handled: false,
+            gate_closed_handled: false,
             needle_epoch: 0,
             market_map_mtime: None,
             world,
@@ -156,7 +159,7 @@ impl Engine {
         if now >= self.due.lease {
             self.renew_lease(now);
         }
-        if self.handle_kill().await {
+        if self.handle_kill().await || self.handle_last_order_gate(now).await {
             return;
         }
         self.refresh_inputs(now).await;
@@ -229,6 +232,21 @@ impl Engine {
                 .is_ok()
             {
                 self.kill_handled = true;
+            }
+        }
+        true
+    }
+
+    /// At the last-order gate (16:55Z Nov 4) cancel everything once; afterwards trade nothing.
+    /// Returns true once the gate has closed.
+    async fn handle_last_order_gate(&mut self, now: i64) -> bool {
+        if susq_core::clock::from_ns(now) < self.d.cfg.calendar.last_order_utc {
+            return false;
+        }
+        if !self.gate_closed_handled {
+            self.world.event("last-order gate reached: cancelling everything");
+            if self.d.gateway.cancel_all("last-order gate").await.is_ok() {
+                self.gate_closed_handled = true;
             }
         }
         true

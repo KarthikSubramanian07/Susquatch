@@ -363,3 +363,39 @@ async fn stale_targets_stop_new_exposure_until_fresh_ones_arrive() {
     s.tick(1).await;
     assert_eq!(s.intents("scenario").len(), 2, "fresh targets: trading resumes");
 }
+
+#[tokio::test]
+async fn everything_is_cancelled_at_the_last_order_gate() {
+    let mut s = session(|home, clock| write_targets(home, clock.now_ns(), "targets-1.json")).await;
+    s.tick(1).await;
+    assert_eq!(s.paper_open_orders().await, 1);
+    // Jump to 16:54:30Z on Nov 4 with fresh targets: still trading.
+    s.clock.set_ns(susq_core::clock::to_ns(
+        "2026-11-04T16:54:30Z".parse().expect("ts"),
+    ));
+    write_targets(s.home.path(), s.clock.now_ns(), "targets-2.json");
+    s.tick(1).await;
+    assert!(s.paper_open_orders().await >= 1, "resting before the gate");
+    s.clock.set_ns(susq_core::clock::to_ns(
+        "2026-11-04T16:55:00Z".parse().expect("ts"),
+    ));
+    s.tick(0).await;
+    assert_eq!(s.paper_open_orders().await, 0, "nothing rests into the lock");
+    // Expirations are capped at 16:55Z anyway; the explicit cancel-all must still have fired.
+    assert!(
+        s.engine
+            .world
+            .events
+            .iter()
+            .any(|e| e.contains("last-order gate")),
+        "{:?}",
+        s.engine.world.events
+    );
+    let before = s.engine.gateway().oms().lock().all().count();
+    s.tick(10).await;
+    assert_eq!(
+        s.engine.gateway().oms().lock().all().count(),
+        before,
+        "no new orders after the gate"
+    );
+}
