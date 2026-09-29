@@ -6,8 +6,11 @@
 
 pub mod ca_sos;
 pub mod clarity;
+pub mod enhanced_voting;
 pub mod json_map;
 pub mod static_json;
+
+use std::time::Duration;
 
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -39,6 +42,8 @@ pub struct PollOutput {
     pub unresolved_counties: u32,
     /// Non-fatal errors for individual URLs (the poll still returned other data).
     pub partial_errors: Vec<String>,
+    /// Discovery state of sources that find their endpoints at runtime (latest snapshot).
+    pub discovery: Option<Box<enhanced_voting::DiscoveryStatus>>,
 }
 
 /// Why a whole poll failed.
@@ -158,6 +163,37 @@ pub fn build_source(cfg: &EnrConfig, s: &SourceConfig) -> Result<Box<dyn Results
                 compiled,
                 http,
             ))
+        }
+        SourceKind::EnhancedVoting {
+            base_url,
+            jurisdiction,
+            election_date,
+            contests,
+            discovery_interval_s,
+            require_production,
+            mapping,
+        } => {
+            let compiled = mapping
+                .compile()
+                .map_err(|e| BuildError(format!("{}: {e}", s.id)))?;
+            let mut ctx = ctx;
+            for c in contests {
+                ctx.races.insert(&c.name, &c.race_id);
+            }
+            let discovery_interval = Duration::from_secs_f64(discovery_interval_s.max(1.0));
+            let settings = enhanced_voting::Settings {
+                base_url: base_url.clone(),
+                jurisdiction: jurisdiction.clone(),
+                election_date: *election_date,
+                contests: contests.clone(),
+                discovery_interval,
+                min_rediscovery_gap: discovery_interval.min(enhanced_voting::MIN_REDISCOVERY_GAP),
+                require_production: *require_production,
+            };
+            Box::new(
+                enhanced_voting::EnhancedVotingSource::new(ctx, settings, compiled, http)
+                    .map_err(|e| BuildError(format!("{}: {e}", s.id)))?,
+            )
         }
     })
 }

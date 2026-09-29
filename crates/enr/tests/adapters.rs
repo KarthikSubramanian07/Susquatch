@@ -227,15 +227,15 @@ fn enhanced_voting_mapping_from_repo_config_pivots_vote_types() {
         .iter()
         .find(|s| s.id == "ga_sos")
         .expect("ga_sos source");
-    let SourceKind::StaticJson { mapping, .. } = &src.kind else {
-        panic!("ga_sos must be static_json")
+    let SourceKind::EnhancedVoting { mapping, .. } = &src.kind else {
+        panic!("ga_sos must be enhanced_voting")
     };
     let mapping: &JsonMapping = mapping;
     let compiled = mapping.compile().expect("compile");
     let c = AdapterContext {
         source_id: "ga_sos".into(),
         state: "GA".into(),
-        races: cfg.race_map("ga_sos"),
+        races: RaceMap::from_pairs([("President of the US", "2024-PRES-GA")]),
         tz: src.tz,
     };
     let parsed = static_json::parse(
