@@ -216,11 +216,17 @@ class Gateway:
 
     # ── reads ───────────────────────────────────────────────────────────────────────────────
 
-    async def read[T](self, label: str, fn: Callable[[], Awaitable[T]], *, attempts: int = 4) -> T:
-        """A metered, retried read. Terminal errors raise immediately."""
+    async def read[T](
+        self, label: str, fn: Callable[[], Awaitable[T]], *, attempts: int = 4, priority: bool = False
+    ) -> T:
+        """A metered, retried read. Terminal errors raise immediately.
+
+        ``priority`` reads sit on the critical path to an order (the racer's books) and may draw from
+        the reserved order budget, so background reads (recorder, census) can't delay them.
+        """
         backoff = 0.25
         for attempt in range(1, attempts + 1):
-            await self.limiter.acquire("read")
+            await self.limiter.acquire("write" if priority else "read")
             try:
                 value = await fn()
             except ApiError as err:

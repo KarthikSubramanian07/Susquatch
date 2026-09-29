@@ -327,7 +327,9 @@ class Racer:
         )
 
     async def _books(self, exchange_ids: Sequence[str]) -> dict[str, OrderBook]:
-        books = await asyncio.gather(*(self.market.book(ex, max_age_s=0.0) for ex in exchange_ids))
+        books = await asyncio.gather(
+            *(self.market.book(ex, max_age_s=0.0, priority=True) for ex in exchange_ids)
+        )
         return dict(zip(exchange_ids, books, strict=True))
 
     async def _execute(self, ev: ConstraintEvaluation, bundle: Bundle, received_at: float) -> BundleOutcome:

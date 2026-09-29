@@ -103,7 +103,9 @@ class MarketState:
         self.prices_at = self.clock()
         return self.prices
 
-    async def book(self, exchange_id: str, *, depth: int = 50, max_age_s: float = 0.5) -> OrderBook:
+    async def book(
+        self, exchange_id: str, *, depth: int = 50, max_age_s: float = 0.5, priority: bool = False
+    ) -> OrderBook:
         cached = self._books.get(exchange_id)
         now = self.clock()
         if cached is not None and (now - cached[0]).total_seconds() <= max_age_s:
@@ -111,7 +113,7 @@ class MarketState:
         client = self.gateway.client
         tid = self.tournament_id
         book = await self.gateway.read(
-            "orderbook", lambda: client.get_orderbook(exchange_id, tid, depth=depth)
+            "orderbook", lambda: client.get_orderbook(exchange_id, tid, depth=depth), priority=priority
         )
         self._books[exchange_id] = (now, book)
         return book
