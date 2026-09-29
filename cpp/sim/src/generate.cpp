@@ -17,6 +17,20 @@ void FillNormals(uint64_t seed, const std::string& key, std::size_t block, doubl
   for (std::size_t k = 0; k < n; ++k) out[k] = sd * s.Normal();
 }
 
+// Region + state shock of an entity for this block (zeros when it has no state).
+const std::vector<double>& GeoShocks(int state_index, const detail::Layout& layout,
+                                     const std::vector<std::vector<double>>& region,
+                                     const std::vector<std::vector<double>>& state, std::vector<double>& scratch) {
+  if (state_index < 0) {
+    std::fill(scratch.begin(), scratch.end(), 0.0);
+    return scratch;
+  }
+  const auto st = static_cast<std::size_t>(state_index);
+  const auto& reg = region[static_cast<std::size_t>(layout.state_region[st])];
+  for (std::size_t k = 0; k < scratch.size(); ++k) scratch[k] = reg[k] + state[st][k];
+  return scratch;
+}
+
 double ClusterTerm(const detail::Loadings& loadings, const std::vector<std::vector<double>>& shocks,
                    std::size_t k) {
   double sum = 0.0;
@@ -78,6 +92,7 @@ WorldSet Generate(const SimConfig& config) {
     for (std::size_t s = 0; s < layout.states.size(); ++s) {
       FillNormals(seed, "state:" + layout.states[s], b, sh.state_sd, state[s], len);
     }
+    std::vector<double> geo_scratch(len);
     std::vector<std::vector<double>> cluster(n_clusters, std::vector<double>(len));
     for (std::size_t c = 0; c < n_clusters; ++c) {
       FillNormals(seed, "cluster:" + config.clusters[c].name, b, config.clusters[c].sd, cluster[c], len);
@@ -88,12 +103,11 @@ WorldSet Generate(const SimConfig& config) {
 
     for (std::size_t i = 0; i < n_races; ++i) {
       const RaceSpec& race = config.races[i];
-      const auto st = static_cast<std::size_t>(layout.race_state[i]);
-      const auto& reg = region[static_cast<std::size_t>(layout.state_region[st])];
+      const std::vector<double>& geo = GeoShocks(layout.race_state[i], layout, region, state, geo_scratch);
       Sampler s(Xoshiro256pp(seed, HashKey("race:" + race.id), b));
       float* out = &w.race_errors[i * n + begin];
       for (std::size_t k = 0; k < len; ++k) {
-        const double e = race.national_beta * national[k] + reg[k] + state[st][k] +
+        const double e = race.national_beta * national[k] + geo[k] +
                          ClusterTerm(layout.race_clusters[i], cluster, k) + race.sd * s.Normal();
         out[k] = static_cast<float>(e);
       }
@@ -111,12 +125,11 @@ WorldSet Generate(const SimConfig& config) {
       std::vector<uint16_t> dem(len, 0);
       for (std::size_t j : unlinked) {
         const HouseDistrictSpec& d = config.districts[j];
-        const auto st = static_cast<std::size_t>(layout.district_state[j]);
-        const auto& reg = region[static_cast<std::size_t>(layout.state_region[st])];
+        const std::vector<double>& geo = GeoShocks(layout.district_state[j], layout, region, state, geo_scratch);
         Sampler s(Xoshiro256pp(seed, HashKey("district:" + d.id), b));
         const double fixed = house_base + d.lean + d.incumbency;
         for (std::size_t k = 0; k < len; ++k) {
-          const double margin = fixed + national[k] + house_national[k] + reg[k] + state[st][k] +
+          const double margin = fixed + national[k] + house_national[k] + geo[k] +
                                 ClusterTerm(layout.district_clusters[j], cluster, k) +
                                 config.house.district_sd * s.Normal();
           if (margin > 0.0) ++dem[k];

@@ -14,9 +14,9 @@ using Loadings = std::vector<std::pair<int, double>>;  // (cluster index, loadin
 struct Layout {
   std::vector<std::string> states;  ///< every state referenced by a race or district, sorted
   std::vector<int> state_region;    ///< region index per entry of `states`
-  std::vector<int> race_state;
+  std::vector<int> race_state;      ///< index into `states`, or -1 (no region/state shock)
   std::vector<Loadings> race_clusters;
-  std::vector<int> district_state;
+  std::vector<int> district_state;  ///< index into `states`, or -1
   std::vector<Loadings> district_clusters;
   std::vector<int> district_race;   ///< linked race index, or -1
   std::vector<int> senate_races;    ///< indices of Senate races

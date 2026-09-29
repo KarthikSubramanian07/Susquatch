@@ -90,8 +90,12 @@ Layout BuildLayout(const SimConfig& config) {
   }
 
   std::set<std::string> state_set;
-  for (const auto& r : config.races) state_set.insert(r.state);
-  for (const auto& d : config.districts) state_set.insert(d.state);
+  for (const auto& r : config.races) {
+    if (!r.state.empty()) state_set.insert(r.state);
+  }
+  for (const auto& d : config.districts) {
+    if (!d.state.empty()) state_set.insert(d.state);
+  }
 
   Layout layout;
   layout.states.assign(state_set.begin(), state_set.end());
@@ -118,7 +122,7 @@ Layout BuildLayout(const SimConfig& config) {
     if (r.target_p_win && !(*r.target_p_win > 0.0 && *r.target_p_win < 1.0)) {
       Fail(who + " target_p_win must be in (0,1)");
     }
-    layout.race_state.push_back(state_index.at(r.state));
+    layout.race_state.push_back(r.state.empty() ? -1 : state_index.at(r.state));
     layout.race_clusters.push_back(ResolveLoadings(r.clusters, cluster_index, who));
     if (r.chamber == Chamber::kSenate) layout.senate_races.push_back(static_cast<int>(i));
   }
@@ -129,7 +133,7 @@ Layout BuildLayout(const SimConfig& config) {
     if (d.id.empty()) Fail("district with empty id");
     if (!district_ids.insert(d.id).second) Fail("duplicate " + who);
     if (!std::isfinite(d.lean) || !std::isfinite(d.incumbency)) Fail(who + " lean/incumbency not finite");
-    layout.district_state.push_back(state_index.at(d.state));
+    layout.district_state.push_back(d.state.empty() ? -1 : state_index.at(d.state));
     layout.district_clusters.push_back(ResolveLoadings(d.clusters, cluster_index, who));
     const std::string& link = d.race_id.empty() ? d.id : d.race_id;
     auto it = race_index.find(link);

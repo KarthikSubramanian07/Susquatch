@@ -136,6 +136,15 @@ TEST(Moments, NationalBetaScalesNationalLoading) {
   EXPECT_NEAR(Cov(RaceErrors(w, 0), RaceErrors(w, 1), kDraws), 0.5 * NationalVariance(cfg.shocks), 0.25);
 }
 
+TEST(Moments, StatelessRaceHasNoRegionOrStateShock) {
+  SimConfig cfg = BaseConfig(kDraws, 9);
+  cfg.races = {Race("house-control", "", 3.0), Race("oh", "OH")};
+  const WorldSet w = Generate(cfg);
+  const double vn = NationalVariance(cfg.shocks);
+  EXPECT_NEAR(Var(RaceErrors(w, 0), kDraws), vn + 9.0, 0.03 * (vn + 9.0));
+  EXPECT_NEAR(Cov(RaceErrors(w, 0), RaceErrors(w, 1), kDraws), vn, 0.3);
+}
+
 TEST(Moments, ThirdPartyFrequency) {
   SimConfig cfg = BaseConfig(kDraws, 8);
   RaceSpec ne = Race("ne", "NE");

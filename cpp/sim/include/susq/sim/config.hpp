@@ -39,7 +39,8 @@ enum class Chamber : uint8_t { kNone = 0, kSenate = 1, kHouse = 2, kGovernor = 3
 /// e_d = beta*N_d + R_region(d) + S_state(d) + sum_c loading_c*C_c(d) + eps_d.
 struct RaceSpec {
   std::string id;                        ///< Unique, e.g. "2026-SEN-OH-S".
-  std::string state;                     ///< USPS code; must appear in the region map.
+  std::string state;                     ///< USPS code in the region map; empty = no region/state
+                                         ///< shock (chamber pseudo-races).
   Chamber chamber = Chamber::kNone;
   double mu = 0.0;                       ///< Mean D-side minus R margin (pts); set by calibration.
   double sd = 3.0;                       ///< Race-specific error SD eps (SPEC §5: 2.5-3.5).
