@@ -1,0 +1,32 @@
+# Sample drill spec over the bundled real 2022 county results (GA Senate split by vote method,
+# NH Senate and ME Governor as county totals). Priors are illustrative "pre-election" views:
+# GA as a toss-up, NH and ME leaning D by less than the actual result.
+history = "py/tests/replay/fixtures/county_results_sample.csv"
+seed = 7
+horizon_h = 17.0
+bucket_s = 60.0
+national_shift_prior_sd = 3.0
+
+[[races]]
+race_id = "2022-SEN-GA"
+state = "GA"
+year = 2022
+office = "US SENATE"
+prior_margin_mean = 0.0
+prior_margin_sd = 5.0
+
+[[races]]
+race_id = "2022-SEN-NH"
+state = "NH"
+year = 2022
+office = "US SENATE"
+prior_margin_mean = 2.0
+prior_margin_sd = 5.0
+
+[[races]]
+race_id = "2022-GOV-ME"
+state = "ME"
+year = 2022
+office = "GOVERNOR"
+prior_margin_mean = 4.0
+prior_margin_sd = 5.0
