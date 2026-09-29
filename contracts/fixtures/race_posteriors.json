@@ -1,0 +1,30 @@
+{
+  "header": {
+    "schemaVersion": 1,
+    "producedAtNs": "1791475200000000000",
+    "producer": {
+      "name": "needle",
+      "gitSha": "0123456789ab"
+    },
+    "seq": "1000"
+  },
+  "races": [
+    {
+      "raceId": "2026-SEN-OH-S",
+      "pDem": 0.64,
+      "pRep": 0.36,
+      "marginMean": 2.1,
+      "marginSd": 3.4,
+      "expectedRemainingVotes": 1250000.0,
+      "reportedFrac": 0.41,
+      "nBatches": 17,
+      "nCountiesReporting": 52
+    },
+    {
+      "raceId": "2026-SEN-NE",
+      "pRep": 0.55,
+      "marginMean": -1.0,
+      "marginSd": 5.0
+    }
+  ]
+}

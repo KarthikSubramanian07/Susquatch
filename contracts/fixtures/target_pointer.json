@@ -1,0 +1,13 @@
+{
+  "header": {
+    "schemaVersion": 1,
+    "producedAtNs": "1791475200000000000",
+    "producer": {
+      "name": "python-scheduler",
+      "gitSha": "0123456789ab"
+    },
+    "seq": "7"
+  },
+  "file": "targets-20261008T160000Z-deadbeef.json",
+  "contentSha256": "e6622703165a5b1053203496cc2a40f3fb0402abcb268ad39bc54b783745e438"
+}

@@ -1,0 +1,50 @@
+{
+  "header": {
+    "schemaVersion": 1,
+    "producedAtNs": "1791475200000000000",
+    "producer": {
+      "name": "rust-live",
+      "gitSha": "0123456789ab"
+    },
+    "seq": "55"
+  },
+  "mode": "paper",
+  "stage": "forage",
+  "trader": "bridge",
+  "equity": 100431.5,
+  "cash": 97000.25,
+  "pnlDay": 431.5,
+  "pnlTotal": 431.5,
+  "fieldSize": 2150,
+  "health": [
+    {
+      "name": "platform",
+      "state": "ok",
+      "lastOkNs": "1791475200000000000"
+    }
+  ],
+  "positions": [
+    {
+      "exchangeId": "381",
+      "title": "Dem NH Senate",
+      "quantity": "-37",
+      "avgCost": 0.145,
+      "mark": 0.14,
+      "unrealized": 0.185
+    }
+  ],
+  "recentTrades": [
+    {
+      "tsNs": "1791475200000000000",
+      "strategy": "racer",
+      "title": "Dem NH Senate",
+      "side": "SIDE_NO",
+      "action": "ACTION_BUY",
+      "quantity": "37",
+      "price": 0.855
+    }
+  ],
+  "events": [
+    "first qualifying trade filled"
+  ]
+}

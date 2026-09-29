@@ -1,0 +1,13 @@
+{
+  "tsNs": "1791475200000000000",
+  "producer": "bridge",
+  "direction": "response",
+  "method": "POST",
+  "path": "/api/v1/orders",
+  "bodyJson": "{\"orderId\":1001,\"open\":true}",
+  "status": 200,
+  "latencyUs": "84211",
+  "requestId": "62e5f468-4831-4522-be6c-3682fcbbe568",
+  "idempotencyKey": "k-1",
+  "correlationId": "c-1"
+}

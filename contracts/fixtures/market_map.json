@@ -1,0 +1,38 @@
+{
+  "header": {
+    "schemaVersion": 1,
+    "producedAtNs": "1791475200000000000",
+    "producer": {
+      "name": "parse-rules",
+      "gitSha": "0123456789ab"
+    },
+    "seq": "1"
+  },
+  "markets": [
+    {
+      "marketId": "381",
+      "exchangeId": "381",
+      "title": "Will the Democratic Party win the New Hampshire Senate?",
+      "raceId": "2026-SEN-NH",
+      "kind": "race_party",
+      "party": "DEM",
+      "resolutionSource": "AP",
+      "kalshiTicker": "SENATENH-26-D",
+      "clusters": [
+        "national",
+        "region:northeast",
+        "state:NH"
+      ],
+      "verified": true
+    },
+    {
+      "marketId": "300",
+      "exchangeId": "300",
+      "raceId": "2026-SEN-NE",
+      "kind": "race_party",
+      "party": "DEM",
+      "independentCanWin": true,
+      "notes": "Osborn (I): both party markets can resolve NO"
+    }
+  ]
+}
