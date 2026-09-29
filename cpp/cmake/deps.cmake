@@ -40,6 +40,8 @@ if(SUSQ_BUILD_NEEDLE_SERVICE AND NOT TARGET susq_cnats)
     set(NATS_BUILD_STREAMING OFF CACHE BOOL "" FORCE)
     set(NATS_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
     set(NATS_BUILD_LIB_SHARED OFF CACHE BOOL "" FORCE)
+    # nats.c does include(CTest); keep its ~340 server-backed tests out of our ctest run.
+    set(BUILD_TESTING OFF)
     FetchContent_MakeAvailable(cnats)
     # Source builds expose headers flat under src/; mirror the installed <nats/...> layout.
     set(_susq_cnats_inc ${CMAKE_BINARY_DIR}/cnats_include)
