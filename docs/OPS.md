@@ -257,7 +257,7 @@ The 2 OCPUs are shared with **calshi**, a separate project whose repo we don't e
 
 | What | Command | Verified |
 |---|---|---|
-| ops helpers (pusher, poller, self-check, watchdog, costs) | `uv run pytest py/tests/ops` | 60 tests, mocked HTTP |
+| ops helpers (pusher, poller, self-check, watchdog, healthcheck, costs) | `uv run pytest py/tests/ops` | 67 tests, mocked HTTP |
 | backup / restore against a real S3 API | `ops/tests/backup_restore_drill.sh` | 28 checks |
 | install.sh ×2 on Ubuntu 24.04 arm64 + cloud-init schema + systemd verify | `ops/tests/install_smoke.sh` | 19 checks |
 | Functions + Worker (auth, KV budget, kill, dead-man, GitHub) | `make dashboard-test` | 52 tests |
