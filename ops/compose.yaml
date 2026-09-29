@@ -143,17 +143,13 @@ services:
       context: .
       dockerfile: ops/docker/cpp.Dockerfile
       args: { GIT_SHA: "${SUSQ_GIT_SHA:-unknown}" }
-    environment:
-      <<: *susq-env
-      SUSQ_METRICS_ADDR: 0.0.0.0:9102
+    # The 2026 prior (a NeedlePrior JSON) is staged before Nov 3, see docs/RUNBOOK.md. SUSQ_NATS_URL comes from
+    # the shared environment. Liveness is judged downstream: rust-live's needle watchdog stops acting on
+    # posteriors when needle.heartbeat goes quiet (config [needle]), so no HTTP healthcheck here; an exit
+    # (e.g. a missing prior) is restarted by Compose with backoff.
+    entrypoint: ["/bin/sh", "-c", "exec susq-needle --prior \"$${SUSQ_NEEDLE_PRIOR:-/susq/state/needle/prior.json}\" --heartbeat-ms 1000"]
     depends_on:
       nats: { condition: service_healthy }
-    healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9102/healthz"]
-      interval: 5s
-      timeout: 2s
-      retries: 3
-      start_period: 20s
     cpu_shares: 3072
     mem_limit: 2g
     pids_limit: 128
