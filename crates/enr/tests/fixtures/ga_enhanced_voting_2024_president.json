@@ -1,0 +1,947 @@
+{
+ "election": {
+  "id": "01000000-7316-ae4b-8b87-08dcda4b828a",
+  "electionDate": "2024-11-05",
+  "isOfficialResults": true,
+  "asOf": "2025-01-30T13:59:22.4956582Z",
+  "lastUpdated": "2025-01-07T16:55:00.6358836Z"
+ },
+ "ballotItemWithBreakdown": {
+  "id": "01000000-d884-2e72-6367-08dcda4b86b5",
+  "name": [
+   {
+    "languageId": "en",
+    "text": "President of the US"
+   }
+  ],
+  "voteFor": [
+   {
+    "languageId": "en",
+    "text": "Vote for 1"
+   }
+  ],
+  "reportingStatus": {
+   "reportingUnits": 159,
+   "totalUnits": 159,
+   "asOf": "2025-01-30T13:59:22.4956582Z",
+   "reportingStatusDetails": null
+  },
+  "contestType": "Candidate",
+  "voteTotal": 5250047,
+  "breakdownResults": [
+   {
+    "parentBallotItemId": "01000000-d884-2e72-ab5a-08dcda4b86b0",
+    "locality": {
+     "id": "01000000-cab9-ca6f-2fc0-08dcda4f4c33",
+     "name": [
+      {
+       "languageId": "en",
+       "text": "Appling County"
+      }
+     ],
+     "shortName": "appling-county-ga",
+     "turnoutPercent": null,
+     "percentReporting": null,
+     "precinctsReporting": null,
+     "hasCountGroupStatus": false,
+     "hasPrecinctStatus": false,
+     "mapFeatureId": "Appling"
+    },
+    "voteTotal": 8334,
+    "precinctReportingStatus": {
+     "reportingUnits": 9,
+     "totalUnits": 9,
+     "asOf": "2025-01-30T13:59:22.4956971Z",
+     "reportingStatusDetails": null
+    },
+    "ballotOptions": [
+     {
+      "id": "01000000-d884-2e72-71ff-08dcda4b86b5",
+      "nativeId": "1",
+      "name": [
+       {
+        "languageId": "en",
+        "text": "Donald J. Trump (Rep)"
+       }
+      ],
+      "voteCount": 6761,
+      "party": {
+       "id": "01000000-d884-2e72-6e4b-08dcda4b86b5",
+       "name": [
+        {
+         "languageId": "en",
+         "text": "Rep"
+        }
+       ],
+       "abbreviation": "Rep",
+       "standardName": null,
+       "color": "#960018",
+       "textColor": "#000000"
+      },
+      "groupResults": [
+       {
+        "groupId": "01000000-d884-2e72-c3fb-08dcda4bd320",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Advanced Voting"
+         }
+        ],
+        "voteCount": 4564
+       },
+       {
+        "groupId": "01000000-d884-2e72-d7fe-08dcda4b86a5",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Provisional"
+         }
+        ],
+        "voteCount": 0
+       },
+       {
+        "groupId": "01000000-d884-2e72-1285-08dcda4b86a5",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Absentee by Mail"
+         }
+        ],
+        "voteCount": 269
+       },
+       {
+        "groupId": "01000000-d884-2e72-d324-08dcda4b869c",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Election Day"
+         }
+        ],
+        "voteCount": 1928
+       }
+      ],
+      "isWriteIn": false,
+      "isQualifiedWriteIn": false,
+      "isWinner": null
+     },
+     {
+      "id": "01000000-d884-2e72-7a48-08dcda4b86b5",
+      "nativeId": "2",
+      "name": [
+       {
+        "languageId": "en",
+        "text": "Kamala D. Harris (Dem)"
+       }
+      ],
+      "voteCount": 1560,
+      "party": {
+       "id": "01000000-d884-2e72-7705-08dcda4b86b5",
+       "name": [
+        {
+         "languageId": "en",
+         "text": "Dem"
+        }
+       ],
+       "abbreviation": "Dem",
+       "standardName": null,
+       "color": "#255C99",
+       "textColor": "#000000"
+      },
+      "groupResults": [
+       {
+        "groupId": "01000000-d884-2e72-d7fe-08dcda4b86a5",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Provisional"
+         }
+        ],
+        "voteCount": 0
+       },
+       {
+        "groupId": "01000000-d884-2e72-d324-08dcda4b869c",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Election Day"
+         }
+        ],
+        "voteCount": 381
+       },
+       {
+        "groupId": "01000000-d884-2e72-1285-08dcda4b86a5",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Absentee by Mail"
+         }
+        ],
+        "voteCount": 155
+       },
+       {
+        "groupId": "01000000-d884-2e72-c3fb-08dcda4bd320",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Advanced Voting"
+         }
+        ],
+        "voteCount": 1024
+       }
+      ],
+      "isWriteIn": false,
+      "isQualifiedWriteIn": false,
+      "isWinner": null
+     },
+     {
+      "id": "01000000-d884-2e72-7cf3-08dcda4b86b5",
+      "nativeId": "3",
+      "name": [
+       {
+        "languageId": "en",
+        "text": "Chase Oliver (Lib)"
+       }
+      ],
+      "voteCount": 8,
+      "party": {
+       "id": "01000000-d884-2e72-7a8e-08dcda4b86b5",
+       "name": [
+        {
+         "languageId": "en",
+         "text": "Lib"
+        }
+       ],
+       "abbreviation": "Lib",
+       "standardName": null,
+       "color": "#fed000",
+       "textColor": "#000000"
+      },
+      "groupResults": [
+       {
+        "groupId": "01000000-d884-2e72-d324-08dcda4b869c",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Election Day"
+         }
+        ],
+        "voteCount": 3
+       },
+       {
+        "groupId": "01000000-d884-2e72-c3fb-08dcda4bd320",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Advanced Voting"
+         }
+        ],
+        "voteCount": 4
+       },
+       {
+        "groupId": "01000000-d884-2e72-d7fe-08dcda4b86a5",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Provisional"
+         }
+        ],
+        "voteCount": 0
+       },
+       {
+        "groupId": "01000000-d884-2e72-1285-08dcda4b86a5",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Absentee by Mail"
+         }
+        ],
+        "voteCount": 1
+       }
+      ],
+      "isWriteIn": false,
+      "isQualifiedWriteIn": false,
+      "isWinner": null
+     },
+     {
+      "id": "01000000-d884-2e72-7f58-08dcda4b86b5",
+      "nativeId": "4",
+      "name": [
+       {
+        "languageId": "en",
+        "text": "Jill Stein (Grn)"
+       }
+      ],
+      "voteCount": 5,
+      "party": {
+       "id": "01000000-d884-2e72-7d36-08dcda4b86b5",
+       "name": [
+        {
+         "languageId": "en",
+         "text": "Grn"
+        }
+       ],
+       "abbreviation": "Grn",
+       "standardName": null,
+       "color": "#00a95c",
+       "textColor": "#FFFFFF"
+      },
+      "groupResults": [
+       {
+        "groupId": "01000000-d884-2e72-1285-08dcda4b86a5",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Absentee by Mail"
+         }
+        ],
+        "voteCount": 1
+       },
+       {
+        "groupId": "01000000-d884-2e72-d324-08dcda4b869c",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Election Day"
+         }
+        ],
+        "voteCount": 0
+       },
+       {
+        "groupId": "01000000-d884-2e72-d7fe-08dcda4b86a5",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Provisional"
+         }
+        ],
+        "voteCount": 0
+       },
+       {
+        "groupId": "01000000-d884-2e72-c3fb-08dcda4bd320",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Advanced Voting"
+         }
+        ],
+        "voteCount": 4
+       }
+      ],
+      "isWriteIn": false,
+      "isQualifiedWriteIn": false,
+      "isWinner": null
+     }
+    ]
+   },
+   {
+    "parentBallotItemId": "01000000-d884-2e72-cf88-08dcda4b9be1",
+    "locality": {
+     "id": "01000000-cab9-ca6f-48bd-08dcda4f4c33",
+     "name": [
+      {
+       "languageId": "en",
+       "text": "DeKalb County"
+      }
+     ],
+     "shortName": "dekalb-county-ga",
+     "turnoutPercent": null,
+     "percentReporting": null,
+     "precinctsReporting": null,
+     "hasCountGroupStatus": false,
+     "hasPrecinctStatus": false,
+     "mapFeatureId": "DeKalb"
+    },
+    "voteTotal": 366008,
+    "precinctReportingStatus": {
+     "reportingUnits": 191,
+     "totalUnits": 191,
+     "asOf": "2025-01-30T13:59:22.4956971Z",
+     "reportingStatusDetails": null
+    },
+    "ballotOptions": [
+     {
+      "id": "01000000-d884-2e72-71ff-08dcda4b86b5",
+      "nativeId": "1",
+      "name": [
+       {
+        "languageId": "en",
+        "text": "Donald J. Trump (Rep)"
+       }
+      ],
+      "voteCount": 62622,
+      "party": {
+       "id": "01000000-d884-2e72-6e4b-08dcda4b86b5",
+       "name": [
+        {
+         "languageId": "en",
+         "text": "Rep"
+        }
+       ],
+       "abbreviation": "Rep",
+       "standardName": null,
+       "color": "#960018",
+       "textColor": "#000000"
+      },
+      "groupResults": [
+       {
+        "groupId": "01000000-d884-2e72-d7fe-08dcda4b86a5",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Provisional"
+         }
+        ],
+        "voteCount": 40
+       },
+       {
+        "groupId": "01000000-d884-2e72-d324-08dcda4b869c",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Election Day"
+         }
+        ],
+        "voteCount": 17292
+       },
+       {
+        "groupId": "01000000-d884-2e72-1285-08dcda4b86a5",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Absentee by Mail"
+         }
+        ],
+        "voteCount": 3070
+       },
+       {
+        "groupId": "01000000-d884-2e72-c3fb-08dcda4bd320",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Advanced Voting"
+         }
+        ],
+        "voteCount": 42220
+       }
+      ],
+      "isWriteIn": false,
+      "isQualifiedWriteIn": false,
+      "isWinner": null
+     },
+     {
+      "id": "01000000-d884-2e72-7a48-08dcda4b86b5",
+      "nativeId": "2",
+      "name": [
+       {
+        "languageId": "en",
+        "text": "Kamala D. Harris (Dem)"
+       }
+      ],
+      "voteCount": 299630,
+      "party": {
+       "id": "01000000-d884-2e72-7705-08dcda4b86b5",
+       "name": [
+        {
+         "languageId": "en",
+         "text": "Dem"
+        }
+       ],
+       "abbreviation": "Dem",
+       "standardName": null,
+       "color": "#255C99",
+       "textColor": "#000000"
+      },
+      "groupResults": [
+       {
+        "groupId": "01000000-d884-2e72-d324-08dcda4b869c",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Election Day"
+         }
+        ],
+        "voteCount": 54411
+       },
+       {
+        "groupId": "01000000-d884-2e72-d7fe-08dcda4b86a5",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Provisional"
+         }
+        ],
+        "voteCount": 206
+       },
+       {
+        "groupId": "01000000-d884-2e72-c3fb-08dcda4bd320",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Advanced Voting"
+         }
+        ],
+        "voteCount": 225667
+       },
+       {
+        "groupId": "01000000-d884-2e72-1285-08dcda4b86a5",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Absentee by Mail"
+         }
+        ],
+        "voteCount": 19346
+       }
+      ],
+      "isWriteIn": false,
+      "isQualifiedWriteIn": false,
+      "isWinner": null
+     },
+     {
+      "id": "01000000-d884-2e72-7cf3-08dcda4b86b5",
+      "nativeId": "3",
+      "name": [
+       {
+        "languageId": "en",
+        "text": "Chase Oliver (Lib)"
+       }
+      ],
+      "voteCount": 1557,
+      "party": {
+       "id": "01000000-d884-2e72-7a8e-08dcda4b86b5",
+       "name": [
+        {
+         "languageId": "en",
+         "text": "Lib"
+        }
+       ],
+       "abbreviation": "Lib",
+       "standardName": null,
+       "color": "#fed000",
+       "textColor": "#000000"
+      },
+      "groupResults": [
+       {
+        "groupId": "01000000-d884-2e72-1285-08dcda4b86a5",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Absentee by Mail"
+         }
+        ],
+        "voteCount": 87
+       },
+       {
+        "groupId": "01000000-d884-2e72-c3fb-08dcda4bd320",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Advanced Voting"
+         }
+        ],
+        "voteCount": 841
+       },
+       {
+        "groupId": "01000000-d884-2e72-d324-08dcda4b869c",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Election Day"
+         }
+        ],
+        "voteCount": 628
+       },
+       {
+        "groupId": "01000000-d884-2e72-d7fe-08dcda4b86a5",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Provisional"
+         }
+        ],
+        "voteCount": 1
+       }
+      ],
+      "isWriteIn": false,
+      "isQualifiedWriteIn": false,
+      "isWinner": null
+     },
+     {
+      "id": "01000000-d884-2e72-7f58-08dcda4b86b5",
+      "nativeId": "4",
+      "name": [
+       {
+        "languageId": "en",
+        "text": "Jill Stein (Grn)"
+       }
+      ],
+      "voteCount": 2199,
+      "party": {
+       "id": "01000000-d884-2e72-7d36-08dcda4b86b5",
+       "name": [
+        {
+         "languageId": "en",
+         "text": "Grn"
+        }
+       ],
+       "abbreviation": "Grn",
+       "standardName": null,
+       "color": "#00a95c",
+       "textColor": "#FFFFFF"
+      },
+      "groupResults": [
+       {
+        "groupId": "01000000-d884-2e72-d324-08dcda4b869c",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Election Day"
+         }
+        ],
+        "voteCount": 872
+       },
+       {
+        "groupId": "01000000-d884-2e72-1285-08dcda4b86a5",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Absentee by Mail"
+         }
+        ],
+        "voteCount": 126
+       },
+       {
+        "groupId": "01000000-d884-2e72-d7fe-08dcda4b86a5",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Provisional"
+         }
+        ],
+        "voteCount": 4
+       },
+       {
+        "groupId": "01000000-d884-2e72-c3fb-08dcda4bd320",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Advanced Voting"
+         }
+        ],
+        "voteCount": 1197
+       }
+      ],
+      "isWriteIn": false,
+      "isQualifiedWriteIn": false,
+      "isWinner": null
+     }
+    ]
+   },
+   {
+    "parentBallotItemId": "01000000-d884-2e72-49e4-08dcda4bb6af",
+    "locality": {
+     "id": "01000000-cab9-ca6f-4a15-08dcda4f4c33",
+     "name": [
+      {
+       "languageId": "en",
+       "text": "Fulton County"
+      }
+     ],
+     "shortName": "fulton-county-ga",
+     "turnoutPercent": null,
+     "percentReporting": null,
+     "precinctsReporting": null,
+     "hasCountGroupStatus": false,
+     "hasPrecinctStatus": false,
+     "mapFeatureId": "Fulton"
+    },
+    "voteTotal": 535238,
+    "precinctReportingStatus": {
+     "reportingUnits": 466,
+     "totalUnits": 466,
+     "asOf": "2025-01-30T13:59:22.4956971Z",
+     "reportingStatusDetails": null
+    },
+    "ballotOptions": [
+     {
+      "id": "01000000-d884-2e72-71ff-08dcda4b86b5",
+      "nativeId": "1",
+      "name": [
+       {
+        "languageId": "en",
+        "text": "Donald J. Trump (Rep)"
+       }
+      ],
+      "voteCount": 144655,
+      "party": {
+       "id": "01000000-d884-2e72-6e4b-08dcda4b86b5",
+       "name": [
+        {
+         "languageId": "en",
+         "text": "Rep"
+        }
+       ],
+       "abbreviation": "Rep",
+       "standardName": null,
+       "color": "#960018",
+       "textColor": "#000000"
+      },
+      "groupResults": [
+       {
+        "groupId": "01000000-d884-2e72-1285-08dcda4b86a5",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Absentee by Mail"
+         }
+        ],
+        "voteCount": 6280
+       },
+       {
+        "groupId": "01000000-d884-2e72-d7fe-08dcda4b86a5",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Provisional"
+         }
+        ],
+        "voteCount": 132
+       },
+       {
+        "groupId": "01000000-d884-2e72-c3fb-08dcda4bd320",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Advanced Voting"
+         }
+        ],
+        "voteCount": 112454
+       },
+       {
+        "groupId": "01000000-d884-2e72-d324-08dcda4b869c",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Election Day"
+         }
+        ],
+        "voteCount": 25789
+       }
+      ],
+      "isWriteIn": false,
+      "isQualifiedWriteIn": false,
+      "isWinner": null
+     },
+     {
+      "id": "01000000-d884-2e72-7a48-08dcda4b86b5",
+      "nativeId": "2",
+      "name": [
+       {
+        "languageId": "en",
+        "text": "Kamala D. Harris (Dem)"
+       }
+      ],
+      "voteCount": 384752,
+      "party": {
+       "id": "01000000-d884-2e72-7705-08dcda4b86b5",
+       "name": [
+        {
+         "languageId": "en",
+         "text": "Dem"
+        }
+       ],
+       "abbreviation": "Dem",
+       "standardName": null,
+       "color": "#255C99",
+       "textColor": "#000000"
+      },
+      "groupResults": [
+       {
+        "groupId": "01000000-d884-2e72-c3fb-08dcda4bd320",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Advanced Voting"
+         }
+        ],
+        "voteCount": 297293
+       },
+       {
+        "groupId": "01000000-d884-2e72-1285-08dcda4b86a5",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Absentee by Mail"
+         }
+        ],
+        "voteCount": 22497
+       },
+       {
+        "groupId": "01000000-d884-2e72-d7fe-08dcda4b86a5",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Provisional"
+         }
+        ],
+        "voteCount": 487
+       },
+       {
+        "groupId": "01000000-d884-2e72-d324-08dcda4b869c",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Election Day"
+         }
+        ],
+        "voteCount": 64475
+       }
+      ],
+      "isWriteIn": false,
+      "isQualifiedWriteIn": false,
+      "isWinner": null
+     },
+     {
+      "id": "01000000-d884-2e72-7cf3-08dcda4b86b5",
+      "nativeId": "3",
+      "name": [
+       {
+        "languageId": "en",
+        "text": "Chase Oliver (Lib)"
+       }
+      ],
+      "voteCount": 2507,
+      "party": {
+       "id": "01000000-d884-2e72-7a8e-08dcda4b86b5",
+       "name": [
+        {
+         "languageId": "en",
+         "text": "Lib"
+        }
+       ],
+       "abbreviation": "Lib",
+       "standardName": null,
+       "color": "#fed000",
+       "textColor": "#000000"
+      },
+      "groupResults": [
+       {
+        "groupId": "01000000-d884-2e72-d324-08dcda4b869c",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Election Day"
+         }
+        ],
+        "voteCount": 870
+       },
+       {
+        "groupId": "01000000-d884-2e72-1285-08dcda4b86a5",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Absentee by Mail"
+         }
+        ],
+        "voteCount": 123
+       },
+       {
+        "groupId": "01000000-d884-2e72-d7fe-08dcda4b86a5",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Provisional"
+         }
+        ],
+        "voteCount": 2
+       },
+       {
+        "groupId": "01000000-d884-2e72-c3fb-08dcda4bd320",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Advanced Voting"
+         }
+        ],
+        "voteCount": 1512
+       }
+      ],
+      "isWriteIn": false,
+      "isQualifiedWriteIn": false,
+      "isWinner": null
+     },
+     {
+      "id": "01000000-d884-2e72-7f58-08dcda4b86b5",
+      "nativeId": "4",
+      "name": [
+       {
+        "languageId": "en",
+        "text": "Jill Stein (Grn)"
+       }
+      ],
+      "voteCount": 3324,
+      "party": {
+       "id": "01000000-d884-2e72-7d36-08dcda4b86b5",
+       "name": [
+        {
+         "languageId": "en",
+         "text": "Grn"
+        }
+       ],
+       "abbreviation": "Grn",
+       "standardName": null,
+       "color": "#00a95c",
+       "textColor": "#FFFFFF"
+      },
+      "groupResults": [
+       {
+        "groupId": "01000000-d884-2e72-d7fe-08dcda4b86a5",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Provisional"
+         }
+        ],
+        "voteCount": 7
+       },
+       {
+        "groupId": "01000000-d884-2e72-d324-08dcda4b869c",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Election Day"
+         }
+        ],
+        "voteCount": 1073
+       },
+       {
+        "groupId": "01000000-d884-2e72-1285-08dcda4b86a5",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Absentee by Mail"
+         }
+        ],
+        "voteCount": 171
+       },
+       {
+        "groupId": "01000000-d884-2e72-c3fb-08dcda4bd320",
+        "groupName": [
+         {
+          "languageId": "en",
+          "text": "Advanced Voting"
+         }
+        ],
+        "voteCount": 2073
+       }
+      ],
+      "isWriteIn": false,
+      "isQualifiedWriteIn": false,
+      "isWinner": null
+     }
+    ]
+   }
+  ],
+  "breakdownResultCount": 3
+ }
+}
