@@ -89,6 +89,8 @@ class RacerConfig:
     min_edge: float
     max_bundle_notional_frac: float
     order_ttl_s: float
+    refire_cooldown_s: float = 30.0
+    max_relationship_notional_frac: float = 0.03
 
 
 @dataclass(frozen=True)
@@ -207,6 +209,8 @@ def load_config(home: Path | None = None, env: Mapping[str, str] | None = None) 
             min_edge=float(racer.get("min_edge", 0.01)),
             max_bundle_notional_frac=float(racer.get("max_bundle_notional_frac", 0.01)),
             order_ttl_s=float(racer.get("order_ttl_s", 20)),
+            refire_cooldown_s=float(racer.get("refire_cooldown_s", 30)),
+            max_relationship_notional_frac=float(racer.get("max_relationship_notional_frac", 0.03)),
         ),
         sniper=SniperConfig(
             enabled=bool(sniper.get("enabled", True)),
