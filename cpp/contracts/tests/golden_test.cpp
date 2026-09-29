@@ -54,6 +54,7 @@ TEST(Golden, OrderIntent) { RoundTrip<OrderIntent>("order_intent"); }
 TEST(Golden, TraderLease) { RoundTrip<TraderLease>("trader_lease"); }
 TEST(Golden, StatusSnapshot) { RoundTrip<StatusSnapshot>("status_snapshot"); }
 TEST(Golden, MarketMap) { RoundTrip<MarketMap>("market_map"); }
+TEST(Golden, NeedlePrior) { RoundTrip<NeedlePrior>("needle_prior"); }
 
 TEST(Golden, UnknownFieldTolerated) {
   Heartbeat with_unknown, known;

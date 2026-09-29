@@ -55,6 +55,7 @@ fn every_fixture_round_trips() {
             "susq.v1.TraderLease" => roundtrip::<v1::TraderLease>(name),
             "susq.v1.StatusSnapshot" => roundtrip::<v1::StatusSnapshot>(name),
             "susq.v1.MarketMap" => roundtrip::<v1::MarketMap>(name),
+            "susq.v1.NeedlePrior" => roundtrip::<v1::NeedlePrior>(name),
             "susq.v1.Heartbeat@unknown" => continue,
             other => panic!("fixture {name} has unhandled type {other}; add it to this test"),
         }

@@ -16,7 +16,7 @@ from pathlib import Path
 from google.protobuf import json_format
 from google.protobuf.message import Message
 
-from susq.v1 import bus_pb2, common_pb2, ops_pb2, targets_pb2
+from susq.v1 import bus_pb2, common_pb2, needle_pb2, ops_pb2, targets_pb2
 
 SCHEMA_VERSION: int = common_pb2.SCHEMA_VERSION_CURRENT
 
@@ -29,6 +29,8 @@ __all__ = [
     "from_json",
     "git_sha",
     "header",
+    "idempotency_key",
+    "needle_pb2",
     "ops_pb2",
     "target_content_sha256",
     "targets_pb2",
@@ -100,3 +102,15 @@ def target_content_sha256(tf: targets_pb2.TargetFile) -> str:
 def with_content_hash(tf: targets_pb2.TargetFile) -> targets_pb2.TargetFile:
     tf.content_sha256 = target_content_sha256(tf)
     return tf
+
+
+def idempotency_key(namespace: str, intent_id: str, canonical_payload: str) -> str:
+    """Deterministic order idempotency key shared with Rust (see docs/RUNTIME.md rule 4).
+
+    canonical_payload is
+    "{exchange_id}|{side}|{action}|{quantity}|{price_pips}|{expiration_unix_s}|{tournament_id}"
+    with side in {yes,no} and action in {buy,sell}.
+    """
+    import uuid
+
+    return str(uuid.uuid5(uuid.UUID(namespace), f"{intent_id}|{canonical_payload}"))

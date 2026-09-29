@@ -24,6 +24,9 @@ Everything below lives under `$SUSQ_HOME` (the repo checkout on the server). Pat
 2. **Kill beats everything.** Gateways check `ops/KILL` before every write. On kill: cancel-all (scoped to the tournament), then freeze.
 3. **Paper is the default.** In paper mode the gateway routes writes to the paper broker, which simulates fills against live books.
 4. **Every order** is a limit order with `tournamentId` and an `expirationDate ≤ calendar.last_order_utc`. It also needs an idempotency key
-   derived as `uuid5(oms.idempotency_namespace, intent_id + "|" + canonical_payload)`.
+   derived as `uuid5(oms.idempotency_namespace, intent_id + "|" + canonical_payload)`, where
+   `canonical_payload = "{exchange_id}|{side}|{action}|{quantity}|{price_pips}|{expiration_unix_s}|{tournament_id}"`
+   (`side` ∈ yes/no, `action` ∈ buy/sell). Test vector: intent `racer:rel-9:1791475200`, payload
+   `381|no|buy|37|1450|1791475230|t-uuid`, default namespace → `c5fe4b7e-7efc-55fb-82b5-1bd6356d699c`.
 5. **Retry only what the docs say is safe**: 429, 409 `REQUEST_IN_FLIGHT`, 502 `ORDER_STATUS_UNKNOWN`, 503, and network errors. Always use the same key.
 6. **No process trusts its own memory after a restart.** Reconcile open orders and positions from REST first, then act.
