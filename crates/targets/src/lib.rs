@@ -52,11 +52,13 @@
 //! ```
 
 mod error;
+pub mod fair;
 mod reader;
 mod source;
 mod targets;
 mod validate;
 
 pub use error::{ContentError, Document, RejectReason};
+pub use fair::{FairOutcome, FairReader, FairReject, FairSnapshot};
 pub use reader::{ReaderConfig, RefreshOutcome, TargetsReader};
 pub use targets::Targets;

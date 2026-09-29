@@ -331,6 +331,13 @@ pub struct PathsCfg {
     pub reports: PathBuf,
     pub status: PathBuf,
     pub market_map: PathBuf,
+    /// Live fair values rewritten by the research scheduler (header + fair only).
+    #[serde(default = "default_fair_live")]
+    pub fair_live: PathBuf,
+}
+
+fn default_fair_live() -> PathBuf {
+    PathBuf::from("state/fair_live.json")
 }
 
 /// `[bus]` (rust-only; defaults to the local NATS server).
@@ -515,6 +522,7 @@ mod tests {
         assert_eq!(cfg.needle.resume_after_healthy, 5);
         // Rust-only sections fall back to defaults.
         assert_eq!(cfg.bus.nats_url, "nats://127.0.0.1:4222");
+        assert_eq!(cfg.paths.fair_live, PathBuf::from("state/fair_live.json"));
         assert!(cfg.live.metrics_addr.starts_with("127.0.0.1:"));
     }
 
