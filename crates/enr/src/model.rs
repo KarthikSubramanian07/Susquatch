@@ -186,6 +186,13 @@ mod tests {
         assert_eq!(classify_vote_type(None), VoteType::Mixed);
     }
 
+    /// Shared with `py/tests/replay/test_records.py`: Python replays and the Rust poller must
+    /// agree on batch ids.
+    #[test]
+    fn batch_id_cross_language_vector() {
+        assert_eq!(batch_id(&sample()), "432a72f243d38bf29eb50d61d2a4739d");
+    }
+
     #[test]
     fn parties_normalize() {
         assert_eq!(normalize_party("Dem"), "DEM");
