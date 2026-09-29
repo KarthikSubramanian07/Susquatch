@@ -1,0 +1,221 @@
+"""Pre-trade risk: caps, breakers, locked legs, tournament and self-cross guards.
+
+Exposure is measured in money (pip-units, 1 SUSQie = 10 000) the conservative way:
+
+* a position is worth ``|qty|`` times its side-relative mark (YES at ``m``, NO at ``1 - m``; an
+  unmarked position is valued at the full 1.0 payout);
+* every resting order counts its full opening notional (``remaining * side-relative limit``), as if it
+  fills;
+* a new order counts only the part that *opens* exposure: shares that close an existing position
+  (buying the opposite side nets and pays 1) add nothing.
+
+``check`` never returns a quantity that would push any cap past its limit; when a cap binds it
+shrinks the order to the largest compliant size instead of rejecting outright.
+"""
+
+from __future__ import annotations
+
+import math
+from collections import deque
+from collections.abc import Callable, Iterable, Mapping
+from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
+from typing import Protocol
+
+from susq.platform.models import OrderRequest
+from susq.platform.prices import PIPS_PER_UNIT
+
+from susq_bridge.config import RiskConfig
+
+__all__ = ["Decision", "OrderView", "RiskEngine"]
+
+
+class OrderView(Protocol):
+    """What risk needs to know about one of our resting orders."""
+
+    exchange_id: str
+    yes_dir: int
+    yes_price: int
+    remaining: int
+
+
+@dataclass(frozen=True, slots=True)
+class Decision:
+    accepted: bool
+    quantity: int
+    reason: str | None = None
+    binding: tuple[str, ...] = ()
+    glitch: bool = False
+
+
+def _side_price(yes_dir: int, yes_price: int) -> int:
+    return yes_price if yes_dir > 0 else PIPS_PER_UNIT - yes_price
+
+
+@dataclass
+class RiskEngine:
+    config: RiskConfig
+    tournament_id: str
+    #: exchange id -> cluster names ("national", "state:ME", ...), from MarketRule.clusters
+    clusters: Mapping[str, Iterable[str]] = field(default_factory=dict)
+    locked: set[str] = field(default_factory=set)
+    clock: Callable[[], datetime] = field(default=lambda: datetime.now(UTC))
+    equity: float = 0.0
+    positions: dict[str, int] = field(default_factory=dict)
+    marks: dict[str, int] = field(default_factory=dict)
+    frozen_reason: str | None = None
+    glitch_used_pips: int = 0
+    _rejects: deque[datetime] = field(default_factory=deque)
+    _equity: deque[tuple[datetime, float]] = field(default_factory=deque)
+    on_trip: Callable[[str], None] | None = None
+
+    # ── state ───────────────────────────────────────────────────────────────────────────────
+
+    @property
+    def frozen(self) -> bool:
+        return self.frozen_reason is not None
+
+    def update_portfolio(self, positions: Mapping[str, int], marks: Mapping[str, int], equity: float) -> None:
+        self.positions = {ex: q for ex, q in positions.items() if q}
+        self.marks.update(marks)
+        self.equity = equity
+        self.observe_equity(equity)
+
+    def trip(self, reason: str) -> None:
+        if self.frozen_reason is None:
+            self.frozen_reason = reason
+            if self.on_trip is not None:
+                self.on_trip(reason)
+
+    def record_reject(self) -> None:
+        now = self.clock()
+        self._rejects.append(now)
+        while self._rejects and now - self._rejects[0] > timedelta(seconds=60):
+            self._rejects.popleft()
+        if len(self._rejects) > self.config.reject_breaker_per_min:
+            self.trip(f"reject_breaker: {len(self._rejects)} rejects in 60s")
+
+    def observe_equity(self, equity: float) -> None:
+        """Loss-per-hour breaker on mark-to-market equity."""
+        now = self.clock()
+        self._equity.append((now, equity))
+        while self._equity and now - self._equity[0][0] > timedelta(hours=1):
+            self._equity.popleft()
+        peak = max(e for _, e in self._equity)
+        if peak > 0 and (peak - equity) >= self.config.loss_per_hour_frac * peak:
+            self.trip(f"loss_per_hour: equity {equity:.2f} vs 1h peak {peak:.2f}")
+
+    # ── exposure ────────────────────────────────────────────────────────────────────────────
+
+    def position_value_pips(self, exchange_id: str) -> int:
+        qty = self.positions.get(exchange_id, 0)
+        if not qty:
+            return 0
+        mark = self.marks.get(exchange_id)
+        if mark is None:
+            return abs(qty) * PIPS_PER_UNIT
+        return abs(qty) * _side_price(1 if qty > 0 else -1, mark)
+
+    def market_exposure_pips(self, exchange_id: str, open_orders: Iterable[OrderView]) -> int:
+        resting = sum(
+            o.remaining * _side_price(o.yes_dir, o.yes_price)
+            for o in open_orders
+            if o.exchange_id == exchange_id
+        )
+        return self.position_value_pips(exchange_id) + resting
+
+    def clusters_of(self, exchange_id: str) -> list[str]:
+        return list(self.clusters.get(exchange_id, ()))
+
+    def cluster_cap_frac(self, cluster: str) -> float | None:
+        return self.config.clusters.get(cluster.split(":", 1)[0])
+
+    def closing_shares(self, order: OrderRequest) -> int:
+        pos = self.positions.get(order.exchange_id, 0)
+        return min(order.quantity, abs(pos)) if pos * order.yes_direction < 0 else 0
+
+    # ── the check ───────────────────────────────────────────────────────────────────────────
+
+    def check(
+        self,
+        order: OrderRequest,
+        open_orders: Iterable[OrderView],
+        *,
+        fair_pips: int | None = None,
+        max_notional: float | None = None,
+    ) -> Decision:
+        """Accept (possibly smaller) or reject ``order``. Never mutates state (see :meth:`commit`)."""
+        orders = list(open_orders)
+        if order.tournament_id != self.tournament_id:
+            return Decision(False, 0, "tournament_mismatch")
+        if self.frozen:
+            return Decision(False, 0, f"frozen: {self.frozen_reason}")
+        if self.equity <= 0:
+            return Decision(False, 0, "no_equity")
+        ex = order.exchange_id
+        pos = self.positions.get(ex, 0)
+        if ex in self.locked and pos * order.yes_direction < 0:
+            return Decision(False, 0, "locked_leg")
+        for o in orders:
+            if o.exchange_id != ex or o.yes_dir == order.yes_direction:
+                continue
+            crosses = (
+                o.yes_price <= order.yes_price_pips
+                if order.yes_direction > 0
+                else o.yes_price >= order.yes_price_pips
+            )
+            if crosses:
+                return Decision(False, 0, "self_cross")
+
+        unit = _side_price(order.yes_direction, order.yes_price_pips)
+        closing = self.closing_shares(order)
+        equity_pips = self.equity * PIPS_PER_UNIT
+        limits: dict[str, int] = {"requested": order.quantity}
+
+        def room(cap_pips: float, used_pips: int) -> int:
+            return closing + max(0, math.floor((cap_pips - used_pips) / unit)) if unit else order.quantity
+
+        per_order = self.config.max_order_notional_frac * equity_pips
+        if max_notional is not None:
+            per_order = min(per_order, max_notional * PIPS_PER_UNIT)
+        limits["per_order"] = room(per_order, 0)
+        limits["per_market"] = room(
+            self.config.per_market_gross_frac * equity_pips, self.market_exposure_pips(ex, orders)
+        )
+        exchanges = set(self.positions) | {o.exchange_id for o in orders} | {ex}
+        total = sum(self.market_exposure_pips(e, orders) for e in exchanges)
+        limits["total_gross"] = room(self.config.total_gross_frac * equity_pips, total)
+        for cluster in self.clusters_of(ex):
+            frac = self.cluster_cap_frac(cluster)
+            if frac is None:
+                continue
+            members = [e for e in exchanges if cluster in self.clusters_of(e)]
+            used = sum(self.market_exposure_pips(e, orders) for e in members)
+            limits[f"cluster:{cluster}"] = room(frac * equity_pips, used)
+
+        glitch = False
+        if fair_pips is not None:
+            through = (fair_pips - order.yes_price_pips) * order.yes_direction
+            if through > self.config.glitch_through_fair_pts * 100:
+                glitch = True
+                limits["glitch"] = room(self.config.glitch_max_frac * equity_pips, self.glitch_used_pips)
+
+        qty = min(limits.values())
+        binding = tuple(k for k, v in limits.items() if v == qty and k != "requested")
+        if qty < 1:
+            return Decision(False, 0, f"cap: {', '.join(binding)}", binding, glitch)
+        return Decision(True, qty, None if qty == order.quantity else "reduced", binding, glitch)
+
+    def commit(self, order: OrderRequest, decision: Decision) -> None:
+        """Book an accepted order's glitch budget (exposure itself is tracked through open orders)."""
+        if decision.accepted and decision.glitch:
+            opened = max(0, decision.quantity - self.closing_shares(order))
+            self.glitch_used_pips += opened * _side_price(order.yes_direction, order.yes_price_pips)
+
+    def snapshot(self) -> dict[str, object]:
+        return {
+            "equity": self.equity,
+            "frozen": self.frozen_reason,
+            "glitch_used": self.glitch_used_pips / PIPS_PER_UNIT,
+            "positions": dict(self.positions),
+        }
