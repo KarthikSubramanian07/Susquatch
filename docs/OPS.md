@@ -52,8 +52,8 @@ Every piece is in the repo: [`ops/cloud-init.yaml`](../ops/cloud-init.yaml), [`o
 | `nats` | `nats:2.12-alpine` | always | 3072 | 256 MB | `:8222/healthz` | the bus; not published anywhere |
 | `rust-live` | `ops/docker/rust.Dockerfile` | `rust` | 4096 | 1 GB | `127.0.0.1:9101/healthz` (in-container) | `susq-live run $SUSQ_LIVE_FLAGS` (`--election` on Nov 3–4); needs `SUSQ_API_KEY` or it exits and Docker backs off; 30 s stop grace for cancel-all; OOM score −800 |
 | `bridge` | python | `bridge` | 4096 | 768 MB | `python -m susq.ops.healthcheck bridge` | `susq-bridge open` ([bridge_py/README.md](../bridge_py/README.md)); healthy while waiting for the key or the open, then status/journal must move within 10 min; retired after the cutover |
-| `needle` | `ops/docker/cpp.Dockerfile` | `election` | 3072 | 2 GB | `:9102/healthz` (in-container) | cnats v3.14.0 built from source; **image pending `cpp/needle`** |
-| `python-scheduler` | python | always | 256, **capped 1.5 CPU** | 4 GB | `state/research/scheduler.json` < 180 s old | `susq research run`; never trades; OOM score +500 (dies first) |
+| `needle` | `ops/docker/cpp.Dockerfile` | `election` | 3072 | 2 GB | none: rust-live's needle watchdog (heartbeat on NATS) | `susq-needle --prior state/needle/prior.json` (`SUSQ_NEEDLE_PRIOR`); cnats via `cpp/cmake/deps.cmake`; a missing prior makes it exit and Compose back off |
+| `python-scheduler` | python (with the `susq_models` C++ extension) | always | 256, **capped 1.5 CPU** | 4 GB | `state/research/scheduler.json` < 180 s old | `susq research run`; never trades; OOM score +500 (dies first) |
 | `status-pusher` | python | always | 1024 | 192 MB | loop | [`status_push.py`](../py/susq/ops/status_push.py) |
 | `kill-poller` | python | always | 2048 | 128 MB | loop | [`kill_poller.py`](../py/susq/ops/kill_poller.py) |
 | `watchdog` | python | always | 1024 | 128 MB | heartbeat file | [`watchdog.py`](../py/susq/ops/watchdog.py) |
