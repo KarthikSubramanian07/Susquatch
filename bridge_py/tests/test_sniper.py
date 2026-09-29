@@ -123,3 +123,26 @@ async def test_sniper_orders_are_cancelled_when_fair_goes_stale(harness) -> None
         assert await harness.mock.client.list_open_orders(harness.mock.tid) == []
     finally:
         await bridge.close()
+
+
+async def test_reads_the_fair_file_research_writes(harness) -> None:  # type: ignore[no-untyped-def]
+    """Interop: the research FairService's own writer feeds the bridge's staleness + mapping gates."""
+    from susq.contracts import targets_pb2, to_json
+    from susq.fair.service import fair_file
+
+    await harness.write_market_map()
+    state = await harness.mock.state()
+    fairs = [
+        targets_pb2.FairValue(exchange_id=ex, p_yes=p, source="research") for ex, p in state["fair"].items()
+    ]
+    tf = fair_file(fairs, seq=1, now_ns=int(harness.now().timestamp() * 1e9))
+    harness.config.fair_path.parent.mkdir(parents=True, exist_ok=True)
+    harness.config.fair_path.write_text(to_json(tf))
+    bridge = await harness.open_bridge("paper")
+    try:
+        assert bridge.market.load_fair() is False  # already loaded by start()
+        check = bridge.market.fair_check(EX)
+        assert check.ok, check.reason
+        assert check.fair_pips == round(state["fair"][EX] * 10_000)
+    finally:
+        await bridge.close()

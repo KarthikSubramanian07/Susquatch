@@ -8,6 +8,7 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import pytest
+from google.protobuf.json_format import MessageToDict
 from susq.contracts import from_json, ops_pb2
 from susq.platform.client import HttpRecord
 from susq_bridge.journal import REDACTED, Journal
@@ -93,6 +94,20 @@ def test_lines_are_compact_canonical_json(tmp_path: Path, clock: FakeClock) -> N
     parsed = json.loads(line)
     assert parsed["tsNs"] == str(ns(clock.now))  # int64 as string, lowerCamelCase
     assert "status" not in parsed  # proto3 defaults omitted
+
+
+def test_lines_are_byte_identical_to_the_shared_compact_encoding(tmp_path: Path, clock: FakeClock) -> None:
+    """rust-live writes the same lines: MessageToDict, compact separators, raw UTF-8, field order."""
+    journal = Journal(tmp_path, clock=clock)
+    body = '{"title":"Will the Democratic Party win — Nebraska?","q":"a \\"quoted\\" word"}'
+    journal.record_http(rec(clock.now, method="POST", path="/api/v1/orders", body=body))
+    journal.close()
+    raw = journal.path_for(clock.now.date()).read_bytes()
+    (line,) = raw.splitlines()
+    entry = from_json(ops_pb2.JournalEntry, line.decode())
+    expected = json.dumps(MessageToDict(entry), separators=(",", ":"), ensure_ascii=False).encode()
+    assert line == expected
+    assert raw.endswith(b"\n")
 
 
 def test_rotates_across_utc_midnight(tmp_path: Path, clock: FakeClock) -> None:
