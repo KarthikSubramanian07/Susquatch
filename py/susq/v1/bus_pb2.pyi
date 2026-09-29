@@ -34,7 +34,7 @@ class CandidateVotes(_message.Message):
     def __init__(self, candidate: _Optional[str] = ..., party: _Optional[str] = ..., votes: _Optional[int] = ...) -> None: ...
 
 class CountyResult(_message.Message):
-    __slots__ = ("race_id", "state", "county_fips", "source", "source_ts_ns", "observed_at_ns", "vote_type", "votes", "total_votes", "precincts_reporting", "precincts_total", "batch_id")
+    __slots__ = ("race_id", "state", "county_fips", "source", "source_ts_ns", "observed_at_ns", "vote_type", "votes", "total_votes", "precincts_reporting", "precincts_total", "batch_id", "is_correction")
     RACE_ID_FIELD_NUMBER: _ClassVar[int]
     STATE_FIELD_NUMBER: _ClassVar[int]
     COUNTY_FIPS_FIELD_NUMBER: _ClassVar[int]
@@ -47,6 +47,7 @@ class CountyResult(_message.Message):
     PRECINCTS_REPORTING_FIELD_NUMBER: _ClassVar[int]
     PRECINCTS_TOTAL_FIELD_NUMBER: _ClassVar[int]
     BATCH_ID_FIELD_NUMBER: _ClassVar[int]
+    IS_CORRECTION_FIELD_NUMBER: _ClassVar[int]
     race_id: str
     state: str
     county_fips: str
@@ -59,7 +60,8 @@ class CountyResult(_message.Message):
     precincts_reporting: int
     precincts_total: int
     batch_id: str
-    def __init__(self, race_id: _Optional[str] = ..., state: _Optional[str] = ..., county_fips: _Optional[str] = ..., source: _Optional[str] = ..., source_ts_ns: _Optional[int] = ..., observed_at_ns: _Optional[int] = ..., vote_type: _Optional[_Union[VoteType, str]] = ..., votes: _Optional[_Iterable[_Union[CandidateVotes, _Mapping]]] = ..., total_votes: _Optional[int] = ..., precincts_reporting: _Optional[int] = ..., precincts_total: _Optional[int] = ..., batch_id: _Optional[str] = ...) -> None: ...
+    is_correction: bool
+    def __init__(self, race_id: _Optional[str] = ..., state: _Optional[str] = ..., county_fips: _Optional[str] = ..., source: _Optional[str] = ..., source_ts_ns: _Optional[int] = ..., observed_at_ns: _Optional[int] = ..., vote_type: _Optional[_Union[VoteType, str]] = ..., votes: _Optional[_Iterable[_Union[CandidateVotes, _Mapping]]] = ..., total_votes: _Optional[int] = ..., precincts_reporting: _Optional[int] = ..., precincts_total: _Optional[int] = ..., batch_id: _Optional[str] = ..., is_correction: _Optional[bool] = ...) -> None: ...
 
 class CountyResultsBatch(_message.Message):
     __slots__ = ("header", "results")

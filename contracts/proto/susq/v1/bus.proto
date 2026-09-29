@@ -40,6 +40,9 @@ message CountyResult {
   uint32 precincts_reporting = 10;
   uint32 precincts_total = 11;
   string batch_id = 12;          // stable id of this delta for dedupe
+  // Set by enr when lower cumulative totals were confirmed on consecutive polls (an official
+  // correction). Consumers must reject decreases that do NOT carry this flag.
+  bool is_correction = 13;
 }
 
 message CountyResultsBatch {

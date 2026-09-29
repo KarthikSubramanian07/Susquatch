@@ -132,6 +132,7 @@ def cases() -> dict[str, object]:
                 vote_type=bus_pb2.VOTE_TYPE_ELECTION_DAY,
                 total_votes=18_446_744_073_709_551_615,
                 batch_id="max-u64",
+                is_correction=True,
             ),
         ],
     )
