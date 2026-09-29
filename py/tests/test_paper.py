@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from susq.mock.testing import MockEnv
+from susq.platform.collateral import Relation
 from susq.platform.errors import ApiError
 from susq.platform.models import BookLevel, OrderBook, OrderRequest
 from susq.platform.paper import PaperBroker
@@ -243,3 +244,83 @@ async def test_against_the_mock_exchange(env: MockEnv) -> None:
     # Nothing touched the real (mock) account: paper is invisible to the exchange.
     assert await env.client.list_open_orders(env.tid) == []
     assert (await env.client.get_positions("midterm-elections")).positions == []
+
+
+# ── ALL collateral (same model as the mock) ─────────────────────────────────────────────────
+
+
+class MultiBooks:
+    """Per-exchange books."""
+
+    def __init__(self, books: dict[str, OrderBook]) -> None:
+        self.books = books
+
+    async def get_orderbook(self, exchange_id: str, tournament_id: str, *, depth: int = 20) -> OrderBook:
+        return self.books[exchange_id]
+
+
+def _bid_book(ex: str, bid: float) -> OrderBook:
+    return OrderBook(exchange_id=ex, bids=[BookLevel(price=bid, quantity=100)], asks=[])
+
+
+PAIR = Relation("rel-1", "mutually_exclusive", ("81", "82"), is_exhaustive=True)
+
+
+def _pair_books() -> MultiBooks:
+    return MultiBooks({"81": _bid_book("81", 0.40), "82": _bid_book("82", 0.55)})
+
+
+async def test_paper_no_bundle_gets_the_modeled_advance(clock: Clock) -> None:
+    paper = PaperBroker(_pair_books(), "t", starting_cash=7, clock=clock, relationships=[PAIR])
+    legs = [req("no", "buy", 10, 0.60, ex="81"), req("no", "buy", 10, 0.45, ex="82")]
+    res = await paper.place_multi_leg(legs, "bundle")
+    first, second = (item.data for item in res.results)
+    assert first.all is not None
+    assert second.all is not None
+    assert first.all.collateral_savings == 0
+    assert second.all.collateral_savings == pytest.approx(4.5)
+    assert second.all.guaranteed_payout_floor_after == 10
+    assert paper.ledger.cash == pytest.approx(1.0)  # 7 - 6.0; the 4.5 was advanced
+    paper.marks.update({"81": 4_000, "82": 5_500})
+    assert paper.account_value() == pytest.approx(1.0 + 10 * 0.60 + 10 * 0.45 - 4.5)
+    (row,) = paper.get_collateral().data
+    assert (row.component_id, row.outstanding_advance) == ("81-82", pytest.approx(4.5))
+
+
+async def test_paper_without_relationships_or_with_collateral_off_is_plain_cash(clock: Clock) -> None:
+    for paper in (
+        PaperBroker(_pair_books(), "t", starting_cash=100, clock=clock),
+        PaperBroker(
+            _pair_books(), "t", starting_cash=100, clock=clock, relationships=[PAIR], collateral=False
+        ),
+    ):
+        res = await paper.place_multi_leg(
+            [req("no", "buy", 10, 0.60, ex="81"), req("no", "buy", 10, 0.45, ex="82")], "b"
+        )
+        assert all(item.data.all is None for item in res.results)
+        assert paper.ledger.cash == pytest.approx(100 - 10.5)
+        assert paper.get_collateral().data == []
+
+
+async def test_paper_relationships_can_arrive_later(clock: Clock) -> None:
+    paper = PaperBroker(_pair_books(), "t", starting_cash=100, clock=clock)
+    paper.set_relationships([PAIR])
+    await paper.place_order(req("no", "buy", 10, 0.60, ex="81"), "a")
+    res = await paper.place_order(req("no", "buy", 10, 0.45, ex="82"), "b")
+    assert res.all is not None
+    assert res.all.effective_entry_cost == 0
+
+
+async def test_paper_multi_leg_rollback_restores_advances(clock: Clock) -> None:
+    books = _pair_books()
+    books.books["83"] = OrderBook(exchange_id="83", bids=[], asks=[])
+    paper = PaperBroker(books, "t", starting_cash=100, clock=clock, relationships=[PAIR])
+    legs = [
+        req("no", "buy", 10, 0.60, ex="81"),
+        req("no", "buy", 10, 0.45, ex="82"),
+        req("yes", "buy", 10_000, 0.50, ex="83"),  # cannot be afforded: the whole bundle rolls back
+    ]
+    with pytest.raises(ApiError):
+        await paper.place_multi_leg(legs, "rollback")
+    assert paper.collateral.outstanding == {}
+    assert paper.ledger.cash == pytest.approx(100)

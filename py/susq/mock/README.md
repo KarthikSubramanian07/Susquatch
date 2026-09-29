@@ -22,6 +22,7 @@ curl -s localhost:8787/_mock/state | jq .fair      # the hidden fair values (it'
 | `--sponsor-half-width` | 0.01 | Sponsor quotes `fair ± half-width`, tick-rounded outward |
 | `--sponsor-size` | 500 | Sponsor size per side |
 | `--players` | 40 | Synthetic leaderboard entrants |
+| `--no-collateral` | off | Turn the ALL collateral model off: plain cash accounting, `all: null`, empty `/portfolio/collateral` |
 
 Test keys must match the gitleaks allowlist pattern `mock-key-*`.
 
@@ -58,8 +59,9 @@ envelope `{"error": {"code", "message", "details"?}}`.
 | `GET /orders` | `status=open|closed|expired|all`, `exchangeId`, `marketId`, cursor |
 | `GET /orders/{id}`, `GET /orders/{id}/fills`, `DELETE /orders/{id}` | 403 other user's, 404 unknown, 409 already closed |
 | `POST /orders/cancel-all` | `{tournamentId, exchangeId|marketId}`; both → 400 |
-| `GET /tournaments/{slug}/portfolio/positions`, `/pnl`, `/fills`, `/settlements` | signed qty, FIFO lots, valuation = last tournament trade; holdings without a price → 409 |
-| `GET /portfolio/collateral` | always `{"data": []}` (ALL collateral isn't simulated) |
+| `GET /tournaments/{slug}/portfolio/positions`, `/pnl`, `/fills`, `/settlements` | signed qty, FIFO lots, valuation = last tournament trade; holdings without a price → 409; `totalAccountValue` nets the outstanding ALL advance |
+| `GET /portfolio/collateral` | one row per component you touch: `componentId`, `coveredExchangeIds`, `relationshipIds`, `outstandingAdvance`, `guaranteedPayoutFloor`, `diagnostic` |
+| `GET /portfolio/transactions`, `GET /tournaments/{slug}/portfolio/transactions` | trades, settlements and `ALL_COLLATERAL_ADVANCE/REPAYMENT/RELEASE`, newest first, `type` filter; only the unscoped read carries `outstandingAdvanceAfter/componentId/reason` (as documented) |
 | `GET /tournaments/{slug}/leaderboard` | competition ranking 1-1-3, `total`, `myRank` (null until you trade) |
 | `GET /relationships`, `/relationships/graph`, `/relationships/constraints` | engine-style evaluations with `suggestedCorrectiveTrades` |
 | `POST /realtime/token` | `{token, expiresAt(+3h), supabaseUrl, anonKey, channels.user}` |
@@ -102,7 +104,7 @@ forged tokens are refused on join and kicked (`system` error + `phx_close`) mid-
 | Channel | Event | When |
 |---|---|---|
 | `tournament:{tournamentId}` | `market_batch` | after any trade or book change (`trades`, `bookDirty`, `delivery.revision/previousRevision`) |
-| `user:{profileId}` | `account_batch` | your fills and order updates |
+| `user:{profileId}` | `account_batch` | your fills, order updates and `collateralChanges` (`delta`, `outstandingAdvanceAfter`, `componentId`) |
 | `relationships:violations:{tournamentId}` | `violation` | a trade (or `/_mock/violation`) leaves a relationship violated |
 
 ## Admin API (`/_mock/*`, no auth)
@@ -117,6 +119,7 @@ forged tokens are refused on join and kicked (`system` error + `phx_close`) mid-
 | `POST /_mock/sponsor` | `{halfWidth?, size?}` | re-quote everything |
 | `POST /_mock/stale-order` | `{exchangeId, side: bid|ask, through, quantity}` | a student order `through` past fair |
 | `POST /_mock/violation` | `{relationshipId?, amount}` | move fairs and print trades so the relationship is violated; broadcasts `violation` |
+| `POST /_mock/settle` | `{exchangeId, outcome: YES\|NO}` | settle one exchange: pays 1 per winning share, cancels its orders, releases ALL advances; an outcome that contradicts a relationship (both legs of a pair YES) → 400 |
 | `POST /_mock/realtime/disconnect` | | drop every websocket |
 | `POST /_mock/realtime/skip-revision` | `{channel?, count?}` | the next batch arrives with a revision gap |
 | `POST /_mock/realtime/broadcast` | `{channel, event, payload}` | raw broadcast |
@@ -127,11 +130,33 @@ the caller gets `502 ORDER_STATUS_UNKNOWN`, a same-key retry replays), `service_
 (cancels half, then 503 with `details.cancelled/remaining`), `cancel_unavailable_next`,
 `random_503_prob`, `latency_ms`. `*_next` counters decrement as they fire.
 
+## ALL collateral (relationship-backed buying power)
+
+The engine and the paper broker share one model, `susq.platform.collateral`. What the official docs
+say, and what the mock **assumes** on top (each assumption is labelled A1-A7 in that module; the whole
+model switches off with `--no-collateral` / `MockConfig(collateral=False)`):
+
+| | Documented | Mock assumption |
+|---|---|---|
+| Component | connected set of active relationships a portfolio touches | union of relationships sharing an exchange; id = sorted exchange ids joined by `-` (A7) |
+| Floor | minimum payout over every allowed joint outcome; `null` when unavailable | exact enumeration; ME (exhaustive or not), complementary, implication/monotonic understood; other types add no constraint, so the floor stays a lower bound (A5); > 16 exchanges → `null`, no advance (A6) |
+| Advance | part of a fill's nominal cost backed by the floor | per fill, in order: `min(opening cost, floor_after − outstanding)` (A1) |
+| Repayment | when an execution reduces the backing | at once, from cash, `outstanding − floor_after` (A2) |
+| Release | `ALL_COLLATERAL_RELEASE` exists | on settlement, out of the payout, down to the remaining floor; zero once the component has settled (A3) |
+| Balance | `netBuyingPowerImpact` is authoritative | reservation = opening cost − prospective advance; a fill that would overdraw cash is refused (maker cancelled / taker remainder cancelled with `InsufficientBalance`, a mock choice) |
+| Account value | not documented | cash + holdings − outstanding advance (A4) |
+
+`all` is `null` for exchanges outside every relationship (and with collateral off); for linked
+exchanges it is always present, zeros included. Property tests (`py/tests/test_mock_collateral.py`)
+hold these invariants through random trading and settlement: cash never negative, advance ≤ floor,
+floor ≤ payout in every allowed outcome, and nothing outstanding after settlement.
+
 ## Not simulated
 
-ALL collateral advances (`all` is always `null`), settlement and payouts, market closure, fees, and
-the 250 ms batching window (the mock broadcasts one batch per request). Relationship evaluation
-uses last tournament trade prices; the production engine's exact price source is unverified.
+Market closure before settlement, `REFUND`/N/A settlements, fees, and the 250 ms batching window
+(the mock broadcasts one batch per request). Settlement happens only through `/_mock/settle`.
+Relationship evaluation uses last tournament trade prices; the production engine's exact price
+source is unverified.
 
 ## Using it from Python tests
 

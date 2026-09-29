@@ -170,6 +170,7 @@ async fn session_with(tweak: impl FnOnce(&mut Config), prepare: impl FnOnce(&Pat
             starting_balance: 100_000.0,
             member_count: 1200,
             page_size: 200,
+            collateral: true,
         },
     ));
     seed(&mock);

@@ -19,10 +19,11 @@ use susq_core::{Clock, Config, ExchangeId, MarketIndex, OrderBundle, clock::dura
 use susq_gateway::{Blocked, Gateway, LeaseStatus, PaperBroker, SendOutcome};
 use susq_platform::{
     OrderStatusFilter, PlatformAdapter, PlatformError, PnlPeriod, all_orders, all_relationships,
+    collateral::CollateralGraph,
     models::LeaderboardPeriod,
     realtime::{RealtimeEvent, ResyncReason},
 };
-use susq_risk::{BreakerConfig, Breakers, PreTrade, RiskContext, RiskLimits};
+use susq_risk::{BreakerConfig, Breakers, BundleCost, PreTrade, RiskContext, RiskLimits};
 use susq_strategies::{
     ConstraintsRacer, EnExecutor, FairQuote, MarketMaker, NeedleView, ScenarioExecutor, Snapshot, Sniper,
     Strategy,
@@ -95,6 +96,24 @@ pub struct Engine {
     gate_closed_handled: bool,
     needle_epoch: u64,
     market_map_mtime: Option<std::time::SystemTime>,
+    /// ALL collateral model over the current relationships (used only with
+    /// `[risk] use_collateral_buying_power = true`).
+    collateral: CollateralCost,
+}
+
+/// Collateral-aware bundle cost for risk's buying-power check.
+#[derive(Debug, Default)]
+struct CollateralCost(CollateralGraph);
+
+impl BundleCost for CollateralCost {
+    fn cash_needed(&self, positions: &HashMap<ExchangeId, i64>, bundle: &OrderBundle) -> f64 {
+        let fills: Vec<(ExchangeId, i64, f64)> = bundle
+            .legs
+            .iter()
+            .map(|l| (l.exchange_id.clone(), l.yes_delta(), l.yes_space().1.prob()))
+            .collect();
+        self.0.effective_cost(positions, &fills)
+    }
 }
 
 impl Engine {
@@ -116,7 +135,8 @@ impl Engine {
                 d.home.join(&cfg.paths.fair_live),
                 Duration::from_secs(cfg.fair.stale_after_s),
             ),
-            racer: ConstraintsRacer::new(cfg.strategies.racer.clone()),
+            racer: ConstraintsRacer::new(cfg.strategies.racer.clone())
+                .with_collateral_buying_power(cfg.risk.use_collateral_buying_power),
             sniper: Sniper::new(cfg.strategies.sniper.clone()),
             mm: MarketMaker::new(cfg.strategies.mm.clone()),
             scenario: ScenarioExecutor::new(cfg.strategies.scenario.clone()),
@@ -127,6 +147,7 @@ impl Engine {
             gate_closed_handled: false,
             needle_epoch: 0,
             market_map_mtime: None,
+            collateral: CollateralCost::default(),
             world,
             d,
         }
@@ -373,7 +394,10 @@ impl Engine {
     async fn refresh_relationships(&mut self, now: i64) {
         self.due.relationships = now + RELATIONSHIPS_EVERY_NS;
         match all_relationships(self.d.platform.as_ref(), &self.world.tid).await {
-            Ok(rels) => self.world.relationships = rels.into_iter().map(|r| (r.id.clone(), r)).collect(),
+            Ok(rels) => {
+                self.collateral = CollateralCost(CollateralGraph::new(&rels));
+                self.world.relationships = rels.into_iter().map(|r| (r.id.clone(), r)).collect();
+            }
             Err(e) => self.platform_error("relationships", &e, now),
         }
     }
@@ -701,6 +725,14 @@ impl Engine {
             markets: &self.world.markets,
             locked,
             glitch_used: self.world.glitch_used,
+            // 0 until the first tournament read: leave buying power to the platform until then.
+            cash: (self.world.cash > 0.0).then_some(self.world.cash),
+            bundle_cost: self
+                .d
+                .cfg
+                .risk
+                .use_collateral_buying_power
+                .then_some(&self.collateral as &dyn BundleCost),
         }
     }
 

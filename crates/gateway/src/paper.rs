@@ -54,6 +54,7 @@ impl PaperBroker {
                 starting_balance,
                 member_count: 0,
                 page_size: 200,
+                collateral: true,
             },
         );
         Self { live, engine, tid }

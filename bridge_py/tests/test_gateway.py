@@ -104,6 +104,7 @@ async def test_terminal_errors_are_not_retried(harness, live_bridge: Bridge) -> 
         total_gross_frac=100.0,
     )
     live_bridge.risk.equity = 10_000_000.0
+    live_bridge.risk.cash = None  # unknown cash: risk's buying-power check stands aside
     out = await live_bridge.gateway.place("t:400", "test", OrderSpec(EX, "yes", "buy", 1_000_000, 5_000))
     assert out.status == "platform_rejected"
     assert out.reason == "VALIDATION_ERROR"

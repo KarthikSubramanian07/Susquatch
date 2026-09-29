@@ -11,4 +11,4 @@ pub mod breakers;
 pub mod limits;
 
 pub use breakers::{BreakerConfig, BreakerKind, Breakers, Trip};
-pub use limits::{LiveOrder, PreTrade, Rejection, RiskContext, RiskLimits};
+pub use limits::{BundleCost, LiveOrder, PreTrade, Rejection, RiskContext, RiskLimits, opening_notional};

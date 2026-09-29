@@ -14,6 +14,7 @@ from datetime import datetime
 from typing import Any
 
 from susq.mock.engine import Account, Engine, MarketDef
+from susq.platform.collateral import Relation
 from susq.platform.ledger import Ledger
 from susq.platform.prices import (
     MAX_PIPS,
@@ -58,6 +59,13 @@ class RelationshipDef:
     is_exhaustive: bool
     label: str
 
+    def relation(self) -> Relation:
+        """The collateral model's view of this relationship."""
+        if self.type == "implication":
+            ante, cons = self.exchange_ids
+            return Relation(self.id, self.type, (), antecedent=ante, consequent=cons)
+        return Relation(self.id, self.type, tuple(self.exchange_ids), is_exhaustive=self.is_exhaustive)
+
 
 @dataclass(slots=True)
 class PlayerDef:
@@ -80,6 +88,8 @@ class ScenarioConfig:
     stale_orders: int = 4
     stale_through_pips: int = 500  # student orders sit 5 points through fair
     synthetic_players: int = 40
+    #: Model ALL collateral advances (``--no-collateral`` turns it off: plain cash accounting).
+    collateral: bool = True
     api_keys: dict[str, str] = field(default_factory=lambda: {"mock-key-alpha": "trader-alpha"})
 
 
@@ -97,7 +107,12 @@ class Scenario:
         self.keys: dict[str, str] = {}  # api key -> profile id
         self.players: list[PlayerDef] = []
         markets = self._build_markets()
-        self.engine = Engine(self.tournament_id, markets)
+        self.engine = Engine(
+            self.tournament_id,
+            markets,
+            [r.relation() for r in self.relationships],
+            collateral=config.collateral,
+        )
         self._build_accounts()
         self._build_players()
         self._seed_books(now)

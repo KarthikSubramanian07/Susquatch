@@ -11,6 +11,12 @@
 //!   without executing again; a different payload is `409 CONFLICT`. Only successful executions
 //!   are stored.
 //! * One-shot fault injection per [`Endpoint`] and per-endpoint call counters.
+//! * ALL collateral (with `MockConfig::collateral`, the default), after
+//!   [`MockPlatform::set_relationships`]: fills on linked exchanges get the advance the shared model
+//!   ([`crate::collateral`], a port of the Python mock's) grants, `all` is present exactly for linked
+//!   exchanges, and `GET /portfolio/collateral` serves the modeled components. Kept minimal on
+//!   purpose: the balance check still reserves full notional (no credit for a prospective advance)
+//!   and a repayment may overdraw cash; the Python mock (`py/susq/mock`) is the reference model.
 //!
 //! Accounting choices:
 //! * Positions use average cost (the platform's FIFO lots are not modeled; `lots` is empty).
@@ -61,6 +67,8 @@ pub struct MockConfig {
     pub member_count: u32,
     /// Rows per page of every paginated listing (small values exercise pagination).
     pub page_size: usize,
+    /// Model ALL collateral advances (false: plain cash accounting and `all: null`).
+    pub collateral: bool,
 }
 
 impl Default for MockConfig {
@@ -71,6 +79,7 @@ impl Default for MockConfig {
             starting_balance: 1_000.0,
             member_count: 100,
             page_size: 200,
+            collateral: true,
         }
     }
 }
@@ -276,9 +285,10 @@ impl MockPlatform {
         placed
     }
 
-    /// Replace the canonical relationships served by `GET /relationships`.
+    /// Replace the canonical relationships served by `GET /relationships` (and the ALL collateral
+    /// components built from them).
     pub fn set_relationships(&self, relationships: Vec<Relationship>) {
-        self.inner.lock().state.relationships = relationships;
+        self.inner.lock().state.set_relationships(relationships);
     }
 
     /// Replace the evaluations served by `GET /relationships/constraints`.
@@ -296,9 +306,9 @@ impl MockPlatform {
         self.inner.lock().state.realtime_token = token;
     }
 
-    /// Replace the collateral components.
+    /// Serve canned collateral components instead of the modeled ones.
     pub fn set_collateral(&self, collateral: Collateral) {
-        self.inner.lock().state.collateral = collateral;
+        self.inner.lock().state.collateral_override = Some(collateral);
     }
 
     // ───────────────────────────── faults & inspection ─────────────────────────────

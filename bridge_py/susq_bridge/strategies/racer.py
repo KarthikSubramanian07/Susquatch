@@ -21,6 +21,12 @@ minimum payoff is 0 and the proof fails: the racer refuses it. The NO bundle is 
 Legs are priced by walking the current book, sized to the depth that keeps the edge and to
 ``max_bundle_notional_frac`` of equity, sent atomically via ``/orders/multi-leg`` (never with
 ``relationshipConstraint``), and any unfilled remainder is cancelled immediately.
+
+The per-bundle budget counts the bundle's **full notional** by default. With
+``[risk] use_collateral_buying_power = true`` it counts the modeled ALL *effective* cost instead
+(e.g. NO on every leg of a mutually exclusive set: every leg after the first is backed by the
+guaranteed floor), via the gateway's :class:`~susq_bridge.collateral.CollateralTracker`. The
+relationship exposure cap always stays on notional.
 """
 
 from __future__ import annotations
@@ -128,6 +134,17 @@ def _worst_price(lad: Sequence[tuple[int, int]], qty: int) -> int | None:
     return None
 
 
+def _largest_within(limit: int, budget: int, cost: Callable[[int], int]) -> int:
+    """Largest ``n`` in ``[0, limit]`` with ``cost(n) <= budget`` (``cost`` non-decreasing)."""
+    if cost(limit) <= budget:
+        return limit
+    lo, hi = 0, limit
+    while hi - lo > 1:
+        mid = (lo + hi) // 2
+        lo, hi = (mid, hi) if cost(mid) <= budget else (lo, mid)
+    return lo
+
+
 def build_bundle(
     relationship_id: str,
     kind: str,
@@ -136,8 +153,13 @@ def build_bundle(
     *,
     min_edge_pips: int,
     max_notional_pips: int,
+    cost_of: Callable[[int, Sequence[int]], int] | None = None,
 ) -> tuple[Bundle | None, str]:
-    """Largest equal-quantity bundle whose guaranteed payoff beats its worst-price cost by the edge."""
+    """Largest equal-quantity bundle whose guaranteed payoff beats its worst-price cost by the edge.
+
+    ``cost_of(size, limits)`` is the cash ``size`` bundle shares at ``limits`` would consume, checked
+    against ``max_notional_pips``; default ``size * sum(limits)`` (full notional).
+    """
     payoff = guaranteed_payoff({leg.exchange_id: leg.side for leg in legs}, outcomes)
     if any(not leg.ladder for leg in legs):
         return None, "no_depth"
@@ -151,7 +173,10 @@ def build_bundle(
         cost = sum(worst)
         if payoff - cost < min_edge_pips or any(not MIN_PIPS <= p <= MAX_PIPS for p in worst):
             break
-        size = min(qty, max_notional_pips // cost) if cost else qty
+        if cost_of is None:
+            size = min(qty, max_notional_pips // cost) if cost else qty
+        else:
+            size = _largest_within(qty, max_notional_pips, lambda n, w=tuple(worst): cost_of(n, w))
         if size < 1:
             break
         best = Bundle(relationship_id, kind, tuple(legs), size, tuple(worst), cost, payoff, payoff - cost)
@@ -194,6 +219,7 @@ class Racer:
                 break
             cursor = page.pagination.next_cursor
         self.relationships = rels
+        self.gateway.set_relationships(list(rels.values()))
         return len(rels)
 
     # ── entry points ────────────────────────────────────────────────────────────────────────
@@ -330,7 +356,23 @@ class Racer:
             outcomes,
             min_edge_pips=round(self.config.min_edge * PIPS_PER_UNIT),
             max_notional_pips=max_notional,
+            cost_of=self._effective_cost(legs) if self.gateway.risk.uses_collateral else None,
         )
+
+    def _effective_cost(self, legs: Sequence[Leg]) -> Callable[[int, Sequence[int]], int]:
+        """Modeled cash for ``size`` bundle shares (buys, sent in leg order) at side-relative limits."""
+        tracker = self.gateway.collateral
+        positions = self.gateway.risk.positions
+
+        def cost(size: int, limits: Sequence[int]) -> int:
+            fills = []
+            for leg, lim in zip(legs, limits, strict=True):
+                buys_yes = leg.side == "yes"
+                yes_price = lim if buys_yes else PIPS_PER_UNIT - lim
+                fills.append((leg.exchange_id, 1 if buys_yes else -1, yes_price, size))
+            return tracker.effective_cost_pips(positions, fills)
+
+        return cost
 
     async def _books(self, exchange_ids: Sequence[str]) -> dict[str, OrderBook]:
         books = await asyncio.gather(

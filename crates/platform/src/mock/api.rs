@@ -251,7 +251,8 @@ impl State {
     pub(super) fn pnl(&self, slug: &str, period: PnlPeriod, now: DateTime<Utc>) -> PlatformResult<Pnl> {
         let summary = self.positions(slug)?.summary;
         let start = self.cfg.starting_balance;
-        let total = self.cash_of(CALLER) + summary.total_market_value;
+        // The outstanding ALL advance is a liability (the Python mock's assumption A4).
+        let total = self.cash_of(CALLER) + summary.total_market_value - self.liability(CALLER);
         Ok(Pnl {
             period: period.as_str().to_owned(),
             period_start: None,
@@ -341,7 +342,10 @@ impl State {
     /// `GET /portfolio/collateral`
     pub(super) fn collateral(&self, tid: &TournamentId) -> PlatformResult<Collateral> {
         self.check_tournament(tid)?;
-        Ok(self.collateral.clone())
+        Ok(self
+            .collateral_override
+            .clone()
+            .unwrap_or_else(|| self.collateral_of(CALLER)))
     }
 
     /// Static checks every order passes before anything executes.

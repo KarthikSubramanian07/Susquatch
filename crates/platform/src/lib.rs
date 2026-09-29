@@ -6,6 +6,7 @@
 //! * [`models`]: tolerant wire models.
 
 pub mod adapter;
+pub mod collateral;
 pub mod error;
 pub mod mock;
 pub mod models;

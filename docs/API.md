@@ -106,6 +106,33 @@ is authoritative. Implications:
   not from `Σ price × qty`.
 - *Unverified until live:* whether chamber-control, race, and seat-count markets are linked in the graph for the Cup.
 
+**Documented** (official reference): order responses (single, batch items, multi-leg legs) carry a nullable
+`all` = `{fullNotionalCost, effectiveEntryCost, collateralSavings, relationshipIds, componentId,
+guaranteedPayoutFloorAfter, outstandingAdvanceAfter, collateralRepayment, netBuyingPowerImpact}`, null when
+the engine produced no relationship quote. `GET /portfolio/collateral?tournamentId=` lists components
+`{profileId, tournamentId, componentId, coveredExchangeIds (integers), relationshipIds, outstandingAdvance,
+guaranteedPayoutFloor (null when not every allowed outcome could be evaluated), diagnostic}`. The unscoped
+`GET /portfolio/transactions` shows `ALL_COLLATERAL_ADVANCE / _REPAYMENT / _RELEASE` with
+`outstandingAdvanceAfter`, `componentId` and `reason` (the tournament-scoped variant documents none of those
+three). `account_batch.collateralChanges` pushes `{delta, outstandingAdvanceAfter, componentId, tournamentId}`.
+
+**Modeled, not documented** (`py/susq/platform/collateral.py`, assumptions A1-A7; ported to
+`crates/platform/src/collateral.rs`; used by the mock, the paper broker, and the opt-in sizing):
+components are unions of active relationships sharing an exchange, id = sorted exchange ids joined by
+`-`; the floor is the exact minimum payout over allowed joint outcomes (mutually exclusive, exhaustive or
+not; complementary; implication/monotonic with one antecedent and consequent; other types add no
+constraint, so the floor stays a lower bound; > 16 exchanges → no floor); fills are evaluated in order and
+each may be advanced `min(opening cost, floor_after − outstanding)`; a fill that drops the floor below the
+outstanding advance repays the difference from cash at once; settlement releases what the remaining
+component can't back, out of the payout; account value nets the outstanding advance.
+
+**How Susquatch uses it:** every `all` block is journaled (`all_economics`, with the model's prediction
+alongside) whatever the config says. `[risk] use_collateral_buying_power` (default **false**) switches
+buying-power checks and racer bundle budgets from full notional to the modeled effective cost, in both the
+bridge and rust-live; exposure caps stay on notional. `measure-day1`'s `collateral` section compares the
+engine with the model on a real linked fill and recommends flipping the flag only on a match within 0.01.
+The mock simulates all of this (`--no-collateral` turns it off; `POST /_mock/settle` drives releases).
+
 ## Settlement facts that shape strategy
 
 - Autosettlement runs every **4 h** from each market's configured source. The **four chamber-control markets are settled manually**

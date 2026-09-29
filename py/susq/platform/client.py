@@ -57,6 +57,7 @@ from susq.platform.models import (
     Tournament,
     TournamentsPage,
     TradesPage,
+    TransactionsPage,
 )
 
 __all__ = [
@@ -592,6 +593,15 @@ class SuperMarketClient:
 
     async def get_collateral(self, tournament_id: str) -> Collateral:
         return Collateral.model_validate(await self._get("/portfolio/collateral", tournamentId=tournament_id))
+
+    async def get_transactions(
+        self, *, types: str | None = None, limit: int = 200, cursor: str | None = None
+    ) -> TransactionsPage:
+        """``GET /portfolio/transactions`` (the key's default tournament): the only read that
+        documents ALL collateral detail (``outstandingAdvanceAfter``, ``componentId``, ``reason``)."""
+        return TransactionsPage.model_validate(
+            await self._get("/portfolio/transactions", type=types, limit=limit, cursor=cursor)
+        )
 
     async def get_leaderboard(
         self, slug: str, *, period: str = "all", limit: int = 100, offset: int = 0

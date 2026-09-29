@@ -16,9 +16,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
 from susq.platform.prices import to_price, validate_limit
@@ -77,6 +77,8 @@ __all__ = [
     "TournamentsPage",
     "Trade",
     "TradesPage",
+    "Transaction",
+    "TransactionsPage",
     "as_qty",
     "iso_utc",
 ]
@@ -530,12 +532,16 @@ class SettlementsPage(ApiModel):
     pagination: Pagination = Field(default_factory=Pagination)
 
 
+#: The docs type ``coveredExchangeIds`` as integers; everywhere else exchange ids are strings.
+IdStr = Annotated[str, BeforeValidator(lambda v: str(v) if isinstance(v, int) else v)]
+
+
 class CollateralComponent(ApiModel):
     profile_id: str | None = None
     tournament_id: str | None = None
     outstanding_advance: float = 0.0
     component_id: str
-    covered_exchange_ids: list[str] = Field(default_factory=list)
+    covered_exchange_ids: list[IdStr] = Field(default_factory=list)
     relationship_ids: list[str] = Field(default_factory=list)
     guaranteed_payout_floor: float | None = None
     diagnostic: str | None = None
@@ -543,6 +549,41 @@ class CollateralComponent(ApiModel):
 
 class Collateral(ApiModel):
     data: list[CollateralComponent]
+
+
+#: ``transactionType`` values for ALL collateral events.
+COLLATERAL_TRANSACTION_TYPES = (
+    "ALL_COLLATERAL_ADVANCE",
+    "ALL_COLLATERAL_REPAYMENT",
+    "ALL_COLLATERAL_RELEASE",
+)
+
+
+class Transaction(ApiModel):
+    """One ``GET /portfolio/transactions`` row (wire names mix snake_case and camelCase)."""
+
+    event_id: str = Field(alias="event_id")
+    event_type: str = Field(alias="event_type")
+    created_at: datetime | None = None
+    price: float | None = None
+    quantity: float = 0.0
+    exchange_id: str | None = None
+    market_id: str | None = None
+    amount: float | None = None
+    transaction_type: str | None = None
+    outstanding_advance_after: float | None = None
+    component_id: str | None = None
+    reason: str | None = None
+    tournament_id: str | None = None
+
+    @property
+    def is_collateral(self) -> bool:
+        return self.transaction_type in COLLATERAL_TRANSACTION_TYPES
+
+
+class TransactionsPage(ApiModel):
+    data: list[Transaction]
+    pagination: Pagination = Field(default_factory=Pagination)
 
 
 # ── leaderboard ─────────────────────────────────────────────────────────────────────────────

@@ -136,6 +136,8 @@ proptest! {
             markets: &markets,
             locked: &locked,
             glitch_used: 0.0,
+            cash: None,
+            bundle_cost: None,
         };
         let pt = PreTrade { limits: limits() };
         let bundle = OrderBundle { legs: legs.clone(), atomic: true };

@@ -148,7 +148,10 @@ class Oms:
         self.orders = fresh
         self.positions = portfolio.positions
         self.equity = portfolio.equity
-        self.gateway.risk.update_portfolio(portfolio.positions, portfolio.marks, portfolio.equity)
+        self.gateway.risk.update_portfolio(
+            portfolio.positions, portfolio.marks, portfolio.equity, portfolio.cash
+        )
+        self.gateway.collateral.sync_positions(portfolio.positions)
         self.last_reconcile = self.clock()
         self.reconciles += 1
 

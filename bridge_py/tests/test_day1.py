@@ -12,7 +12,14 @@ from susq_bridge.cli import app
 from susq_bridge.config import load_config
 from susq_bridge.first_trade import first_trade
 from susq_bridge.lease import Lease
-from susq_bridge.measure_day1 import load_report, measure_day1, probe_rate_limit, write_report
+from susq_bridge.measure_day1 import (
+    Day1Report,
+    decide,
+    load_report,
+    measure_day1,
+    probe_rate_limit,
+    write_report,
+)
 from susq_bridge.runtime import Bridge
 from typer.testing import CliRunner
 
@@ -52,16 +59,66 @@ async def test_measure_day1_live(harness) -> None:  # type: ignore[no-untyped-de
         assert s["market_vs_limit"].status == "skipped"
         assert any(r.startswith("Row 7") for r in report.recommendations)
         assert any(r.startswith(("Row 1", "Row 2", "Rows 1-2")) for r in report.recommendations)
+        col = s["collateral"]
+        assert col.status == "ok", col.summary
+        assert col.data["source"] == "probe"
+        assert (col.data["filled"], col.data["allNonNull"]) == (2, 2)
+        assert col.data["savings"] > 0  # the second NO leg was backed by the pair's floor of 1
+        assert col.data["mismatches"] == []
+        assert col.data["before"] == []
+        (component,) = col.data["after"]
+        assert component["guaranteedPayoutFloor"] == 1
+        assert any("set use_collateral_buying_power = true" in r for r in report.recommendations)
         assert (
             await harness.mock.client.list_open_orders(harness.mock.tid) == []
-        )  # probes left nothing behind
-        assert (await harness.mock.client.get_positions("midterm-elections")).positions == []
+        )  # probes left nothing resting
+        # The only position left is the collateral probe: 1 NO on each leg of one pair (pays >= 1).
+        positions = (await harness.mock.client.get_positions("midterm-elections")).positions
+        assert sorted(p.quantity for p in positions) == [-1, -1]
+        assert {p.exchange_id for p in positions} == set(component["coveredExchangeIds"])
         md, js = write_report(report, harness.config.reports_dir)
         assert "Decision table" in md.read_text()
         assert load_report(harness.config.reports_dir).get("tick").status == "ok"  # type: ignore[union-attr]
         assert js.exists()
     finally:
         await bridge.close()
+
+
+async def test_collateral_mismatch_keeps_the_flag_off(harness) -> None:  # type: ignore[no-untyped-def]
+    """An engine that returns `all: null` on linked fills must not earn the recommendation."""
+    for acct in harness.mx.engine.state.accounts.values():
+        acct.collateral.enabled = False  # the mock now behaves like an engine without ALL
+    bridge = await harness.open_bridge("live")
+    try:
+        report = await measure_day1(
+            harness.config,
+            bridge=bridge,
+            rate_probe=False,
+            realtime_probe=False,
+            transport=harness.mock.transport,
+        )
+        col = by_name(report)["collateral"]
+        assert col.status == "failed"
+        assert col.data["allNonNull"] == 0
+        assert "came back null" in col.summary
+        rec = next(r for r in report.recommendations if r.startswith("Collateral"))
+        assert "keep [risk] use_collateral_buying_power = false" in rec
+        assert all("= true" not in r for r in report.recommendations)
+    finally:
+        await bridge.close()
+
+
+def test_collateral_recommendation_explains_a_model_mismatch() -> None:
+    report = Day1Report(generated_at="now", mode="live")
+    report.add(
+        "collateral",
+        "failed",
+        "probe: engine differs from the model: 1302 collateralSavings: engine 0.0000 vs model 0.4500",
+        matches=False,
+    )
+    rec = next(r for r in decide(report) if r.startswith("Collateral"))
+    assert "keep [risk] use_collateral_buying_power = false" in rec
+    assert "collateralSavings" in rec
 
 
 async def test_rate_probe_stops_at_the_first_429(harness) -> None:  # type: ignore[no-untyped-def]
@@ -78,6 +135,9 @@ async def test_measure_day1_paper_skips_writes(harness) -> None:  # type: ignore
         assert s["tick"].status == "skipped"
         assert s["no_mechanics"].status == "skipped"
         assert s["census"].status == "ok"
+        assert s["collateral"].status == "skipped"
+        assert "paper mode" in s["collateral"].summary
+        assert any("keep [risk] use_collateral_buying_power = false" in r for r in report.recommendations)
     finally:
         await bridge.close()
 

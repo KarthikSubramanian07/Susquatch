@@ -33,6 +33,13 @@ glitch_max_frac = 0.02             # ...and is capped at this share of capital
 loss_per_hour_frac = 0.03          # MTM loss in any rolling hour that trips cancel-all + freeze
 reject_breaker_per_min = 10
 max_order_notional_frac = 0.02     # default per-order cap unless a strategy sets tighter
+# ALL collateral ("relationship-backed buying power"): when true, cash-affordability checks and racer
+# sizing count an order's modeled EFFECTIVE cost (nominal minus the advance its relationship
+# component's guaranteed payout floor would back, i.e. netBuyingPowerImpact) instead of its full
+# notional. Keep false until measure_day1's collateral section confirms the live engine matches the
+# model (reports/DAY1.md says "set use_collateral_buying_power = true" only then). Exposure caps
+# above always use full notional either way; `all` economics are journaled regardless.
+use_collateral_buying_power = false
 
 [risk.clusters]
 national = 0.25
