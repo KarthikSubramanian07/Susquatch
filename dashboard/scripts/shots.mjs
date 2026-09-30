@@ -22,13 +22,18 @@ if (process.env.EXTRA) {
   shots.push({ ...phone, name: "mobile-fold" }, { ...phone, name: "mobile-kill", kill: true });
   shots.push({ name: "desktop-kill", viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1, fullPage: false, kill: true });
 }
+// The login page (no credentials), desktop and phone.
+shots.push(
+  { name: "login", viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2, fullPage: false, login: true },
+  { name: "login-mobile", viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true, fullPage: false, login: true },
+);
 for (const s of shots) {
   const ctx = await browser.newContext({
     viewport: s.viewport,
     deviceScaleFactor: s.deviceScaleFactor,
     isMobile: s.isMobile,
     hasTouch: s.hasTouch,
-    httpCredentials: { username: "susq", password },
+
     colorScheme: "dark",
     reducedMotion: "reduce", // deterministic frames: tweens and draw-ins collapse to their final state
   });
@@ -36,7 +41,18 @@ for (const s of shots) {
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
   page.on("console", (m) => m.type() === "error" && errors.push(m.text()));
+  // Sign in the way a person does (the form sets the session cookie on this context), unless shooting the gate.
+  if (!s.login) await ctx.request.post(new URL("/api/login", url).toString(), { form: { password }, maxRedirects: 0 });
   await page.goto(url, { waitUntil: "networkidle" });
+  if (s.login) {
+    if (!page.url().endsWith("/login")) throw new Error(`expected a redirect to /login, got ${page.url()}`);
+    await page.evaluate(() => document.fonts.ready);
+    const path = join(out, `${prefix}${s.name}.png`);
+    await page.screenshot({ path, fullPage: false });
+    console.log(path, errors.length ? `errors: ${errors.join(" | ")}` : "");
+    await ctx.close();
+    continue;
+  }
   await page.waitForFunction(() => document.getElementById("equity")?.textContent !== "—" || document.getElementById("silent")?.hidden === false);
   await page.waitForFunction(() => document.body.dataset.ready === "1");
   await page.evaluate(() => document.fonts.ready);

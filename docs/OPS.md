@@ -32,7 +32,7 @@ Three rules shape every decision below ([`brief/OPS_FREE_AUTONOMY.md`](../brief/
  └──────────────────────────────────────────────────────────┬────────────────────────────────────────────────────┘
                                                             │ HTTPS out only (ufw: nothing in but SSH)
  ┌──────────────────────── Cloudflare (free) ───────────────▼────────────────────────────────────────────────────┐
- │  Pages "susquatch" → https://susquatch.pages.dev   basic auth on every route, noindex                         │
+ │  Pages "susquatch" → https://susquatch.pages.dev   login page + session cookie, noindex                         │
  │     /api/push (server) · /api/status · /api/kill · /api/summary        KV "SUSQ_KV": status · kill · summary:* │
  │  Worker "susquatch-summary"  cron 0 14 * * *  → summary:latest (dashboard) + comment on the pinned           │
  │     "Daily summary" issue in the private susquatch-reports repo (GitHub emails you)                           │
@@ -109,7 +109,7 @@ Cloudflare subscriptions with a `Billing: read` token, `rclone size`, the pusher
 |---|---|---|---|
 | `SUSQ_API_KEY` | server `.env` | you | Super Market key, `read` + `trade` |
 | `SUSQ_STATUS_PUSH_TOKEN` | server `.env` **and** Pages secret (same value) | you | ≥ 32 random chars (`openssl rand -base64 36`). Opens only `/api/push` and `/api/kill` |
-| `DASHBOARD_PASSWORD` | Pages secret | you | ≥ 16 chars; the dashboard's basic-auth password (any username) |
+| `DASHBOARD_PASSWORD` | Pages secret | you | ≥ 16 chars; the login page's password. Also accepted as HTTP Basic (any username) by curl and the tests. Sessions are HMAC cookies keyed from it, so changing it signs every browser out |
 | `SUSQ_R2_ACCESS_KEY_ID` / `SUSQ_R2_SECRET_ACCESS_KEY` | server `.env` | you | R2 API token: **Object Read & Write, this bucket only** |
 | `GITHUB_TOKEN` (Worker) | Worker secret | you / CI | fine-grained PAT on `susquatch-reports` only: **Issues: read & write**, optional **Contents: read** (weekly link) |
 | `CLOUDFLARE_API_TOKEN` | GitHub Actions secret | you | Account → **Cloudflare Pages: Edit**, **Workers Scripts: Edit**, **Workers KV Storage: Edit** |
