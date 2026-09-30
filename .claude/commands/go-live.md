@@ -6,7 +6,7 @@ Karthik has asked to arm live trading. **Stop immediately unless his message in 
 
 Pre-flight (all must pass; show a table of the results):
 1. `.env` has `SUSQ_API_KEY` set. Show only its length, never its value.
-2. `uv run susq-bridge measure-day1 --read-only` succeeds: host reachable, tournament resolved, `isPendingEnrolment` false,
+2. `uv run susq-bridge measure-day1 --no-rate-probe` succeeds (in paper mode every write probe is skipped): host reachable, tournament resolved, `isPendingEnrolment` false,
    and no `TERMS_NOT_ACKNOWLEDGED`.
 3. The lease is free or held by the process being armed. `ops/KILL` is absent.
 4. `state/market_map.json` exists. Count the rows with `verified: true`. The sniper trades only those.

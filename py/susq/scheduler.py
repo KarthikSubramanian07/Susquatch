@@ -27,7 +27,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from datetime import time as dtime
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 from zoneinfo import ZoneInfo
 
 import typer
@@ -292,6 +292,54 @@ def map_draft_cmd(
 ) -> None:
     """Draft state/market_map.json from the newest recorded Cup listing (never verifies rows)."""
     typer.echo(_ctx().map_draft(promote=promote))
+
+
+@cli_app.command("rules-review")
+def rules_review_cmd() -> None:
+    """Write reports/rules_review.md: every market, risky races first, with what needs a look."""
+    from susq.mapping.io import read_market_map
+    from susq.mapping.review import render
+
+    paths = _ctx().paths
+    mm = read_market_map(paths.market_map)
+    if mm is None:
+        raise typer.BadParameter("no state/market_map.json yet: run `susq research map-draft` first")
+    out = paths.home / "reports" / "rules_review.md"
+    atomic_write_text(out, render(mm))
+    typer.echo(f"wrote {out}")
+
+
+@cli_app.command("verify")
+def verify_cmd(
+    ids: Annotated[
+        list[str] | None, typer.Argument(help="Race ids (2026-SEN-NE) or market ids (191) to approve.")
+    ] = None,
+    clean: bool = typer.Option(False, "--clean", help="Approve every clean two-party race."),
+) -> None:
+    """HUMAN ONLY: mark market-map rows verified so strategies may trade them."""
+    from susq.mapping.io import read_market_map, write_market_map
+    from susq.mapping.review import clean_races, render, verify
+
+    ctx = _ctx()
+    paths = ctx.paths
+    mm = read_market_map(paths.market_map)
+    if mm is None:
+        raise typer.BadParameter("no state/market_map.json yet: run `susq research map-draft` first")
+    ids = ids or []
+    race_ids = [i for i in ids if i.startswith("20")] + (clean_races(mm) if clean else [])
+    market_ids = [i for i in ids if not i.startswith("20")]
+    if not race_ids and not market_ids:
+        raise typer.BadParameter("name races or market ids, or pass --clean")
+    try:
+        changed = verify(mm, market_ids=market_ids, race_ids=race_ids)
+    except KeyError as exc:
+        raise typer.BadParameter(str(exc.args[0])) from exc
+    mm.header.seq = SeqCounter(paths.research_state / "seq-market-map.txt").next()
+    mm.header.produced_at_ns = ctx.clock_ns()
+    write_market_map(paths.market_map, mm)
+    atomic_write_text(paths.home / "reports" / "rules_review.md", render(mm))
+    total = sum(r.verified for r in mm.markets)
+    typer.echo(f"verified {len(changed)} more rows; {total} of {len(mm.markets)} rows now verified")
 
 
 @cli_app.command()

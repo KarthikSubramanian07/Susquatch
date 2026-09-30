@@ -1,9 +1,9 @@
 """Read Cup market listings recorded by the bridge (`data/cup/markets/markets-*.json`).
 
-The recorder stores raw `GET /tournaments/{slug}/markets` responses. We accept the shapes that
-can reasonably appear on disk: a single page (`{"data": [...], "pagination": ...}`), a list of
-pages, or a flat list of market rows. A row may carry its resolution tree under `nodes`
-(the `GET /markets/{id}/nodes` response) when the recorder fetched it.
+The bridge recorder writes `{"fetchedAt", "markets": [...], "nodes": {market_id: tree}}`, with node
+trees dumped in snake_case (`contract_details`, `node_type`). We also accept raw API shapes: a single
+page (`{"data": [...], "pagination": ...}`), a list of pages, or a flat list of market rows, where a
+row may carry its camelCase resolution tree under `nodes`.
 """
 
 from __future__ import annotations
@@ -32,6 +32,15 @@ class CupMarket:
 
 
 def _rows(doc: Any) -> list[dict[str, Any]]:
+    if isinstance(doc, dict) and isinstance(doc.get("markets"), list):
+        # The bridge recorder's file: node trees live beside the rows, keyed by market id.
+        trees = doc.get("nodes") if isinstance(doc.get("nodes"), dict) else {}
+        out = []
+        for row in doc["markets"]:
+            if isinstance(row, dict):
+                tree = trees.get(str(row.get("id")))
+                out.append({**row, "nodes": tree} if tree is not None and "nodes" not in row else row)
+        return out
     if isinstance(doc, dict):
         return list(doc.get("data") or [])
     if isinstance(doc, list):
@@ -87,6 +96,14 @@ def load_latest(cup_dir: Path) -> list[CupMarket]:
     return parse_markets(json.loads(path.read_text())) if path else []
 
 
+def _details(node: dict[str, Any]) -> Any:
+    return node.get("contractDetails", node.get("contract_details"))
+
+
+def _children(node: dict[str, Any]) -> list[Any]:
+    return list(node.get("children") or [])
+
+
 def node_text(nodes: dict[str, Any] | None) -> str:
     """Concatenated human-readable text of a node tree (titles, contract details, options)."""
     if not nodes:
@@ -95,13 +112,13 @@ def node_text(nodes: dict[str, Any] | None) -> str:
 
     def walk(node: Any) -> None:
         if isinstance(node, dict):
-            for key in ("title", "contractType"):
+            for key in ("title", "contractType", "contract_type"):
                 if isinstance(node.get(key), str):
                     parts.append(node[key])
-            details = node.get("contractDetails")
+            details = _details(node)
             if isinstance(details, dict):
                 parts.extend(str(v) for v in details.values() if isinstance(v, (str, int, float)))
-            for child in node.get("children") or []:
+            for child in _children(node):
                 walk(child)
 
     walk(nodes.get("root", nodes))
@@ -117,10 +134,10 @@ def resolution_source(nodes: dict[str, Any] | None) -> str:
         node = stack.pop()
         if not isinstance(node, dict):
             continue
-        details = node.get("contractDetails")
+        details = _details(node)
         if isinstance(details, dict):
             for key, value in details.items():
                 if "source" in key.lower() and isinstance(value, str) and value:
                     return value
-        stack.extend(node.get("children") or [])
+        stack.extend(_children(node))
     return ""

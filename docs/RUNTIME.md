@@ -9,7 +9,7 @@ Everything below lives under `$SUSQ_HOME` (the repo checkout on the server). Pat
 | `.env` | human | everyone | dotenv | secrets: `SUSQ_API_KEY`, Cloudflare, … |
 | `journal/YYYY-MM-DD/<producer>.journal.jsonl` **CD** | bridge, rust-live | reports | one `susq.v1.JournalEntry` (compact proto3 JSON) per line | every platform request/response; API key never written |
 | `state/<producer>/intents.jsonl` **CD** | bridge, rust-live | same process on restart | `susq.v1.OrderIntent` per line, last line per `intent_id` wins | written **before** send |
-| `state/market_map.json` **CD** | `/parse-rules` + human | strategies | `susq.v1.MarketMap` JSON | strategies trade only `verified: true` rows |
+| `state/market_map.json` **CD** | `/parse-rules` + human (`susq research verify`) | strategies | `susq.v1.MarketMap` JSON | strategies trade only `verified: true` rows |
 | `state/status.json` **CD** | current lease holder | status pusher → KV | `susq.v1.StatusSnapshot` JSON | aggregates only |
 | `ops/state/trader.lease` | lease holder | bridge, rust-live | `susq.v1.TraderLease` JSON | atomic write (tmp + rename) + `flock` |
 | `ops/KILL` | human, dashboard poller, watchdog | everyone | any text (the reason) | presence = cancel-all + freeze |
