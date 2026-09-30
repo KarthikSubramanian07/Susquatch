@@ -48,9 +48,17 @@ def _index(quotes: Iterable[RefQuote]) -> dict[tuple[str, str, str], RefQuote]:
     return out
 
 
-def _independent_races(quotes: Iterable[RefQuote]) -> set[str]:
+def _independent_races(quotes: Iterable[RefQuote], markets: Iterable[CupMarket] = ()) -> set[str]:
+    """Races where D and R can both lose: a material independent quote, a known case, or the Cup itself
+    listing an Independent market for the race (then every leg of that race must say so)."""
     live = {q.race_id for q in quotes if q.party == IND and q.mid >= IND_MATERIAL_PROB}
-    return live | set(INDEPENDENT_RACES)
+    listed: set[str] = set()
+    for market in markets:
+        for ex in market.exchanges:
+            race, party, _ = _parse_exchange(market, ex)
+            if race is not None and party == IND:
+                listed.add(race.race_id)
+    return live | listed | set(INDEPENDENT_RACES)
 
 
 def _parse_exchange(market: CupMarket, ex: CupExchange) -> tuple[RaceKey | None, str | None, str]:
@@ -146,7 +154,7 @@ def build_market_map(
 ) -> ops_pb2.MarketMap:
     """Build the draft map. Human-verified rows in `existing` are preserved untouched."""
     index = _index(quotes)
-    ind_races = _independent_races(quotes)
+    ind_races = _independent_races(quotes, markets)
     verified = {(r.market_id, r.exchange_id): r for r in (existing.markets if existing else []) if r.verified}
     out = ops_pb2.MarketMap(header=header(PRODUCER, seq, now_ns=now_ns))
     by_race: dict[str, list[str]] = defaultdict(list)

@@ -187,3 +187,45 @@ def test_draft_job_writes_live_only_once(home, quotes) -> None:
 def test_draft_job_needs_a_cup_listing(home, quotes) -> None:
     with pytest.raises(FileNotFoundError):
         draft_map(home, ResearchConfig(), quotes, now_ns=NOW_NS)
+
+
+def _recorded(markets: list[tuple[str, str, str]]) -> dict:
+    """A document in the bridge recorder's on-disk shape: rows plus snake_case node trees beside them."""
+    rows, trees = [], {}
+    for mid, title, state in markets:
+        rows.append(
+            {
+                "id": mid,
+                "title": title,
+                "exchanges": [{"id": f"x{mid}", "option": "YES", "latestPrice": None}],
+            }
+        )
+        details = {"usState": state, "raceName": title, "resolutionType": "Party Winner", "source": "AP"}
+        trees[mid] = {
+            "market_id": mid,
+            "root": {"node_type": "contract", "title": title, "contract_details": details},
+        }
+    return {"fetchedAt": "2026-09-30T00:00:00Z", "markets": rows, "nodes": trees}
+
+
+def test_parse_markets_reads_the_bridge_recorder_file() -> None:
+    doc = _recorded([("388", "Will the Republican Party win the Rhode Island Senate?", "RI")])
+    (m,) = parse_markets(doc)
+    assert m.market_id == "388"
+    assert m.exchanges[0].exchange_id == "x388"
+    assert m.nodes is not None
+    assert resolution_source(m.nodes) == "AP"
+
+
+def test_a_listed_independent_market_flags_every_leg_of_its_race() -> None:
+    doc = _recorded(
+        [
+            ("191", "Will the Independent Party win the Rhode Island Governor?", "RI"),
+            ("384", "Will the Democratic Party win the Rhode Island Governor?", "RI"),
+            ("385", "Will the Republican Party win the Rhode Island Governor?", "RI"),
+            ("388", "Will the Republican Party win the Rhode Island Senate?", "RI"),
+        ]
+    )
+    out = build_market_map(parse_markets(doc), [], seq=1, now_ns=NOW_NS)
+    flags = {r.market_id: r.independent_can_win for r in out.markets}
+    assert flags == {"191": True, "384": True, "385": True, "388": False}
