@@ -37,3 +37,10 @@ no order IDs, fills, or other players' names. Aggregates are fine.
   Against the mock, the racer's bundle grows from 52 to 123 shares with collateral on, so this is worth getting right.
 - **Dashboard live** at susquatch.pages.dev, showing the real pre-open state. Lesson learned while deploying: never `source` a `.env` in a shell,
   because an unquoted `a|b|batch` value runs `batch` (#19).
+
+## 2026-09-30
+
+- **Armed for live trading** by Karthik at 10:59 UTC, after a clean pre-flight (probe, lease, kill switch, calendar, tests).
+  Only human-verified two-party races trade at the open; races with RCV, runoffs, independents or chamber control wait for an Info-tab read.
+- **Day-one fixes** (#25): the map drafter could not read the recorder's real files, so no market would have been tradable;
+  the Mac startup script resolved the wrong folder; a race with a listed Independent market now flags every leg.
