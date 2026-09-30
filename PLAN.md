@@ -160,7 +160,8 @@ Ordered by deadline. Already done for you: the private `susquatch-reports` repo 
 2. **Before Oct 1:** create an API key (Settings → API Keys) with `read` + `trade`. Put it in `.env` as `SUSQ_API_KEY=…` and never paste it in chat.
    Then run `uv run susq-bridge record` once so the market map can be built before open.
 3. **Before Oct 1:** pick the day-one host. The Mac works now (`make up` with colima running). Oracle is step 6.
-4. **Before Oct 1:** run `/parse-rules`, paste Info-tab text for risky markets into `state/info_tabs/<id>.md`, and mark checked rows `verified: true`.
+4. **Before Oct 1:** run `/parse-rules`, read `reports/rules_review.md`, paste Info-tab text for risky markets into `state/info_tabs/<id>.md`,
+   then approve rows with `uv run susq research verify --clean` plus any risky races you have checked.
 5. **Oct 1, before 12:00 ET:** say **"go live"** (`/go-live` runs the pre-flight). Without it, everything stays in paper mode.
 6. **Oct 1, after the open:** read `reports/DAY1.md`. If its collateral section says so, set `[risk] use_collateral_buying_power = true`.
 7. **This week:** sign up for Oracle Cloud Always Free (card hold only; **never** upgrade to Pay-As-You-Go), then run `ops/install.sh`.
