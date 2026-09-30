@@ -91,8 +91,13 @@ There are **no real-time alerts** by design. The system has to fail safe on its 
   <img src="docs/img/dashboard-mobile.png" alt="Susquatch dashboard on a phone" width="24%">
   <br><sub><i>Rendered from a synthetic status fixture. Every number here is demo data, not results.</i></sub>
 </p>
+<p align="center">
+  <img src="docs/img/dashboard-login.png" alt="Susquatch login page" width="68%">
+  <br><sub><i>The gate. One password, a 30-day session, and the bell curve from the trophy.</i></sub>
+</p>
 
-A password-protected Cloudflare Pages site at `susquatch.pages.dev`, built like a ledger rather than a wall of cards: one
+A Cloudflare Pages site at `susquatch.pages.dev` behind a small login page (one password, a signed 30-day cookie,
+nothing indexed), built like a ledger rather than a wall of cards: one
 column of numbers, a mono rail down the left, and hairlines between sections. Across the top runs the Cup's calendar,
 forage → stalk → emerge → locked, with a marker at *now* and a countdown to the lock. Equity tweens when it changes, the
 day's curve draws itself in and can be scrubbed, a hairline under the header fills up until the next poll, and the

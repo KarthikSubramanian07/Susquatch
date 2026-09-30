@@ -35,7 +35,7 @@ Three phases (SPEC §3): **October** (capital, calibration, signal) → **late O
                    │   watchdog · status pusher ───────────────────────────────┐                │
                    └─────────────────────────────────────────────────────────── │ ──────────────┘
                                                                                 ▼
-             Cloudflare (free): KV ◄─ status/kill ─► Pages dashboard (basic auth, Kill button)
+             Cloudflare (free): KV ◄─ status/kill ─► Pages dashboard (login page, Kill button)
                                  cron Worker ─► daily summary (dashboard + pinned issue in private *-reports repo)
                                  R2 ◄─ nightly backups (80 % quota guard)
 ```

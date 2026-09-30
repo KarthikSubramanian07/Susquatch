@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex, nofollow, noarchive">
+  <meta name="theme-color" content="#09090b">
+  <meta name="color-scheme" content="dark">
+  <title>Sign in · Susquatch</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500&family=JetBrains+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="/login.css">
+  <script type="module" src="/login.js"></script>
+</head>
+<body>
+  <main class="gate">
+    <svg class="curve" viewBox="0 0 400 120" preserveAspectRatio="none" aria-hidden="true">
+      <path d="M0 118 C 120 118, 150 12, 200 12 S 280 118, 400 118" />
+    </svg>
+
+    <form class="card" method="post" action="/api/login" autocomplete="on">
+      <div class="brand">
+        <img src="/favicon.svg" alt="" width="40" height="40">
+        <div>
+          <h1>susquatch</h1>
+          <p class="tag">A large, elusive trading system. Private.</p>
+        </div>
+      </div>
+
+      <label class="field" for="password">
+        <span>password</span>
+        <input id="password" name="password" type="password" required autofocus autocomplete="current-password" spellcheck="false" placeholder="DASHBOARD_PASSWORD from .env">
+      </label>
+      <input type="hidden" name="next" id="next" value="/">
+
+      <p class="err" id="err" role="alert" hidden>That's not it. The password lives in <code>.env</code> as <code>DASHBOARD_PASSWORD</code>.</p>
+
+      <button class="go" type="submit"><span>Enter</span><i aria-hidden="true">↵</i></button>
+
+      <p class="foot num"><span id="clock">2026 midterms · Susquehanna Predictions Cup</span></p>
+    </form>
+  </main>
+</body>
+</html>

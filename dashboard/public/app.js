@@ -124,6 +124,11 @@ function splitMoney(n) {
 async function getJSON(path) {
   // Resolve against the origin: a page opened as https://user:pw@host/ would otherwise make fetch() throw.
   const res = await fetch(new URL(path, location.origin), { headers: { Accept: "application/json" }, cache: "no-store" });
+  if (res.status === 401) {
+    // The session expired (or the password changed): go and sign in again, then come back here.
+    location.replace(`/login?next=${encodeURIComponent(location.pathname + location.search)}`);
+    throw new Error("signed out");
+  }
   if (!res.ok) throw new Error(`${path}: ${res.status}`);
   return res.json();
 }
@@ -634,7 +639,8 @@ function renderFooter(snap) {
     h.producer ? `push ${h.producer.name}@${h.producer.gitSha ?? "?"} #${h.seq ?? "?"}` : null,
     "no alerts, by design: one daily summary",
   ].filter(Boolean);
-  $("footer").replaceChildren(...parts.map((p) => el("span", {}, p)));
+  const out = el("form", { method: "post", action: "/api/logout", class: "signout" }, el("button", { type: "submit" }, "sign out"));
+  $("footer").replaceChildren(...parts.map((p) => el("span", {}, p)), out);
 }
 
 function renderTitle(snap) {
