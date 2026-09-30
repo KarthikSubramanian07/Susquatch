@@ -4,6 +4,8 @@
 set -euo pipefail
 # shellcheck source=ops/lib.sh
 . "$(dirname "$0")/../lib.sh"
+# This script lives one level below ops/, so point susq_init at the checkout explicitly.
+SUSQ_HOME="${SUSQ_HOME:-$(cd "$(dirname "$0")/../.." && pwd)}"
 susq_init
 
 # Sizing: the whole stack fits in 2 CPU / 6 GB (the A1 host is 2 OCPU / 12 GB, shared with the co-tenant).
