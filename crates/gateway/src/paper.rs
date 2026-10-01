@@ -10,7 +10,8 @@
 use std::{collections::BTreeSet, sync::Arc};
 
 use async_trait::async_trait;
-use susq_core::{Clock, ExchangeId, OrderId, Pips, TournamentId};
+use parking_lot::Mutex;
+use susq_core::{Action, Clock, ExchangeId, OrderId, Pips, Side, TournamentId};
 use susq_platform::{
     PlatformAdapter, PlatformResult,
     mock::{CALLER, MockConfig, MockPlatform},
@@ -27,6 +28,37 @@ pub struct PaperBroker {
     live: Arc<dyn PlatformAdapter>,
     engine: MockPlatform,
     tid: TournamentId,
+    clock: Arc<dyn Clock>,
+    /// Live liquidity our paper fills already took. A paper fill never touches the real book, so
+    /// without this the same resting level would fill us again on every mirror, and a sniper would
+    /// buy the same stale order every cycle (seen on the first paper run: 26 identical fills).
+    consumed: Mutex<Vec<Consumed>>,
+}
+
+/// One paper taker fill, remembered for [`CONSUMED_TTL_NS`] so the mirrored book is thinned by it.
+#[derive(Debug, Clone)]
+struct Consumed {
+    exchange: ExchangeId,
+    /// `true` when we lifted YES asks (bought YES / sold NO), `false` when we hit YES bids.
+    asks: bool,
+    qty: i64,
+    at_ns: i64,
+}
+
+/// How long a paper fill keeps thinning the mirrored live book (15 minutes). Real liquidity at that
+/// level may well refill sooner; erring toward fewer paper fills is the conservative side.
+const CONSUMED_TTL_NS: i64 = 15 * 60 * 1_000_000_000;
+
+/// Remove `qty` shares from `levels`, walking from the best price outward.
+fn thin(levels: &mut [(Pips, i64)], mut qty: i64) {
+    for level in levels.iter_mut() {
+        if qty <= 0 {
+            break;
+        }
+        let take = level.1.min(qty);
+        level.1 -= take;
+        qty -= take;
+    }
 }
 
 impl std::fmt::Debug for PaperBroker {
@@ -47,7 +79,7 @@ impl PaperBroker {
         starting_balance: f64,
     ) -> Self {
         let engine = MockPlatform::new(
-            clock,
+            clock.clone(),
             MockConfig {
                 tournament_id: tid.to_string(),
                 slug: slug.to_owned(),
@@ -57,10 +89,17 @@ impl PaperBroker {
                 collateral: true,
             },
         );
-        Self { live, engine, tid }
+        Self {
+            live,
+            engine,
+            tid,
+            clock,
+            consumed: Mutex::new(Vec::new()),
+        }
     }
 
-    /// Install the live book of `exchange` as the market's liquidity (may fill resting paper orders).
+    /// Install the live book of `exchange` as the market's liquidity (may fill resting paper
+    /// orders), minus whatever our own recent paper fills already took from it.
     pub async fn mirror(&self, exchange: &ExchangeId) -> PlatformResult<()> {
         let book = self.live.orderbook(&self.tid, exchange, DEPTH).await?;
         let levels = |v: &[BookLevel]| -> Vec<(Pips, i64)> {
@@ -68,9 +107,47 @@ impl PaperBroker {
                 .filter_map(|l| Some((Pips::from_f64(l.price).ok()?, l.quantity.max(0.0).floor() as i64)))
                 .collect()
         };
-        self.engine
-            .replace_liquidity(MARKET, exchange, &levels(&book.bids), &levels(&book.asks));
+        let (mut bids, mut asks) = (levels(&book.bids), levels(&book.asks));
+        // Best first: the platform returns bids descending and asks ascending, but sort anyway.
+        bids.sort_by_key(|l| std::cmp::Reverse(l.0));
+        asks.sort_by_key(|l| l.0);
+        let (taken_bids, taken_asks) = self.taken(exchange);
+        thin(&mut bids, taken_bids);
+        thin(&mut asks, taken_asks);
+        self.engine.replace_liquidity(MARKET, exchange, &bids, &asks);
         Ok(())
+    }
+
+    /// Shares our unexpired paper fills took from `exchange`'s live (bids, asks).
+    fn taken(&self, exchange: &ExchangeId) -> (i64, i64) {
+        let now = self.clock.now_ns();
+        let mut consumed = self.consumed.lock();
+        consumed.retain(|c| now - c.at_ns < CONSUMED_TTL_NS);
+        consumed
+            .iter()
+            .filter(|c| &c.exchange == exchange)
+            .fold(
+                (0, 0),
+                |(b, a), c| if c.asks { (b, a + c.qty) } else { (b + c.qty, a) },
+            )
+    }
+
+    /// Remember the live liquidity a taker ack consumed.
+    fn record(&self, ack: &OrderAck) {
+        let qty = ack.quantity_traded.floor() as i64;
+        if qty <= 0 {
+            return;
+        }
+        let asks = matches!(
+            (ack.action, ack.side),
+            (Some(Action::Buy), Some(Side::Yes)) | (Some(Action::Sell), Some(Side::No))
+        );
+        self.consumed.lock().push(Consumed {
+            exchange: ack.exchange_id.clone(),
+            asks,
+            qty,
+            at_ns: self.clock.now_ns(),
+        });
     }
 
     async fn mirror_all(&self, exchanges: impl IntoIterator<Item = &ExchangeId>) -> PlatformResult<()> {
@@ -132,17 +209,29 @@ impl PlatformAdapter for PaperBroker {
 
     async fn place_order(&self, req: &PlaceOrderRequest) -> PlatformResult<OrderAck> {
         self.mirror(&req.order.exchange_id).await?;
-        self.engine.place_order(req).await
+        let ack = self.engine.place_order(req).await?;
+        self.record(&ack);
+        Ok(ack)
     }
 
     async fn place_batch(&self, req: &BatchRequest) -> PlatformResult<BatchResponse> {
         self.mirror_all(req.orders.iter().map(|o| &o.exchange_id)).await?;
-        self.engine.place_batch(req).await
+        let res = self.engine.place_batch(req).await?;
+        for item in res.results.iter().filter(|i| i.ok) {
+            if let Ok(ack) = serde_json::from_value::<OrderAck>(item.data.clone()) {
+                self.record(&ack);
+            }
+        }
+        Ok(res)
     }
 
     async fn place_multi_leg(&self, req: &MultiLegRequest) -> PlatformResult<MultiLegResponse> {
         self.mirror_all(req.legs.iter().map(|o| &o.exchange_id)).await?;
-        self.engine.place_multi_leg(req).await
+        let res = self.engine.place_multi_leg(req).await?;
+        for leg in &res.results {
+            self.record(&leg.data);
+        }
+        Ok(res)
     }
 
     async fn cancel_order(&self, id: OrderId) -> PlatformResult<CancelOutcome> {
@@ -310,6 +399,28 @@ mod tests {
             .await
             .expect("orders");
         assert!(open.data.is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_paper_fill_thins_the_mirrored_book_until_it_expires() {
+        let (clock, _, paper) = setup();
+        let first = paper.place_order(&buy_yes("k1", 5, 5500)).await.expect("first");
+        assert_eq!(first.quantity_traded, 5.0);
+        // The live book is unchanged (a paper fill never touches it), but we already took that level.
+        let again = paper.place_order(&buy_yes("k2", 5, 5500)).await.expect("second");
+        assert_eq!(
+            again.quantity_traded, 0.0,
+            "the same live level must not fill us twice"
+        );
+        assert!(again.open);
+        assert_eq!(paper.position(&ExchangeId::new("7")), 5);
+        clock.advance(std::time::Duration::from_secs(16 * 60));
+        // After the TTL the level counts as refilled (the resting k2 order has expired by then).
+        let mut third = buy_yes("k3", 5, 5500);
+        third.order.expiration_date = t0() + chrono::Duration::minutes(30);
+        let later = paper.place_order(&third).await.expect("third");
+        assert_eq!(later.quantity_traded, 5.0);
+        assert_eq!(paper.position(&ExchangeId::new("7")), 10);
     }
 
     #[tokio::test]
