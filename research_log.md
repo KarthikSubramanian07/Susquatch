@@ -44,3 +44,11 @@ no order IDs, fills, or other players' names. Aggregates are fine.
   Only human-verified two-party races trade at the open; races with RCV, runoffs, independents or chamber control wait for an Info-tab read.
 - **Day-one fixes** (#25): the map drafter could not read the recorder's real files, so no market would have been tradable;
   the Mac startup script resolved the wrong folder; a race with a listed Independent market now flags every leg.
+- **Moved to a server** (#27, #28): Azure for Students (Arm, 2 vCPU / 4 GB, credit-funded, no card) with nightly Backblaze B2 backups.
+  Oracle and R2 were dropped because both need a card. The stack survived killed containers and a full reboot, coming back armed.
+- **All 237 markets approved** on Karthik's instruction (RCV, one-venue, independent, runoff and chamber-control races).
+  The Cup's settlement guide settles runoffs and chamber control by administrators once the result is official, and final
+  standings wait for every market, so the Cup resolves on the same outcome as Kalshi and Polymarket. The racer still skips
+  any race where an independent can win. Every market has at least one reference price.
+- **Collateral sizing is now `"auto"`**: it switches on by itself the moment the day-one probe shows the engine matches the model,
+  persists across restarts, and turns back off on a measured mismatch. Before, it waited for a human to read the report.

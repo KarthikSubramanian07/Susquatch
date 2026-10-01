@@ -22,7 +22,7 @@ from susq.contracts import from_json, ops_pb2
 from susq_bridge.config import BridgeConfig, load_config
 from susq_bridge.first_trade import first_trade
 from susq_bridge.lease import Lease
-from susq_bridge.measure_day1 import measure_day1, write_report
+from susq_bridge.measure_day1 import Day1Report, collateral_confirmed, measure_day1, write_report
 from susq_bridge.runtime import Bridge, BridgeError, Loops
 
 app = typer.Typer(no_args_is_help=True, help="Susquatch Oct-1 Python bridge.")
@@ -133,10 +133,24 @@ def run(
 ) -> None:
     """Run racer + sniper + recorder + reconcile + status until interrupted."""
     config = _config(home)
+
+    async def go(bridge: Bridge) -> None:
+        _apply_collateral(bridge, config, None)
+        await bridge.run(_loops(racer, sniper, recorder, realtime))
+
     try:
-        asyncio.run(_with_bridge(config, lambda b: b.run(_loops(racer, sniper, recorder, realtime))))
+        asyncio.run(_with_bridge(config, go))
     except BridgeError as exc:
         _fail(str(exc))
+
+
+def _apply_collateral(bridge: Bridge, config: BridgeConfig, report: Day1Report | None) -> None:
+    """``use_collateral_buying_power = "auto"``: switch collateral sizing on once day 1 confirmed it."""
+    if not config.risk.collateral_auto:
+        return
+    on = collateral_confirmed(report, config.state_dir)
+    bridge.gateway.risk.collateral_confirmed = on
+    typer.echo(f"collateral buying power (auto): {'on, the engine matched the model' if on else 'off'}")
 
 
 @app.command("open")
@@ -158,6 +172,7 @@ def open_cmd(
     async def sequence(bridge: Bridge) -> None:
         report = await measure_day1(config, bridge=bridge)
         write_report(report, config.reports_dir)
+        _apply_collateral(bridge, config, report)
         if bridge.mode == "live":
             result = await first_trade(bridge)
             typer.echo(f"first trade: {result.status} ({result.reason})")

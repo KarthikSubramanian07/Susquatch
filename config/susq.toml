@@ -36,10 +36,12 @@ max_order_notional_frac = 0.02     # default per-order cap unless a strategy set
 # ALL collateral ("relationship-backed buying power"): when true, cash-affordability checks and racer
 # sizing count an order's modeled EFFECTIVE cost (nominal minus the advance its relationship
 # component's guaranteed payout floor would back, i.e. netBuyingPowerImpact) instead of its full
-# notional. Keep false until measure_day1's collateral section confirms the live engine matches the
-# model (reports/DAY1.md says "set use_collateral_buying_power = true" only then). Exposure caps
-# above always use full notional either way; `all` economics are journaled regardless.
-use_collateral_buying_power = false
+# notional. "auto" (Karthik's call, 2026-09-30): off until measure_day1's collateral section
+# confirms the live engine matches the model, then on by itself, recorded in
+# state/bridge/collateral_confirmed.json; a later measured mismatch switches it back off.
+# true / false force it either way. Exposure caps above always use full notional; `all`
+# economics are journaled regardless.
+use_collateral_buying_power = "auto"
 
 [risk.clusters]
 national = 0.25

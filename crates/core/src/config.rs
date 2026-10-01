@@ -110,9 +110,46 @@ pub struct RiskCfg {
     #[serde(default = "default_bus_error_breaker")]
     pub bus_error_breaker_per_min: u32,
     /// ALL collateral: size buying power and the racer's bundle budget on the modeled effective
-    /// cost instead of full notional. Off until day-one evidence confirms the model.
+    /// cost instead of full notional. `"auto"` = off until day-one evidence confirms the model.
     #[serde(default)]
-    pub use_collateral_buying_power: bool,
+    pub use_collateral_buying_power: CollateralSizing,
+}
+
+/// `[risk] use_collateral_buying_power`: `false`, `true`, or `"auto"`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum CollateralSizing {
+    /// `true` / `false`: forced either way.
+    Fixed(bool),
+    /// `"auto"`: on once the bridge's day-one probe confirmed the model
+    /// (`<state>/bridge/collateral_confirmed.json` exists), off otherwise.
+    Auto(AutoTag),
+}
+
+impl Default for CollateralSizing {
+    fn default() -> Self {
+        Self::Fixed(false)
+    }
+}
+
+/// The literal string `"auto"`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AutoTag {
+    Auto,
+}
+
+impl CollateralSizing {
+    /// Whether collateral sizing is on, given the state directory (only `"auto"` looks there).
+    pub fn enabled(self, state_dir: &std::path::Path) -> bool {
+        match self {
+            Self::Fixed(on) => on,
+            Self::Auto(_) => state_dir
+                .join("bridge")
+                .join("collateral_confirmed.json")
+                .exists(),
+        }
+    }
 }
 
 fn default_bus_error_breaker() -> u32 {
@@ -523,10 +560,25 @@ mod tests {
             "2026-11-04T16:55:00+00:00"
         );
         assert_eq!(cfg.risk.clusters.get("state"), Some(&0.10));
-        assert!(
-            !cfg.risk.use_collateral_buying_power,
-            "collateral sizing ships off"
+        assert_eq!(
+            cfg.risk.use_collateral_buying_power,
+            CollateralSizing::Auto(AutoTag::Auto),
+            "collateral sizing ships on auto"
         );
+        let dir = std::env::temp_dir().join(format!("susq-collateral-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(
+            !cfg.risk.use_collateral_buying_power.enabled(&dir),
+            "auto starts off"
+        );
+        std::fs::create_dir_all(dir.join("bridge")).expect("temp dir");
+        std::fs::write(dir.join("bridge/collateral_confirmed.json"), "{}").expect("write");
+        assert!(
+            cfg.risk.use_collateral_buying_power.enabled(&dir),
+            "auto follows the confirmation"
+        );
+        assert!(!CollateralSizing::Fixed(false).enabled(&dir));
+        let _ = std::fs::remove_dir_all(&dir);
         assert_eq!(
             cfg.oms.idempotency_namespace.to_string(),
             "6f1c0e2a-7c55-4d7e-9a8e-5f2b3c1d0a99"

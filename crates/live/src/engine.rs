@@ -96,9 +96,10 @@ pub struct Engine {
     gate_closed_handled: bool,
     needle_epoch: u64,
     market_map_mtime: Option<std::time::SystemTime>,
-    /// ALL collateral model over the current relationships (used only with
-    /// `[risk] use_collateral_buying_power = true`).
+    /// ALL collateral model over the current relationships (used only when collateral sizing is on).
     collateral: CollateralCost,
+    /// `[risk] use_collateral_buying_power` resolved at start (`"auto"` reads the day-one confirmation).
+    collateral_sizing: bool,
 }
 
 /// Collateral-aware bundle cost for risk's buying-power check.
@@ -120,6 +121,10 @@ impl Engine {
     /// Build the engine (no I/O yet; see [`Engine::bootstrap`]).
     pub fn new(d: EngineDeps) -> Self {
         let cfg = &d.cfg;
+        let collateral_sizing = cfg
+            .risk
+            .use_collateral_buying_power
+            .enabled(&d.home.join(&cfg.paths.state));
         let world = World {
             tid: d.tournament.clone(),
             slug: cfg.platform.tournament_slug.clone(),
@@ -136,7 +141,7 @@ impl Engine {
                 Duration::from_secs(cfg.fair.stale_after_s),
             ),
             racer: ConstraintsRacer::new(cfg.strategies.racer.clone())
-                .with_collateral_buying_power(cfg.risk.use_collateral_buying_power),
+                .with_collateral_buying_power(collateral_sizing),
             sniper: Sniper::new(cfg.strategies.sniper.clone()),
             mm: MarketMaker::new(cfg.strategies.mm.clone()),
             scenario: ScenarioExecutor::new(cfg.strategies.scenario.clone()),
@@ -148,6 +153,7 @@ impl Engine {
             needle_epoch: 0,
             market_map_mtime: None,
             collateral: CollateralCost::default(),
+            collateral_sizing,
             world,
             d,
         }
@@ -728,10 +734,7 @@ impl Engine {
             // 0 until the first tournament read: leave buying power to the platform until then.
             cash: (self.world.cash > 0.0).then_some(self.world.cash),
             bundle_cost: self
-                .d
-                .cfg
-                .risk
-                .use_collateral_buying_power
+                .collateral_sizing
                 .then_some(&self.collateral as &dyn BundleCost),
         }
     }
