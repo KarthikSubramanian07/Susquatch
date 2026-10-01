@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import numpy as np
 import pytest
 from susq.mapping.geo import clusters_for, region_of
@@ -182,3 +184,32 @@ def test_book_is_deterministic_and_handles_empty_input(world, legs) -> None:
     empty = build_book([], np.zeros((draws.n, 0), bool), grid, t, CFG)
     assert empty.positions == []
     assert "no scenario" in empty.explanation
+
+
+def test_book_frac_at_steps_up_on_oct_21() -> None:
+    cfg = OptimizerConfig()
+    assert cfg.early_until_utc == datetime(2026, 10, 21, 16, tzinfo=UTC)
+    assert cfg.book_frac_at(datetime(2026, 10, 7, tzinfo=UTC)) == pytest.approx(0.30)
+    assert cfg.book_frac_at(datetime(2026, 10, 21, 15, 59, tzinfo=UTC)) == pytest.approx(0.30)
+    assert cfg.book_frac_at(datetime(2026, 10, 21, 16, tzinfo=UTC)) == pytest.approx(0.60)
+    assert cfg.book_frac_at(datetime(2026, 11, 3, tzinfo=UTC)) == pytest.approx(0.60)
+    custom = OptimizerConfig(
+        book_frac=0.5, early_book_frac=0.1, early_until_utc=datetime(2026, 10, 10, tzinfo=UTC)
+    )
+    assert custom.book_frac_at(datetime(2026, 10, 9, tzinfo=UTC)) == 0.1
+    assert custom.book_frac_at(datetime(2026, 10, 10, tzinfo=UTC)) == 0.5
+
+
+def test_early_book_frac_halves_the_spend(world, legs) -> None:
+    specs, draws = world
+    y, kept = leg_outcomes(draws, specs, legs)
+    grid, t = scenario_grid(draws), np.full(draws.n, 1.4)
+    full = build_book(kept, y, grid, t, CFG, book_frac=CFG.book_frac)
+    early = build_book(kept, y, grid, t, CFG, book_frac=CFG.early_book_frac)
+    assert full.positions
+    assert early.positions
+    assert early.book_cost <= CFG.early_book_frac * 100_000 * 1.02  # the T3 tie-breaker leg sits on top
+    assert early.book_cost < full.book_cost
+    assert "book frac 30%" in early.explanation
+    assert "book frac 60%" in full.explanation
+    assert build_book(kept, y, grid, t, CFG).book_cost == pytest.approx(full.book_cost)  # default: full
