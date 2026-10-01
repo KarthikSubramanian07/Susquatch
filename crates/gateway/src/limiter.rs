@@ -80,8 +80,12 @@ impl RateLimiter {
         }
     }
 
-    fn burst(rate: f64) -> f64 {
-        rate.max(1.0)
+    /// Bucket capacity: one second of rate, but never so small that a read (which must leave the
+    /// write reserve untouched) can never be afforded. At 1 req/s with a 23% reserve a capacity of
+    /// 1.0 would starve every read forever; it has to be at least 1 / (1 - reserve fraction).
+    fn burst(&self, rate: f64) -> f64 {
+        let floor = 1.0 / (1.0 - self.cfg.order_budget_frac.clamp(0.0, 0.9));
+        rate.max(1.0).max(floor)
     }
 
     /// Wait for a token of `class`.
@@ -91,14 +95,14 @@ impl RateLimiter {
                 let mut s = self.state.lock();
                 let now = Instant::now();
                 let elapsed = now.saturating_duration_since(s.last).as_secs_f64();
-                s.tokens = (s.tokens + elapsed * s.rate).min(Self::burst(s.rate));
+                s.tokens = (s.tokens + elapsed * s.rate).min(self.burst(s.rate));
                 s.last = now;
                 match s.paused_until {
                     Some(until) if until > now => until - now,
                     _ => {
                         s.paused_until = None;
                         let reserve = match class {
-                            RequestClass::Read => self.cfg.order_budget_frac * Self::burst(s.rate),
+                            RequestClass::Read => self.cfg.order_budget_frac * self.burst(s.rate),
                             RequestClass::Write => 0.0,
                         };
                         if s.tokens - 1.0 >= reserve - 1e-9 {
@@ -194,6 +198,27 @@ mod tests {
         let t = Instant::now();
         l.acquire(RequestClass::Write).await;
         assert_eq!(t.elapsed(), Duration::ZERO);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn reads_still_flow_at_one_request_per_second() {
+        // The published per-account budget: ~1 req/s total with 23% kept for writes. With a one-token
+        // bucket a read could never clear the reserve; the capacity floor keeps reads at ~1/s.
+        let l = RateLimiter::new(LimiterConfig {
+            initial_rps: 1.0,
+            min_rps: 0.25,
+            max_rps: 1.0,
+            order_budget_frac: 0.23,
+            increase_per_success: 0.0,
+            default_backoff: Duration::from_secs(1),
+        });
+        let start = Instant::now();
+        for _ in 0..3 {
+            l.acquire(RequestClass::Read).await;
+        }
+        let took = start.elapsed();
+        assert!(took >= Duration::from_secs(2), "{took:?}");
+        assert!(took <= Duration::from_secs(4), "{took:?}");
     }
 
     #[tokio::test(start_paused = true)]

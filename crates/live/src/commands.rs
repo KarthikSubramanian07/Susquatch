@@ -199,15 +199,24 @@ pub async fn run(cli: &Cli, args: &RunArgs, force_paper: bool) -> anyhow::Result
     };
     // The same switch (shared flag) is wired to NATS ops.kill and handed to the gateway.
     let mut engine = build_engine(&rt, mode, realtime, needle, Some(kill))?;
-    engine.bootstrap().await;
 
+    // /healthz is up before first contact: under the per-account rate budget the bootstrap reads
+    // can take minutes, and a health check that cannot connect gets the container restarted (watchdog)
+    // before it ever finishes, which also burns the budget the live trader shares.
     let tick_ms = rt.cfg.live.tick_ms.max(50);
     let liveness = Arc::new(Mutex::new(Liveness {
         max_step_age_ns: i64::try_from(tick_ms).unwrap_or(500) * 20 * 1_000_000,
+        bootstrapping: true,
         ..Liveness::default()
     }));
     let addr = rt.cfg.live.metrics_addr.parse().context("live.metrics_addr")?;
     let server = tokio::spawn(http::serve(addr, liveness.clone(), metrics, shutdown.clone()));
+    tracing::info!(
+        mode = mode.as_str(),
+        "susq-live bootstrapping: first contact over REST"
+    );
+    engine.bootstrap().await;
+    liveness.lock().bootstrapping = false;
 
     let status_every = i64::try_from(rt.cfg.live.status_interval_s).unwrap_or(60) * 1_000_000_000;
     let status_path = RunPaths::resolve(&rt.cfg, &rt.home, mode).status;
