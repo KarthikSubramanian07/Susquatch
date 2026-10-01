@@ -96,17 +96,39 @@ pub struct RtBook {
     #[serde(default, deserialize_with = "lenient::opt_id")]
     pub tournament_id: Option<TournamentId>,
     /// Monotonic per exchange; an older version than the one already applied is stale.
+    /// The live feed (captured 2026-10-01) carries it as `asOf.sequence`; `version` is kept for
+    /// the older documented shape.
     #[serde(default, deserialize_with = "lenient::opt_u64")]
     pub version: Option<u64>,
+    #[serde(default)]
+    pub as_of: Option<RtAsOf>,
     #[serde(default)]
     pub bids: Vec<RtLevel>,
     #[serde(default)]
     pub asks: Vec<RtLevel>,
     #[serde(default)]
     pub at: Option<String>,
+    /// When the soonest resting order in this book expires (informational).
+    #[serde(default)]
+    pub next_expiry_at: Option<String>,
+}
+
+/// `books[].asOf`: the book version `{ at, sequence }`, the same `asOf` REST order books carry.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct RtAsOf {
+    #[serde(default)]
+    pub at: Option<String>,
+    #[serde(default, deserialize_with = "lenient::opt_u64")]
+    pub sequence: Option<u64>,
 }
 
 impl RtBook {
+    /// The book version: `asOf.sequence` on the live feed, else the legacy `version` field.
+    pub fn version(&self) -> Option<u64> {
+        self.as_of.as_ref().and_then(|a| a.sequence).or(self.version)
+    }
+
     /// The same book as the REST snapshot type (`depth` is the deeper side).
     pub fn to_order_book(&self) -> OrderBook {
         let level = |l: &RtLevel| BookLevel {
@@ -281,6 +303,39 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    #[test]
+    fn live_books_carry_their_version_in_as_of() {
+        // Shape captured from the live feed on 2026-10-01 (values made up): the version is
+        // `asOf.sequence`, and `nextExpiryAt` rides along.
+        let b = decode(
+            "market_batch",
+            json!({
+                "trades": [{"exchangeId": "7", "executedAt": "2026-10-01T20:14:05.1052965+00:00", "id": "1",
+                            "marketId": "3", "price": 0.91, "quantity": 500, "sequence": 1,
+                            "tournamentId": "t1"}],
+                "bookDirty": [{"at": "2026-10-01T20:14:05.1052965+00:00", "exchangeId": "7", "marketId": "3",
+                               "tournamentId": "t1"}],
+                "marketSettled": [],
+                "books": [{"exchangeId": "7",
+                           "asOf": {"at": "2026-10-01T20:14:12.6758522+00:00", "sequence": 3021237},
+                           "asks": [{"price": 0.91, "quantity": 9361}, {"price": 0.915, "quantity": 95868}],
+                           "bids": [{"price": 0.9, "quantity": 2160}],
+                           "nextExpiryAt": "2026-10-01T20:20:00+00:00"}],
+                "delivery": {"correlationId": "realtime:tournament:t1:market:3:2072",
+                             "model": "best-effort-authoritative-resync", "previousRevision": 2071,
+                             "revision": 2072, "sourceSequenceFrom": 3020497, "sourceSequenceThrough": 3020596}
+            }),
+        )
+        .expect("decode");
+        let Broadcast::Market(batch) = b else {
+            panic!("market batch")
+        };
+        assert_eq!(batch.books.len(), 1);
+        assert_eq!(batch.books[0].version(), Some(3_021_237));
+        assert_eq!(batch.books[0].to_order_book().best_ask, Some(0.91));
+        assert_eq!(batch.delivery.revision, Some(2072));
+    }
 
     #[test]
     fn market_batch_decodes_the_per_market_topic_shape() {

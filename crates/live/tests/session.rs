@@ -598,9 +598,11 @@ fn rt_batch(ex: &str, market: &str, version: u64, bid: f64, ask: f64) -> Realtim
                 market_id: Some(MarketId::new(market)),
                 tournament_id: Some(TournamentId::new(TID)),
                 version: Some(version),
+                as_of: None,
                 bids: vec![level(bid)],
                 asks: vec![level(ask)],
                 at: None,
+                next_expiry_at: None,
             }],
             ..MarketBatch::default()
         },

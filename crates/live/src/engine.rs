@@ -381,10 +381,10 @@ impl Engine {
                 // dirty mark set above and saves the refetch. Older versions are ignored.
                 for b in &batch.books {
                     let known = self.book_versions.get(&b.exchange_id).copied();
-                    if b.version.zip(known).is_some_and(|(v, k)| v <= k) {
+                    if b.version().zip(known).is_some_and(|(v, k)| v <= k) {
                         continue;
                     }
-                    if let Some(v) = b.version {
+                    if let Some(v) = b.version() {
                         self.book_versions.insert(b.exchange_id.clone(), v);
                     }
                     self.world
