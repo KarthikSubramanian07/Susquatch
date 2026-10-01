@@ -154,8 +154,8 @@ floor ≤ payout in every allowed outcome, and nothing outstanding after settlem
 
 ## Not simulated
 
-Market closure before settlement, `REFUND`/N/A settlements, fees, and the 250 ms batching window
-(the mock broadcasts one batch per request). Settlement happens only through `/_mock/settle`.
+Market closure before settlement, `REFUND`/N/A settlements, fees, and the one-second batching window
+(the mock broadcasts one batch per request; the platform coalesces updates per second since 2026-10-01). Settlement happens only through `/_mock/settle`.
 Relationship evaluation uses last tournament trade prices; the production engine's exact price
 source is unverified.
 
