@@ -75,7 +75,8 @@ action_raise() { printf '%s\n' "$2" > "$ACTIONS_DIR/$1.txt.tmp" && mv "$ACTIONS_
 action_resolve() { rm -f "$ACTIONS_DIR/$1.txt"; }
 ops_event() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >> "$OPS_STATE/events.log"; }
 
-# Configure the backup remote. Default: Cloudflare R2 via rclone's env-var config (no rclone.conf on disk).
+# Configure the backup remote: any S3-compatible bucket via rclone's env-var config (no rclone.conf on disk).
+# Default is Cloudflare R2; Backblaze B2 = SUSQ_R2_ENDPOINT=https://s3.<region>.backblazeb2.com + SUSQ_R2_PROVIDER=Other.
 # SUSQ_BACKUP_REMOTE overrides it entirely, e.g. a local directory or another rclone remote for drills.
 backup_remote_init() {
   if [ -n "${SUSQ_BACKUP_REMOTE:-}" ]; then
@@ -89,7 +90,7 @@ backup_remote_init() {
       endpoint="https://${CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com"
     fi
     export RCLONE_CONFIG_SUSQR2_TYPE=s3
-    export RCLONE_CONFIG_SUSQR2_PROVIDER=Cloudflare
+    export RCLONE_CONFIG_SUSQR2_PROVIDER="${SUSQ_R2_PROVIDER:-Cloudflare}"
     export RCLONE_CONFIG_SUSQR2_ACCESS_KEY_ID="$SUSQ_R2_ACCESS_KEY_ID"
     export RCLONE_CONFIG_SUSQR2_SECRET_ACCESS_KEY="$SUSQ_R2_SECRET_ACCESS_KEY"
     export RCLONE_CONFIG_SUSQR2_ENDPOINT="$endpoint"

@@ -110,7 +110,7 @@ Cloudflare subscriptions with a `Billing: read` token, `rclone size`, the pusher
 | `SUSQ_API_KEY` | server `.env` | you | Super Market key, `read` + `trade` |
 | `SUSQ_STATUS_PUSH_TOKEN` | server `.env` **and** Pages secret (same value) | you | ≥ 32 random chars (`openssl rand -base64 36`). Opens only `/api/push` and `/api/kill` |
 | `DASHBOARD_PASSWORD` | Pages secret | you | ≥ 16 chars; the login page's password. Also accepted as HTTP Basic (any username) by curl and the tests. Sessions are HMAC cookies keyed from it, so changing it signs every browser out |
-| `SUSQ_R2_ACCESS_KEY_ID` / `SUSQ_R2_SECRET_ACCESS_KEY` | server `.env` | you | R2 API token: **Object Read & Write, this bucket only** |
+| `SUSQ_R2_ACCESS_KEY_ID` / `SUSQ_R2_SECRET_ACCESS_KEY` | server `.env` | you | S3 key for the backup bucket, **read & write, this bucket only**. Backblaze B2 (10 GB free, no card) is in use: set `SUSQ_R2_ENDPOINT=https://s3.<region>.backblazeb2.com` and `SUSQ_R2_PROVIDER=Other` |
 | `GITHUB_TOKEN` (Worker) | Worker secret | you / CI | fine-grained PAT on `susquatch-reports` only: **Issues: read & write**, optional **Contents: read** (weekly link) |
 | `CLOUDFLARE_API_TOKEN` | GitHub Actions secret | you | Account → **Cloudflare Pages: Edit**, **Workers Scripts: Edit**, **Workers KV Storage: Edit** |
 | `CLOUDFLARE_ACCOUNT_ID`, `SUSQ_KV_NAMESPACE_ID` | GitHub Actions secrets (or variable) | you | not secret, but account-specific |
