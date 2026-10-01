@@ -10,7 +10,7 @@ use serde_json::Value;
 use susq_core::{ExchangeId, MarketId, TournamentId};
 
 use super::lenient;
-use crate::models::ConstraintEval;
+use crate::models::{BookLevel, ConstraintEval, OrderBook};
 
 /// Delivery metadata carried by every batch.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -74,13 +74,74 @@ pub struct MarketSettled {
     pub at: Option<String>,
 }
 
-/// `market_batch`: one 250 ms window of public market activity.
+/// One price rung of a realtime book (numbers or numeric strings).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RtLevel {
+    #[serde(default, deserialize_with = "lenient::f64")]
+    pub price: f64,
+    #[serde(default, deserialize_with = "lenient::f64")]
+    pub quantity: f64,
+}
+
+/// The versioned order book of one exchange the batch names (`books` on a per-market topic).
+/// Bids descending, asks ascending, YES space, like `GET /exchanges/{id}/orderbook`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RtBook {
+    #[serde(deserialize_with = "lenient::id")]
+    pub exchange_id: ExchangeId,
+    #[serde(default, deserialize_with = "lenient::opt_id")]
+    pub market_id: Option<MarketId>,
+    #[serde(default, deserialize_with = "lenient::opt_id")]
+    pub tournament_id: Option<TournamentId>,
+    /// Monotonic per exchange; an older version than the one already applied is stale.
+    #[serde(default, deserialize_with = "lenient::opt_u64")]
+    pub version: Option<u64>,
+    #[serde(default)]
+    pub bids: Vec<RtLevel>,
+    #[serde(default)]
+    pub asks: Vec<RtLevel>,
+    #[serde(default)]
+    pub at: Option<String>,
+}
+
+impl RtBook {
+    /// The same book as the REST snapshot type (`depth` is the deeper side).
+    pub fn to_order_book(&self) -> OrderBook {
+        let level = |l: &RtLevel| BookLevel {
+            price: l.price,
+            quantity: l.quantity,
+        };
+        let bids: Vec<BookLevel> = self.bids.iter().map(level).collect();
+        let asks: Vec<BookLevel> = self.asks.iter().map(level).collect();
+        OrderBook {
+            exchange_id: self.exchange_id.clone(),
+            market_id: self.market_id.clone(),
+            depth: u32::try_from(bids.len().max(asks.len())).unwrap_or(u32::MAX),
+            best_bid: bids.first().map(|l| l.price),
+            best_ask: asks.first().map(|l| l.price),
+            spread: match (bids.first(), asks.first()) {
+                (Some(b), Some(a)) => Some(a.price - b.price),
+                _ => None,
+            },
+            bids,
+            asks,
+        }
+    }
+}
+
+/// `market_batch`: one coalescing window (one second) of public activity on one market's topic
+/// (`tournament:{tid}:market:{market_id}`). Every exchange of a multi-outcome market shares the
+/// topic; items carry `exchangeId` (and `tournamentId`) to demux. `books` is optional: the
+/// versioned book of every exchange the batch names, when the platform includes it.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct MarketBatch {
     pub trades: Vec<RtTrade>,
     pub book_dirty: Vec<BookDirty>,
     pub market_settled: Vec<MarketSettled>,
+    pub books: Vec<RtBook>,
     pub delivery: Delivery,
 }
 
@@ -172,7 +233,7 @@ pub struct RtRefund {
     pub at: Option<String>,
 }
 
-/// `account_batch`: one 250 ms window of our own account activity.
+/// `account_batch`: one coalescing window of our own account activity (`user:{profile_id}`).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct AccountBatch {
@@ -222,14 +283,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn market_batch_decodes_documented_shape() {
+    fn market_batch_decodes_the_per_market_topic_shape() {
+        // One market's topic: every item names its tournament and (for multi-outcome markets)
+        // its own exchange; `books` carries the versioned book of the exchanges the batch names.
         let b = decode(
             "market_batch",
             json!({
                 "trades": [{"exchangeId": 381, "marketId": "m1", "price": 0.42, "quantity": 5,
                             "executedAt": "2026-10-01T16:00:00Z", "tournamentId": "t1", "extra": 1}],
-                "bookDirty": [{"exchangeId": "381", "marketId": "m1", "tournamentId": "t1", "at": "x"}],
+                "bookDirty": [{"exchangeId": "381", "marketId": "m1", "tournamentId": "t1", "at": "x"},
+                              {"exchangeId": "382", "marketId": "m1", "tournamentId": "t1", "at": "x"}],
                 "marketSettled": [{"marketId": "m1", "tournamentId": "t1", "settledWith": "REFUND"}],
+                "books": [{"exchangeId": "381", "marketId": "m1", "tournamentId": "t1", "version": "7",
+                           "bids": [{"price": "0.41", "quantity": 10}, {"price": 0.40, "quantity": "3"}],
+                           "asks": [{"price": 0.43, "quantity": 4}]}],
                 "delivery": {"revision": "12", "previousRevision": 11, "correlationId": "c-1"}
             }),
         )
@@ -238,9 +305,21 @@ mod tests {
             panic!("wrong kind: {b:?}")
         };
         assert_eq!(b.trades[0].exchange_id, ExchangeId::new("381"));
+        assert_eq!(b.trades[0].tournament_id, Some(TournamentId::new("t1")));
         assert_eq!(b.trades[0].quantity, 5.0);
+        assert_eq!(b.book_dirty[1].exchange_id, ExchangeId::new("382"));
         assert_eq!(b.book_dirty[0].market_id, Some(MarketId::new("m1")));
         assert_eq!(b.market_settled[0].settled_with.as_deref(), Some("REFUND"));
+        assert_eq!(b.books.len(), 1);
+        let book = &b.books[0];
+        assert_eq!(book.version, Some(7));
+        assert_eq!(book.tournament_id, Some(TournamentId::new("t1")));
+        let ob = book.to_order_book();
+        assert_eq!(ob.exchange_id, ExchangeId::new("381"));
+        assert_eq!(ob.bids.len(), 2);
+        assert_eq!(ob.best_bid, Some(0.41));
+        assert_eq!(ob.best_ask, Some(0.43));
+        assert_eq!(ob.depth, 2);
         assert_eq!(
             b.delivery,
             Delivery {
@@ -249,6 +328,26 @@ mod tests {
                 correlation_id: Some("c-1".into())
             }
         );
+    }
+
+    #[test]
+    fn market_batch_books_are_optional_and_versionless_books_decode() {
+        let b = decode(
+            "market_batch",
+            json!({"bookDirty": [{"exchangeId": 1, "tournamentId": "t1"}]}),
+        )
+        .expect("decodes");
+        let Broadcast::Market(b) = b else {
+            panic!("wrong kind: {b:?}")
+        };
+        assert!(b.books.is_empty());
+        let b = decode("market_batch", json!({"books": [{"exchangeId": 1}]})).expect("decodes");
+        let Broadcast::Market(b) = b else {
+            panic!("wrong kind: {b:?}")
+        };
+        assert_eq!(b.books[0].version, None);
+        let ob = b.books[0].to_order_book();
+        assert!(ob.bids.is_empty() && ob.best_ask.is_none() && ob.spread.is_none());
     }
 
     #[test]

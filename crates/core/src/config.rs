@@ -413,6 +413,11 @@ pub struct LiveCfg {
     pub book_max_age_s: u64,
     /// Main decision loop period.
     pub tick_ms: u64,
+    /// How many per-market realtime channels to join at most (Supabase caps channels per
+    /// connection, commonly at 100). Markets in the targets file come first, then the ones we
+    /// hold, are violated on, have fair values for, or saw book activity on most recently; every
+    /// other market stays on REST polling.
+    pub realtime_market_channels: usize,
 }
 
 impl Default for LiveCfg {
@@ -422,6 +427,7 @@ impl Default for LiveCfg {
             metrics_addr: "127.0.0.1:9464".into(),
             book_max_age_s: 10,
             tick_ms: 500,
+            realtime_market_channels: 80,
         }
     }
 }
@@ -590,6 +596,7 @@ mod tests {
         assert_eq!(cfg.bus.nats_url, "nats://127.0.0.1:4222");
         assert_eq!(cfg.paths.fair_live, PathBuf::from("state/fair_live.json"));
         assert!(cfg.live.metrics_addr.starts_with("127.0.0.1:"));
+        assert_eq!(cfg.live.realtime_market_channels, 80);
     }
 
     #[test]

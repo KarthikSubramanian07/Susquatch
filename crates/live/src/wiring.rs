@@ -13,10 +13,13 @@ use susq_core::{Clock, Config, Mode, TournamentId};
 use susq_gateway::{Gateway, GatewayDeps, KillSwitch, Lease, LeaseConfig, PaperBroker, RetryPolicy};
 use susq_journal::Journal;
 use susq_oms::{Oms, OmsConfig};
-use susq_platform::{PlatformAdapter, realtime::RealtimeEvent};
-use tokio::sync::{mpsc, watch};
+use susq_platform::PlatformAdapter;
+use tokio::sync::watch;
 
-use crate::engine::{Engine, EngineDeps};
+use crate::{
+    engine::{Engine, EngineDeps},
+    realtime::RealtimeFeed,
+};
 
 /// Producer / lease holder name of this process.
 pub const PRODUCER: &str = "rust-live";
@@ -97,7 +100,8 @@ pub struct BuildOpts {
     pub tournament: TournamentId,
     /// Paper account starting cash (the live tournament balance at start).
     pub paper_balance: f64,
-    pub realtime: Option<mpsc::Receiver<RealtimeEvent>>,
+    /// The realtime feed (per-market channels are managed by the engine).
+    pub realtime: Option<RealtimeFeed>,
     pub needle: Option<watch::Receiver<NeedleSnapshot>>,
     /// Lease identity (hostname, pid). Tests use distinct pids per "process".
     pub host: String,

@@ -30,12 +30,12 @@ mod revision;
 use std::{sync::Arc, time::Duration};
 
 use async_trait::async_trait;
-use susq_core::TournamentId;
+use susq_core::{MarketId, TournamentId};
 
 pub use client::RealtimeClient;
 pub use payload::{
-    AccountBatch, BookDirty, Delivery, LeaderboardTick, MarketBatch, MarketSettled, OrderUpdate, RtFill,
-    RtRefund, RtSettlement, RtTrade,
+    AccountBatch, BookDirty, Delivery, LeaderboardTick, MarketBatch, MarketSettled, OrderUpdate, RtBook,
+    RtFill, RtLevel, RtRefund, RtSettlement, RtTrade,
 };
 pub use protocol::{PROTOCOL_VSN, TOPIC_PREFIX, topic, websocket_url};
 
@@ -93,8 +93,9 @@ impl RealtimeConfig {
     }
 }
 
-/// The channels Susquatch consumes for one tournament: market batches, tournament-scope
-/// violations, our account batches and leaderboard ticks.
+/// The tournament-scope channels Susquatch consumes: tournament-scope violations, our account
+/// batches and leaderboard ticks. Market updates are per market (see [`market_channel`]); since
+/// 2026-10-01 the tournament-wide `tournament:{tid}` topic carries none, so it is not joined.
 ///
 /// `user_channel` is `channels.user` from the token response; a bare profile id is accepted
 /// and prefixed with `user:`.
@@ -105,11 +106,23 @@ pub fn tournament_channels(tid: &TournamentId, user_channel: &str) -> Vec<String
         format!("user:{user_channel}")
     };
     vec![
-        format!("tournament:{tid}"),
         format!("relationships:violations:{tid}"),
         user,
         "leaderboard:all".to_owned(),
     ]
+}
+
+/// The per-market channel carrying `market_batch`, `book_dirty` and `market_settled` for every
+/// exchange of `market`: `tournament:{tid}:market:{market_id}`.
+pub fn market_channel(tid: &TournamentId, market: &MarketId) -> String {
+    format!("tournament:{tid}:market:{market}")
+}
+
+/// The market a per-market channel name refers to (`None` for any other channel).
+pub fn market_of_channel(channel: &str) -> Option<MarketId> {
+    let rest = channel.strip_prefix("tournament:")?;
+    let (_, market) = rest.split_once(":market:")?;
+    (!market.is_empty() && !market.contains(':')).then(|| MarketId::new(market))
 }
 
 /// Where realtime tokens come from (normally `POST /realtime/token`).
@@ -154,7 +167,7 @@ pub enum RealtimeEvent {
     Connected,
     /// Refetch authoritative state from REST before acting on anything older.
     Resync { reason: ResyncReason },
-    /// `market_batch` on a `tournament:*` / `market:*` channel.
+    /// `market_batch` on a per-market `tournament:{tid}:market:{market_id}` channel.
     MarketBatch { channel: String, batch: MarketBatch },
     /// `account_batch` on the `user:*` channel.
     AccountBatch { channel: String, batch: AccountBatch },
@@ -177,12 +190,26 @@ mod tests {
     fn tournament_channels_accepts_bare_or_prefixed_user() {
         let tid = TournamentId::new("t1");
         let expected = vec![
-            "tournament:t1".to_owned(),
             "relationships:violations:t1".to_owned(),
             "user:p1".to_owned(),
             "leaderboard:all".to_owned(),
         ];
         assert_eq!(tournament_channels(&tid, "p1"), expected);
         assert_eq!(tournament_channels(&tid, "user:p1"), expected);
+        assert!(
+            !expected.iter().any(|c| c == "tournament:t1"),
+            "the tournament-wide topic no longer carries market updates"
+        );
+    }
+
+    #[test]
+    fn market_channels_round_trip() {
+        let tid = TournamentId::new("t1");
+        let ch = market_channel(&tid, &MarketId::new("m-9"));
+        assert_eq!(ch, "tournament:t1:market:m-9");
+        assert_eq!(market_of_channel(&ch), Some(MarketId::new("m-9")));
+        assert_eq!(market_of_channel("tournament:t1"), None);
+        assert_eq!(market_of_channel("relationships:violations:t1"), None);
+        assert_eq!(market_of_channel("tournament:t1:market:"), None);
     }
 }

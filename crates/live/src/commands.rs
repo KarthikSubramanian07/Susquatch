@@ -18,8 +18,8 @@ use susq_core::{
 };
 use susq_gateway::KillSwitch;
 use susq_oms::OrderState;
-use susq_platform::realtime::{RealtimeClient, RealtimeConfig, RealtimeEvent, tournament_channels};
-use tokio::sync::{mpsc, watch};
+use susq_platform::realtime::{RealtimeClient, RealtimeConfig, tournament_channels};
+use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
@@ -27,6 +27,7 @@ use crate::{
     election,
     engine::Engine,
     http::{self, Liveness},
+    realtime::{RealtimeFeed, Spawner},
     runtime::{Runtime, connect},
     status,
     wiring::{BuildOpts, RunPaths, build, host_name},
@@ -35,7 +36,7 @@ use crate::{
 fn build_engine(
     rt: &Runtime,
     mode: Mode,
-    realtime: Option<mpsc::Receiver<RealtimeEvent>>,
+    realtime: Option<RealtimeFeed>,
     needle: Option<watch::Receiver<NeedleSnapshot>>,
     kill: Option<KillSwitch>,
 ) -> anyhow::Result<Engine> {
@@ -71,11 +72,14 @@ fn known_races(rt: &Runtime) -> HashSet<String> {
         .unwrap_or_default()
 }
 
+/// The realtime feed: tournament-scope channels plus up to `live.realtime_market_channels`
+/// per-market channels, which the engine picks and rebuilds as its markets of interest change.
+/// Nothing connects until the engine's first market selection.
 async fn start_realtime(
     rt: &Runtime,
     tid: &TournamentId,
     shutdown: &CancellationToken,
-) -> Option<mpsc::Receiver<RealtimeEvent>> {
+) -> Option<RealtimeFeed> {
     let token = match rt.platform.realtime_token().await {
         Ok(t) => t,
         Err(e) => {
@@ -83,15 +87,26 @@ async fn start_realtime(
             return None;
         }
     };
-    let rc = &rt.cfg.realtime;
-    let cfg = RealtimeConfig {
-        heartbeat: Duration::from_secs(rc.heartbeat_s),
-        refresh_before: Duration::from_secs(rc.refresh_before_s),
-        max_backoff: Duration::from_secs(rc.max_backoff_s),
-        ..RealtimeConfig::new(tournament_channels(tid, &token.channels.user))
-    };
-    let (rx, _task) = RealtimeClient::spawn(cfg, rt.platform.clone(), rt.clock.clone(), shutdown.clone());
-    Some(rx)
+    let base = tournament_channels(tid, &token.channels.user);
+    let rc = rt.cfg.realtime.clone();
+    let (platform, clock, shutdown) = (rt.platform.clone(), rt.clock.clone(), shutdown.clone());
+    let spawn: Spawner = Box::new(move |channels| {
+        let cfg = RealtimeConfig {
+            heartbeat: Duration::from_secs(rc.heartbeat_s),
+            refresh_before: Duration::from_secs(rc.refresh_before_s),
+            max_backoff: Duration::from_secs(rc.max_backoff_s),
+            ..RealtimeConfig::new(channels)
+        };
+        let cancel = shutdown.child_token();
+        let (rx, _task) = RealtimeClient::spawn(cfg, platform.clone(), clock.clone(), cancel.clone());
+        (rx, cancel)
+    });
+    Some(RealtimeFeed::new(
+        tid.clone(),
+        base,
+        rt.cfg.live.realtime_market_channels,
+        spawn,
+    ))
 }
 
 /// Connect to NATS, wire `ops.kill` to `kill`, and start the needle monitor. Returns the bus
