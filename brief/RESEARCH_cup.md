@@ -1,5 +1,9 @@
 # RESEARCH — SIG Predictions Cup (Midterm Elections), as of Sept 27, 2026
 
+> **Oct 1 update.** The rules were revised Sept 30 and the platform changelog and live spec answered most of §2's unknowns on
+> opening day. Items marked **[Oct 1]** below are the corrections; the full API-level detail is in `docs/API.md` and
+> `brief/ERRATA.md` E21–E27.
+
 Confidence: **H** = primary, **M** = secondary/inferred, **L** = weak or model-based. ⚠️ marks a conflicted source (Sponsor PR, affiliate sites, vendors, or competitors).
 
 ## Bottom line
@@ -15,12 +19,12 @@ Pre-open Cup prices mirror Kalshi almost exactly, so treat the Sponsor as a shar
 
 1. **Competition period:** Oct 1, 2026, 12:00pm to Nov 4, 2026, 12:00pm Eastern. "All trades must be received prior to 12:00pm Eastern Standard Time on November 4, 2026." (DST ends Nov 1.) **H**
 2. **Starting balance:** 100,000 SUSQies at registration. Late registrants still get the full allotment. SUSQies cannot be bought, transferred, or cashed out. **H**
-3. **Prizes and ranking:** $30,000 / $5,000 / $2,500 (total $37,500), one per person. Rank is by "verified total SUSQies balance as of the resolution of all Markets." There are **no tiebreakers**: tied players share the pooled prizes for the places they occupy. **H**
-4. **Ranking requirement:** you must complete ≥1 trade to be ranked. **H**
-5. **Bots and account rules:** unlimited Bots via API, but only one Account. API use is subject to authentication, **rate limits, position limits**, and technical controls. The platform may suspend, throttle, disqualify, or remove any Bot for any reason. **H** (exact numbers unknown)
-6. **Sponsor as market maker:** the Sponsor "may… act as a market maker in any or all Markets," with no obligation to provide liquidity, and may withdraw at any time. **H**
+3. **Prizes and ranking:** "up to" $30,000 / $5,000 / $2,500 (total $37,500), one per person. Rank is by "verified total SUSQies balance as of the resolution of all Markets." There are **no tiebreakers**: tied players share the same rank and split the summed prizes for the places they occupy. Interim leaderboard ranks are "dynamic, provisional, and subject to change." **H**
+4. **Ranking requirement:** you must complete ≥1 trade to be ranked. **H** [Oct 1: done, first fill 17:36Z.]
+5. **Bots and account rules:** unlimited Bots via API, but only one Account ("accounts under common control" count as one). API use is subject to authentication, **rate limits, position limits**, and technical controls. "Sponsor and Platform Operator further reserve the right to remove any Bot at any time and for any reason," and neither has any obligation to correct errors in our own orders. The website's own endpoints "may block automated clients": use the v1 API only. **H** [Oct 1: rate limit is **100 reads / 30 writes a minute per account**, shared by all keys (changelog). Position limits still have no published numbers.]
+6. **Sponsor as market maker:** the Sponsor "may… act as a market maker in any or all Markets," "has no obligation to provide or maintain liquidity and may commence, modify, or withdraw such activity at any time." **H**
 7. **Lock and settlement:** after the period ends, positions are locked and can't be modified. Rankings become final once every market has settled. Winners are verified within 2 weeks after all markets resolve. **H**
-8. **Sponsor discretion:** the Sponsor may update rules, outcomes, or resolution at any time (including after the resolution date), and may void or reverse orders, trades, or positions. Force majeure covers recounts, challenges, and certification delays. **H**
+8. **Sponsor discretion:** the Sponsor "may update the rules, outcomes, or resolution of a Market at any time, including after the resolution date or end date," and "may void, reverse, or disqualify any order, trade, or position." The number of markets "may vary throughout the Competition." Force majeure covers "recount, challenge, dispute, certification delay." Prohibited: manipulation "through collusion, self-trading, or other unfair means," insider campaign information, and unsportsmanlike or disruptive conduct. **H**
 9. **Competition Data:** the Sponsor owns all Competition Data (orders, trades, positions, API/Bot logs, and statistics, analytics, models, and derivative works built from them). **H**
 10. **Market structure:** YES/NO markets with separate markets per party per race. Example: "Will the Democratic Party win the New Hampshire Senate?" #381 at 86%, and the Republican market #382 at 14%.
     - The tournament parameter is `tournament=midterm-elections`.
@@ -30,7 +34,7 @@ Pre-open Cup prices mirror Kalshi almost exactly, so treat the Sponsor as a shar
     - Each market lists its resolution source in an "Info" tab.
     - The Platform Operator (The Super Market, not affiliated with SIG) resolves markets. **H**
 11. **Pre-open prices track real money (inference M):** House D 92% (Kalshi/Poly average 92), Senate R 39% (market D ≈62), TX D 61 (Kalshi 61), ME D 61 (Kalshi 60), NH D 86 (86), NC D 94 (93), GA R 6 (Kalshi D 94). **H** (observation)
-12. **Eligibility:** enrolled undergrad, grad, or PhD students of majority age in 36 jurisdictions. Current and former SIG interns and co-ops may participate. Winners submit an eligibility form within 72 hours and documents within 5 days. US winners get a W-9 and a 1099-MISC for anything over $2,000. Non-US winners have 30% withheld. **H**
+12. **Eligibility:** actively enrolled undergrad, grad, or PhD students of majority age in the listed jurisdictions. Current and former SIG interns and co-ops may participate. Winners submit an eligibility form (tax ID) within 72 hours and photo/student ID within 5 days of notification. US winners get a W-9 and a 1099-MISC for anything over $2,000. Non-US winners have 30% withheld. **H** [Oct 1: rules updated Sept 30 removed China, Western Australia, Northern Territory, and five Indian states (Andhra Pradesh, Telangana, Nagaland, Sikkim, Puducherry). The local `brief/api/official/guide_rules.html` is the Sept 23 text.]
 13. **MNPI:** no trading on material non-public information, including if you work, intern, volunteer, or advise for a candidate or campaign (or are immediate family of one) whose result decides a market. **H**
 14. **Recruiting (⚠️ Sponsor PR):** Bloomberg (Sept 23): SIG's prediction team grew to 80 from about 60 in January (Jeremy Maletz, head of macro trading and prediction markets). Lauren Laver, head of campus recruiting, runs the contest push. Business Wire says trading competitions are part of how SIG identifies students with an aptitude for probabilistic thinking. The platform has a "Job Opportunities" link and an opt-in for internship contact.
 15. **Inaugural event:** this is the first Predictions Cup, so there are no prior results or post-mortems. **H**
@@ -52,17 +56,20 @@ Pre-open Cup prices mirror Kalshi almost exactly, so treat the Sponsor as a shar
   - Bearer-token auth. Base URL `https://www.thesuper.market/api/v1` in their config, even though the docs live on `sig.thesuper.market`.
   - Endpoints for tournaments, paginated markets, bulk prices (≤100 exchange IDs per call), orderbook, **platform-computed cross-market constraint violations with suggested corrective trades**, positions, leaderboard (`myRank`), and `POST /orders` with `exchangeId`, `side` (yes/no), `action` (buy/sell), `quantity`, a decimal `price` in 0–1, `tournamentId`, and `idempotencyKey`.
   - Because the platform publishes constraint violations to everyone, **constraint arbitrage is a crowded speed race**, not a hidden edge.
-- **Unknown until Oct 1:**
-  - tick size, payout units, and price bounds (whole-percent prices suggest 1¢ ticks on 0–100);
-  - order types, matching priority, and fees;
-  - rate-limit and position-limit numbers;
-  - whether streaming exists, and pagination;
-  - how open positions are marked for account value;
-  - Sponsor spreads, depth, and speed;
-  - registrant count and field lean;
-  - per-market resolution rules (Info tabs);
-  - whether new markets get added;
-  - Terms of Service details.
+- **Unknown until Oct 1** (resolved **[Oct 1]** where marked; detail in `docs/API.md`):
+  - tick size, payout units, and price bounds — [Oct 1: tick 0.005 on [0.005, 0.995], a share pays 1 SUSQie; `docs/API.md` §Prices];
+  - order types, matching priority, and fees — [Oct 1: limit and market orders, GTD expiry, batch ≤50, multi-leg ≤10, server-side STP. **No fees** at all; the spread is the only cost. One share at 0.26 cost exactly 0.26];
+  - rate-limit and position-limit numbers — [Oct 1: **100 reads / 30 writes a minute per account**, all keys share it; position limits exist in the rules but no numbers are published];
+  - whether streaming exists, and pagination — [Oct 1: Supabase realtime, one-second batches, per-market topics; cursor pagination];
+  - how open positions are marked for account value — [Oct 1: a "tournament valuation price", computation undocumented; read `totalAccountValue`];
+  - Sponsor spreads, depth, and speed — [Oct 1: 98% of markets two-sided at the open, median spread 7 ticks, median top-of-book depth 200];
+  - registrant count and field lean — [Oct 1: 3,641 members, 166 ranked after day one];
+  - per-market resolution rules (Info tabs) — still human-read; not in the API;
+  - whether new markets get added — rules say the count "may vary throughout the Competition"; 237 at the open;
+  - Terms of Service details — [Oct 1: read; nothing beyond the rules that changes strategy. Multi-outcome markets "may be mutually exclusive or independent"].
+- **Still unverified after Oct 1:** whether resting orders reserve cash; the valuation-price formula; what happens to a market
+  that is unresolved when the tournament ends (admin tooling mentions a 5 h VWAP default unless the tournament waits for every
+  market; the Cup's rules wording implies it waits).
 - **Structural implication:** where an independent can win (Nebraska Senate, Osborn (I)), both party markets can resolve NO, so YES(D) + YES(R) < 100 is **not** arbitrage there. Check each Info tab.
 
 ## 3. Rules nuances
