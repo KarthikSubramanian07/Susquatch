@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import os
+from datetime import timedelta
 from pathlib import Path
 
 import orjson
+from susq.contracts import ops_pb2
 from susq.mock import MockConfig
 from susq.mock.testing import KEY, serve_mock
 from susq_bridge.cli import _apply_collateral, app
 from susq_bridge.config import load_config
 from susq_bridge.first_trade import first_trade
+from susq_bridge.gateway import OrderSpec
 from susq_bridge.lease import Lease
 from susq_bridge.measure_day1 import (
     Day1Report,
@@ -175,6 +178,23 @@ async def test_first_trade_buys_one_share_and_records_fees(harness) -> None:  # 
         assert again.status == "skipped"
         lb = await harness.mock.client.get_leaderboard("midterm-elections")
         assert lb.my_rank is not None
+    finally:
+        await bridge.close()
+
+
+async def test_first_trade_retries_after_a_platform_rejection(harness) -> None:  # type: ignore[no-untyped-def]
+    bridge = await harness.open_bridge("live")
+    try:
+        day = bridge.clock().date().isoformat()
+        spec = OrderSpec("1", "yes", "buy", 1, 5000)
+        request = bridge.gateway._request(spec, bridge.clock() + timedelta(minutes=2))
+        bridge.gateway.intents.create(f"first_trade:{day}:a", "first_trade", request)
+        bridge.gateway.intents.update(
+            f"first_trade:{day}:a", ops_pb2.INTENT_STATE_REJECTED, error_code="TERMS_NOT_ACKNOWLEDGED"
+        )
+        result = await first_trade(bridge, wait_s=0, poll_s=0)
+        assert result.status == "filled"
+        assert bridge.gateway.intents.get(f"first_trade:{day}:a.1") is not None
     finally:
         await bridge.close()
 

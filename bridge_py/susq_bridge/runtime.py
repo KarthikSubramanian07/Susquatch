@@ -255,6 +255,21 @@ class Bridge:
                 log.exception("%s failed", name)
             await asyncio.sleep(interval_s)
 
+    async def _until_ok(self, fn: Callable[[], Awaitable[Any]], name: str, max_wait_s: float = 60.0) -> Any:
+        """Retry a startup read with backoff until it succeeds (the platform 500s and times out)."""
+        wait = 2.0
+        while True:
+            try:
+                return await fn()
+            except Exception:
+                log.exception("%s failed; retrying in %.0f s", name, wait)
+            await asyncio.sleep(wait)
+            wait = min(wait * 2, max_wait_s)
+
+    async def _racer(self) -> None:
+        await self._until_ok(self.racer.load_relationships, "relationships")
+        await self.racer.run_polling(self.realtime_up)
+
     async def _watch_kill(self) -> None:
         while True:
             if self.kill.killed():
@@ -306,12 +321,14 @@ class Bridge:
             rt = self.build_realtime(first)
             self._spawn(rt.run(), "realtime")
         if loops.racer and cfg.racer.enabled:
-            await self.racer.load_relationships()
-            self._spawn(self.racer.run_polling(self.realtime_up), "racer-poll")
+            self._spawn(self._racer(), "racer-poll")
         if loops.sniper and cfg.sniper.enabled:
             self._spawn(self._every(loops.sniper_interval_s, self.sniper.scan, "sniper"), "sniper")
         if loops.recorder:
-            await self.recorder.snapshot_markets(self.gateway, self.market)
+            self._spawn(
+                self._until_ok(lambda: self.recorder.snapshot_markets(self.gateway, self.market), "markets"),
+                "recorder-markets",
+            )
             self._spawn(
                 self._every(
                     cfg.price_snapshot_interval_s, lambda: self.recorder.record_prices(self.market), "prices"

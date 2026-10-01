@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import orjson
+from susq.contracts import ops_pb2
 from susq.platform.prices import TICK_PIPS, nearest_tick, to_pips, to_price
 
 from susq_bridge.gateway import OrderSpec
@@ -76,7 +77,7 @@ async def first_trade(bridge: Bridge, *, wait_s: float = 60.0, poll_s: float = 2
     crossing = ask - bid <= 2 * TICK_PIPS
     price = ask if crossing else min(ask, nearest_tick((bid + ask) // 2))
     outcome = await bridge.gateway.place(
-        f"first_trade:{day}:a",
+        _fresh_intent(bridge, f"first_trade:{day}:a"),
         "first_trade",
         OrderSpec(ex, "yes", "buy", 1, price, ttl_s=max(wait_s * 2, 120)),
     )
@@ -93,7 +94,9 @@ async def first_trade(bridge: Bridge, *, wait_s: float = 60.0, poll_s: float = 2
                 return FirstTrade("failed", "the mid didn't fill and the ask vanished", ex, order_id)
             ask = to_pips(book.asks[0].price)
             outcome = await bridge.gateway.place(
-                f"first_trade:{day}:b", "first_trade", OrderSpec(ex, "yes", "buy", 1, ask, ttl_s=120)
+                _fresh_intent(bridge, f"first_trade:{day}:b"),
+                "first_trade",
+                OrderSpec(ex, "yes", "buy", 1, ask, ttl_s=120),
             )
             if not outcome.placed or outcome.result is None:
                 return FirstTrade("failed", f"{outcome.status}: {outcome.reason}", ex)
@@ -129,6 +132,19 @@ async def first_trade(bridge: Bridge, *, wait_s: float = 60.0, poll_s: float = 2
     record_first_fill(reports, observation)
     bridge.journal.event("first_trade", observation)
     return FirstTrade("filled", "ok", ex, order_id, fill_price)
+
+
+def _fresh_intent(bridge: Bridge, base: str) -> str:
+    """``base``, or ``base.N`` past attempts the platform rejected outright (e.g. TERMS_NOT_ACKNOWLEDGED
+    before the rules were accepted). Anything that may have reached the book keeps its id, so a retry
+    still dedupes against it."""
+    intent_id, n = base, 0
+    while (prior := bridge.gateway.intents.get(intent_id)) is not None and (
+        prior.state == ops_pb2.INTENT_STATE_REJECTED
+    ):
+        n += 1
+        intent_id = f"{base}.{n}"
+    return intent_id
 
 
 async def _wait_for_fill(bridge: Bridge, order_id: int, wait_s: float, poll_s: float) -> bool:
