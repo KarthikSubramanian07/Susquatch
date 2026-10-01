@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Nightly backup: tar + zstd of state/ journal/ data/ reports/ targets/ -> Cloudflare R2 (free tier).
+# Nightly backup: tar + zstd of state/ journal/ data/ reports/ targets/ -> the S3 backup bucket
+# (Backblaze B2, 10 GB free and no card; Cloudflare R2 also works, see backup_remote_init in ops/lib.sh).
 #
 #   ops/backup.sh            # run a backup now (what the nightly timer runs; also `make backup`)
 #   ops/backup.sh --dry-run  # build + measure the archive, upload nothing
@@ -9,7 +10,7 @@
 #                         <prefix>/weekly/susq-<UTC>.tar.zst              Sunday copies, backup_keep_weekly kept
 # Every backup is a full snapshot, so there are no deltas to chain and any single object restores alone.
 #
-# Quota guard: the R2 free tier is 10 GB. If (bucket bytes + this archive) would reach r2_guard_frac (80%) of
+# Quota guard: the B2 free tier is 10 GB. If (bucket bytes + this archive) would reach r2_guard_frac (80%) of
 # r2_quota_bytes, the upload is REFUSED, the archive is kept locally, and an ACTION NEEDED item is filed.
 # If the bucket can't be measured, the upload is refused too: never spend money on a guess.
 #
@@ -89,16 +90,16 @@ fi
 backup_remote_init
 USED="$(remote_bytes || true)"
 if [ -z "$USED" ]; then
-  action_raise r2-quota "Backups paused: could not measure the R2 bucket (credentials or network). Newest archive kept on the server in ops/state/backup-staging/."
+  action_raise r2-quota "Backups paused: could not measure the backup bucket (credentials or network). Newest archive kept on the server in ops/state/backup-staging/."
   record "last_result=refused-unmeasured"
   die "could not measure bucket usage; refusing to upload"
 fi
 LIMIT="$(python3 -c "print(int($QUOTA * $GUARD))")"
 if [ $((USED + BYTES)) -ge "$LIMIT" ]; then
   PCT="$(python3 -c "print(round(100 * ($USED + $BYTES) / $QUOTA))")"
-  action_raise r2-quota "Backups paused: R2 would be at ${PCT}% of the 10 GB free tier (guard is $(python3 -c "print(round($GUARD*100))")%). Prune old objects or lower retention in config/susq.toml. Newest archive kept locally."
+  action_raise r2-quota "Backups paused: the backup bucket would be at ${PCT}% of the 10 GB free tier (guard is $(python3 -c "print(round($GUARD*100))")%). Prune old objects or lower retention in config/susq.toml. Newest archive kept locally."
   record "last_result=refused-quota" "bucket_bytes=$USED"
-  ops_event "backup refused: R2 quota guard (${PCT}%)"
+  ops_event "backup refused: bucket quota guard (${PCT}%)"
   log "REFUSED: $USED + $BYTES >= $LIMIT"; exit 3
 fi
 

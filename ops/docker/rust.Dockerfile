@@ -10,7 +10,7 @@ WORKDIR /src
 COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
 COPY crates crates
 COPY contracts/proto contracts/proto
-# Cache mounts keep incremental rebuilds on the 2-OCPU server to minutes, not the full 10+.
+# Cache mounts keep incremental rebuilds on the 2-vCPU server to minutes, not the full 10+.
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/src/target \
     cargo build --release --locked -p susq-live -p susq-enr --bins \

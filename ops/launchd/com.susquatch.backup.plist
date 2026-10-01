@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- Mac fallback: nightly backup to R2 (same script as the server). launchd runs missed jobs on wake.
+<!-- Mac fallback: nightly backup to Backblaze B2 (same script as the server). launchd runs missed jobs on wake.
      StartCalendarInterval is local time: 00:30 PT = 07:30/08:30 UTC depending on DST, close enough. -->
 <plist version="1.0">
 <dict>

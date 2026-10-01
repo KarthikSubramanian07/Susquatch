@@ -2,11 +2,12 @@
 
 Checks: disk headroom, clock drift (vs HTTP `Date` from several independent hosts), secret expiry dates,
 TLS certificate expiry of the hosts we depend on, trader-lease health, backup freshness, and free-tier
-headroom (R2 bytes, KV writes). Results go to `ops/state/selfcheck.json`, where the status pusher turns them
-into a health tile. Anything a human must do becomes a `selfcheck-*` ACTION NEEDED item, which appears in
-the next daily summary. Items clear themselves once the check passes again.
+headroom (backup bucket bytes, KV writes). Results go to `ops/state/selfcheck.json`, where the status pusher
+turns them into a health tile. Anything a human must do becomes a `selfcheck-*` ACTION NEEDED item, which
+appears in the next daily summary. Items clear themselves once the check passes again.
 
-Runs from a systemd timer (Oracle), launchd (Mac), or `make selfcheck`. It never alerts and never trades.
+Runs from a systemd timer (the Azure server), launchd (the Mac fallback), or `make selfcheck`. It never
+alerts and never trades.
 """
 
 from __future__ import annotations
@@ -237,16 +238,16 @@ def check_quotas(
     push_budget: int,
     today: str,
 ) -> Check:
-    """Free-tier headroom we can measure on the server: R2 bytes (from the last backup) and KV pushes."""
+    """Free-tier headroom we can measure on the server: backup bucket bytes (last backup) and KV pushes."""
     notes = []
     state = "ok"
     action = None
     if backup and backup.get("bucket_bytes") is not None:
         frac = int(backup["bucket_bytes"]) / r2_quota
-        notes.append(f"R2 {frac:.0%} of free tier")
+        notes.append(f"backups {frac:.0%} of B2 free tier")
         if frac >= guard_frac:
             state = "down"
-            action = f"R2 at {frac:.0%} of the 10 GB free tier: uploads are paused. Prune old backups."
+            action = f"Backups at {frac:.0%} of the 10 GB B2 free tier: uploads are paused. Prune old ones."
         elif frac >= guard_frac * 0.85:
             state = "degraded"
     if push and push.get("date") == today:

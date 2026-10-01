@@ -16,7 +16,7 @@ Environment=SUSQ_HOME=@SUSQ_HOME@
 ExecStart=/usr/bin/docker compose --project-directory @SUSQ_HOME@ -f @SUSQ_HOME@/ops/compose.yaml up -d --build --remove-orphans
 ExecStartPost=+@SUSQ_HOME@/ops/priority.sh auto
 ExecStop=/usr/bin/docker compose --project-directory @SUSQ_HOME@ -f @SUSQ_HOME@/ops/compose.yaml down
-# First boot builds every image natively on 2 OCPU.
+# First boot builds every image natively on 2 vCPU.
 TimeoutStartSec=45min
 TimeoutStopSec=2min
 

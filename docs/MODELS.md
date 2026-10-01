@@ -144,8 +144,8 @@ Normals come from a 128-layer ziggurat, whose layer index and magnitude use disj
 
 `sim_bench` (1e6 draws, 60 races, 435 House districts, 4 clusters) on an 8-core Apple M-series machine
 under load: generate 1.6 s, calibrate 0.25 s, evaluate 0.17 s, bundles 0.29 s, **2.3 s total**. With 60
-races and no districts, generation is about 1.2 s. On one thread everything takes 9–12 s; the Oracle
-A1 server (2 OCPU) should take about 5–6 s. Memory is dominated by the float error matrix: 240 MB at
+races and no districts, generation is about 1.2 s. On one thread everything takes 9–12 s; the
+2-vCPU server should take about 5–6 s. Memory is dominated by the float error matrix: 240 MB at
 1e6 × 60.
 
 ---

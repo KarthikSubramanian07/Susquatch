@@ -98,9 +98,9 @@ def test_kill_file_on_disk_wins_over_writer(paths, clock, api) -> None:
 
 def test_action_items_are_merged_once(paths, clock, api) -> None:
     route = api.post("/api/push").respond(200)
-    ActionItems(paths.actions_dir).raise_item("r2-quota", "R2 at 82% of free tier: backups paused.")
+    ActionItems(paths.actions_dir).raise_item("r2-quota", "Bucket at 82% of free tier: backups paused.")
     make(paths, clock).tick()
-    assert list(pushed(route).action_needed) == ["R2 at 82% of free tier: backups paused."]
+    assert list(pushed(route).action_needed) == ["Bucket at 82% of free tier: backups paused."]
 
 
 def test_events_survive_a_failed_push_and_are_not_duplicated(paths, clock, api) -> None:

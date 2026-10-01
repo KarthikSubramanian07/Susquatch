@@ -1,5 +1,5 @@
 # Archives the CA Secretary of State test-window feeds so we have real replay data before Nov 3.
-# Runs enr-capture inside the rust-live image; results land in data/enr/ (gitignored, backed up to R2).
+# Runs enr-capture inside the rust-live image; results land in data/enr/ (gitignored, backed up to B2).
 [Unit]
 Description=Susquatch: capture a CA SoS election-night test window
 Requires=docker.service

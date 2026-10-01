@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One command: a fresh server -> fully restored from the latest R2 backup, stack running.
+# One command: a fresh server -> fully restored from the latest backup in the bucket, stack running.
 #
 #   ops/restore.sh                        # newest backup (daily or weekly), then `compose up`
 #   ops/restore.sh --archive susq-20261102T073000Z.tar.zst
@@ -91,7 +91,7 @@ printf '{"restored_from": "%s", "restored_at_utc": "%s"}\n' "$NAME" "$(date -u +
   > "$OPS_STATE/restore.json"
 
 if [ "$START" = 1 ] && command -v docker >/dev/null 2>&1; then
-  log "starting the stack (first start builds images natively; allow ~10-15 min on A1)"
+  log "starting the stack (first start builds images natively; allow ~10-15 min on a 2-vCPU server)"
   compose up -d --build --remove-orphans
 fi
 

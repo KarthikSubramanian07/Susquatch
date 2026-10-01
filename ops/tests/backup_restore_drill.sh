@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Backup/restore drill against a real S3 API: `rclone serve s3` on localhost stands in for R2, and the
-# scripts talk to it through the exact same `s3` + `provider=Cloudflare` remote they use in production.
+# Backup/restore drill against a real S3 API: `rclone serve s3` on localhost stands in for the bucket, and the
+# scripts talk to it through the exact same `s3` + `provider=Other` remote they use with Backblaze B2.
 #
 #   ops/tests/backup_restore_drill.sh      (needs rclone >= 1.65, zstd, python3)
 #
@@ -22,7 +22,7 @@ check() {
 }
 count() { find "$1" -maxdepth 1 -name "$2" | wc -l | tr -d ' '; }
 
-# ── fake R2 ──
+# ── fake S3 bucket ──
 mkdir -p "$WORK/s3/drill-bucket"
 rclone serve s3 "$WORK/s3" --addr "127.0.0.1:$PORT" --auth-key "drillkey,drillsecret" >"$WORK/s3.log" 2>&1 &
 SERVER_PID=$!
@@ -33,6 +33,7 @@ done
 
 export SUSQ_R2_ACCESS_KEY_ID=drillkey SUSQ_R2_SECRET_ACCESS_KEY=drillsecret
 export SUSQ_R2_ENDPOINT="http://127.0.0.1:$PORT" SUSQ_R2_BUCKET=drill-bucket SUSQ_BACKUP_PREFIX=susquatch
+export SUSQ_R2_PROVIDER=Other  # as in production on B2
 unset SUSQ_BACKUP_REMOTE CLOUDFLARE_ACCOUNT_ID || true
 
 mkhome() {  # mkhome <dir> : a checkout-shaped home with the real scripts and config
@@ -67,7 +68,7 @@ check "ops event recorded" grep -q "backup uploaded" "$H1/ops/state/events.log"
 echo "quota guard"
 rc=0; SUSQ_HOME="$H1" SUSQ_R2_QUOTA_BYTES=1000 SUSQ_BACKUP_TS=20261012T073000Z "$H1/ops/backup.sh" 2>/dev/null || rc=$?
 check "upload refused at >= 80% of quota (exit 3)" [ "$rc" = 3 ]
-check "ACTION NEEDED filed" grep -q "Backups paused: R2 would be at" "$H1/ops/state/actions/r2-quota.txt"
+check "ACTION NEEDED filed" grep -q "Backups paused: the backup bucket would be at" "$H1/ops/state/actions/r2-quota.txt"
 check "refused archive kept locally" [ -f "$H1/ops/state/backup-staging/susq-20261012T073000Z.tar.zst" ]
 check "nothing uploaded" [ ! -e "$B/daily/susq-20261012T073000Z.tar.zst" ]
 

@@ -14,7 +14,7 @@ any of this to be safe (it fails safe on its own). This is how you help it win.
 
 **T−24 h (Sep 30)**
 
-- [ ] `make costs` → `RESULT: $0/month`, and tick the human checklist (Oracle **not** Pay-As-You-Go).
+- [ ] `make costs` → `RESULT: $0/month`, and tick the human checklist (Azure for Students, **no** Pay-As-You-Go upgrade).
 - [ ] `make selfcheck` → 7/7 ok, or at least nothing but `lease` (nobody trades before the open).
 - [ ] Dashboard loads at `https://susquatch.pages.dev`; heartbeat green; "Today's summary" shows a date.
 - [ ] Yesterday's 14:00Z comment landed on the pinned *Daily summary* issue (you got the email).
@@ -85,15 +85,18 @@ it before 11:55 ET Nov 4? After that, never un-kill.
 ## 4. Restore: the server is gone, or wrong
 
 Symptoms: the dashboard shows the clay **Server silent since …** banner; the 14:00Z summary leads with it; SSH times out
-or the instance is missing from the Oracle console (idle reclaim, capacity event, you deleted it).
+or the VM is stopped or missing in the Azure portal (`az vm show -d -g susquatch -n susquatch --query powerState`):
+the student credit ran out and the subscription was disabled, a host failure, or you deleted it.
 
 1. **Is it really dead?** `ssh ubuntu@<ip>`. If you get in, `make ps` and `make logs` first; most "silence" is one
    container or the pusher's token. `sudo systemctl restart susquatch` fixes the rest.
 2. **Orders are safe meanwhile.** Every resting order has a GTD expiry (≤ 5 min TTL by default), so nothing we left
    outlives the host for long. You can also trade by hand on the website.
 3. **New host** (about 30 min, most of it the image build):
-   - Oracle: create A1 Flex 2 OCPU / 12 GB Ubuntu 24.04 with [`ops/cloud-init.yaml`](../ops/cloud-init.yaml), or, if Oracle
-     has no capacity, switch to the Mac: `ops/launchd/install.sh` (then skip to step 5).
+   - Azure: if the VM only stopped, `az vm start -g susquatch -n susquatch` and go to step 5. Otherwise create a new
+     `Standard_B2pls_v2` with [`ops/cloud-init.yaml`](../ops/cloud-init.yaml) as custom data ([OPS.md §6](OPS.md) has the
+     exact `az` commands). If the subscription is disabled (credit gone), switch to the Mac: `ops/launchd/install.sh`,
+     then step 4 in the Mac checkout (its `.env` is already there).
    - `ssh ubuntu@<new-ip>`, `nano /opt/susquatch/.env` (paste from your password manager).
 4. **Restore:** `cd /opt/susquatch && make restore` (newest archive; `ARGS="--list"` to choose, `ARGS="--archive susq-…"` for a
    specific one). It verifies the checksum, moves anything present aside, restores, and starts the stack.
@@ -112,8 +115,8 @@ or the instance is missing from the Oracle console (idle reclaim, capacity event
 | ACTION NEEDED says | Do |
 |---|---|
 | Server silent since … | §4 |
-| Backups paused: R2 would be at N% | Delete old objects in the bucket, or lower `backup_keep_*` in `config/susq.toml`; the next good backup clears it |
-| Backups paused: could not measure the R2 bucket | R2 token expired or revoked → new token in `.env` |
+| Backups paused: the backup bucket would be at N% | Delete old objects in the B2 bucket, or lower `backup_keep_*` in `config/susq.toml`; the next good backup clears it |
+| Backups paused: could not measure the backup bucket | B2 application key expired or revoked → new key in `.env` (`SUSQ_R2_*`) |
 | Rotate soon: <name> in Nd | Rotate the credential, update `.env` / the Cloudflare or GitHub secret, update `SUSQ_EXPIRES_<NAME>` |
 | No process holds the trader lease | `make logs`; usually the trader crashed on start (bad `.env`?) |
 | <service> stayed unhealthy after 3 restarts | `make logs S=<service>`; the watchdog has stopped retrying on purpose |

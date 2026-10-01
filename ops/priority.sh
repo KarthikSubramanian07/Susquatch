@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Election-night CPU priority on the shared 2-OCPU host (Nov 3 18:00 ET -> Nov 4 12:00 ET).
+# Election-night CPU priority on the shared 2-vCPU host (Nov 3 18:00 ET -> Nov 4 12:00 ET).
 #
 #   ops/priority.sh election   # lower non-critical work (ours and the co-tenant's)
 #   ops/priority.sh normal     # put every weight back exactly as recorded
