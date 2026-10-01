@@ -17,6 +17,7 @@ name = "susq-live"
 path = "src/main.rs"
 
 [dependencies]
+rustls.workspace = true
 susq-core.workspace = true
 susq-contracts.workspace = true
 susq-journal.workspace = true
