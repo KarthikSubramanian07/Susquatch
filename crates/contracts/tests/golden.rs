@@ -93,3 +93,18 @@ fn schema_version_is_enforced() {
     assert!(susq_contracts::check_header(Some(&h)).is_err());
     assert!(susq_contracts::check_header(None).is_err());
 }
+
+#[test]
+fn seventeen_digit_doubles_parse_exactly() {
+    // Python's json writes doubles with up to 17 significant digits. serde_json's best-effort float
+    // parser can land on a neighbouring f64 for such inputs, which changes the binary encoding and
+    // breaks the content hash of every real target file (seen on 2026-10-01 with p_yes
+    // 0.9202500000000001). The `float_roundtrip` feature makes the parse exact.
+    let json = r#"{"exchangeId":"1","marketId":"1","pYes":0.9202500000000001,"pLo":0.91269287606054916,"pHi":0.92720516715101342,"source":"t"}"#;
+    let fv: v1::FairValue = from_json(json).expect("parse");
+    // Compare bit patterns against Python's exact doubles rather than literals clippy would round.
+    assert_eq!(fv.p_yes.to_bits(), 0x3FED_72B0_20C4_9BA7);
+    assert_eq!(fv.p_lo.to_bits(), 0x3FED_34C7_B0BF_1C97);
+    assert_eq!(fv.p_hi.to_bits(), 0x3FED_ABAA_2BB3_10ED);
+    assert_ne!(fv.p_yes, 0.92025_f64);
+}
