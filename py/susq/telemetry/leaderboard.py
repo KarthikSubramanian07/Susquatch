@@ -2,6 +2,10 @@
 
 balance ≈ 100,000 + pnl (period=all), multiple = balance / 100,000.
 
+Field size: the leaderboard ranks only players who have traded (`total`), but the prior for the
+winning multiple scales with everyone who can still trade, so `field_size = max(ranked, members)`
+where `members` is the tournament's member count (the bridge writes it to `state/status.json`).
+
 Fitting T (the winning multiple at resolution) from marks is only half-possible: October marks
 are not resolved payoffs. So the fit is a documented blend in log space:
 
@@ -41,7 +45,7 @@ class LeaderboardSummary:
     as_of_ns: int
     snapshots: int
     days_observed: float
-    field_size: int
+    field_size: int  # max(ranked, members): what the threshold prior is fitted on
     my_rank: int | None
     top1_multiple: float
     top_k_multiples: list[float]
@@ -49,6 +53,8 @@ class LeaderboardSummary:
     growth_per_day: float  # of log(top-1 multiple), last 7 days
     jumps: list[JumpEvent]
     field_size_series: list[tuple[int, int]] = field(default_factory=list)
+    ranked: int = 0  # players on the leaderboard (only those who traded)
+    members: int | None = None  # tournament member count, when status.json has it
     threshold: ThresholdFit | None = None
 
     def as_dict(self) -> dict[str, Any]:
@@ -99,9 +105,13 @@ def fit_threshold(
 
 
 def summarize(
-    df: pl.DataFrame, *, lock_ns: int, top_k: int = 10, jump_ratio: float = 1.5
+    df: pl.DataFrame, *, lock_ns: int, top_k: int = 10, jump_ratio: float = 1.5, members: int | None = None
 ) -> LeaderboardSummary | None:
-    """Summarize every recorded leaderboard snapshot (None when there is no data)."""
+    """Summarize every recorded leaderboard snapshot (None when there is no data).
+
+    `members` is the tournament's member count; the field size used for the threshold prior is the
+    larger of it and the ranked total, since the ranked list only counts players who have traded.
+    """
     if df.is_empty():
         return None
     if "my_rank" not in df.columns:
@@ -122,7 +132,8 @@ def summarize(
     mults = latest["multiple"].to_numpy()
     top = sorted(mults, reverse=True)
     logs = np.log(np.maximum(mults[: max(top_k, 10) * 5], 1e-9))
-    field_size = int(per_ts["total"][-1] or len(latest))
+    ranked = int(per_ts["total"][-1] or len(latest))
+    field_size = max(ranked, int(members or 0))
     days_observed = float((ts_ns[-1] - ts_ns[0]) / NS_PER_DAY)
     growth = _growth(ts_ns, per_ts["top1"].to_numpy())
     as_of = int(ts_ns[-1])
@@ -139,6 +150,8 @@ def summarize(
         growth_per_day=growth,
         jumps=detect_jumps(df, ratio=jump_ratio),
         field_size_series=[(int(t), int(n)) for t, n in zip(ts_ns, per_ts["total"].to_list(), strict=True)],
+        ranked=ranked,
+        members=int(members) if members is not None else None,
     )
     summary.threshold = fit_threshold(
         field_size, summary.top1_multiple, growth, days_observed, (lock_ns - as_of) / NS_PER_DAY

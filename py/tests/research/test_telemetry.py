@@ -11,7 +11,7 @@ import pytest
 from susq.contracts import ops_pb2
 from susq.telemetry import crowd, leaderboard
 from susq.telemetry.cupdata import latest_cup_mids, read_leaderboard, read_prices, with_cup_mid
-from susq.telemetry.job import run_telemetry
+from susq.telemetry.job import run_telemetry, tournament_members
 
 T0 = datetime(2026, 10, 2, tzinfo=UTC)
 LOCK_NS = int(datetime(2026, 11, 4, 17, tzinfo=UTC).timestamp() * 1e9)
@@ -58,6 +58,21 @@ def test_leaderboard_summary() -> None:
 
 def test_summary_of_nothing_is_none() -> None:
     assert leaderboard.summarize(pl.DataFrame(), lock_ns=LOCK_NS) is None
+
+
+def test_field_size_is_the_larger_of_ranked_and_members() -> None:
+    ranked = 800 + 10 * 39
+    s = leaderboard.summarize(_leaderboard(), lock_ns=LOCK_NS, members=3641)
+    assert s is not None
+    assert (s.ranked, s.members, s.field_size) == (ranked, 3641, 3641)
+    assert s.threshold is not None
+    assert s.threshold.field_size == 3641
+    # Members below the ranked total (a stale status file) never shrink the field.
+    small = leaderboard.summarize(_leaderboard(), lock_ns=LOCK_NS, members=10)
+    assert small is not None
+    assert (small.ranked, small.members, small.field_size) == (ranked, 10, ranked)
+    doc = s.as_dict()
+    assert {"field_size", "ranked", "members"} <= set(doc)
 
 
 def test_threshold_fit_moves_from_prior_to_evidence() -> None:
@@ -159,7 +174,29 @@ def test_telemetry_job_writes_aggregates(home) -> None:
     _leaderboard(3).write_parquet(cup / "leaderboard" / "lb.parquet")
     doc = run_telemetry(home, home.load_config(), now_ns=int((T0 + timedelta(days=3)).timestamp() * 1e9))
     assert doc["leaderboard"]["field_size"] > 0
+    assert doc["leaderboard"]["members"] is None  # no status.json yet: ranked total only
+    assert doc["leaderboard"]["field_size"] == doc["leaderboard"]["ranked"]
     assert doc["crowd"]["cluster_drift_pts"] == {}  # no market map yet: neutral
     text = (home.research_state / "telemetry.json").read_text()
     assert "user" not in text
     assert "profile" not in text
+
+
+def test_telemetry_job_uses_member_count_from_status(home) -> None:
+    cup = home.data / "cup"
+    (cup / "leaderboard").mkdir(parents=True)
+    _leaderboard(3).write_parquet(cup / "leaderboard" / "lb.parquet")
+    home.status.parent.mkdir(parents=True, exist_ok=True)
+    home.status.write_text(json.dumps({"mode": "paper", "fieldSize": 3641, "equity": 100000.0}))
+    now_ns = int((T0 + timedelta(days=3)).timestamp() * 1e9)
+    doc = run_telemetry(home, home.load_config(), now_ns=now_ns)
+    lb = doc["leaderboard"]
+    assert (lb["ranked"], lb["members"], lb["field_size"]) == (800 + 10 * 11, 3641, 3641)
+    assert lb["threshold"]["field_size"] == 3641
+    assert lb["threshold"]["p50"] > leaderboard.fit_threshold(910, 1.0, 0.0, 0.0, 30).p50
+    # A broken or empty status file falls back to the ranked total, silently.
+    home.status.write_text("{not json")
+    assert run_telemetry(home, home.load_config(), now_ns=now_ns)["leaderboard"]["field_size"] == 910
+    home.status.write_text(json.dumps({"fieldSize": 0}))
+    assert tournament_members(home.status) is None
+    assert tournament_members(home.status.parent / "missing.json") is None
