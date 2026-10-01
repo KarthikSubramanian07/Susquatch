@@ -22,8 +22,16 @@ from susq.contracts import from_json, ops_pb2
 from susq_bridge.config import BridgeConfig, load_config
 from susq_bridge.first_trade import first_trade
 from susq_bridge.lease import Lease
-from susq_bridge.measure_day1 import Day1Report, collateral_confirmed, measure_day1, write_report
+from susq_bridge.measure_day1 import (
+    Day1Report,
+    collateral_confirmed,
+    load_report,
+    measure_day1,
+    write_report,
+)
 from susq_bridge.runtime import Bridge, BridgeError, Loops
+
+log = logging.getLogger(__name__)
 
 app = typer.Typer(no_args_is_help=True, help="Susquatch Oct-1 Python bridge.")
 lease_app = typer.Typer(no_args_is_help=True, help="Inspect or release the single-trader lease.")
@@ -170,12 +178,25 @@ def open_cmd(
         asyncio.run(asyncio.sleep(wait))
 
     async def sequence(bridge: Bridge) -> None:
-        report = await measure_day1(config, bridge=bridge)
-        write_report(report, config.reports_dir)
+        # Day-1 steps are best effort: a slow or erroring platform must never keep the strategies off.
+        report: Day1Report | None = None
+        today = datetime.now(UTC).date().isoformat()
+        done = load_report(config.reports_dir)
+        if done is not None and done.generated_at.startswith(today):
+            typer.echo(f"measure-day1: already ran today ({done.generated_at}); not repeating it on restart")
+        else:
+            try:
+                report = await measure_day1(config, bridge=bridge)
+                write_report(report, config.reports_dir)
+            except Exception:
+                log.exception("measure-day1 failed; trading anyway")
         _apply_collateral(bridge, config, report)
         if bridge.mode == "live":
-            result = await first_trade(bridge)
-            typer.echo(f"first trade: {result.status} ({result.reason})")
+            try:
+                result = await first_trade(bridge)
+                typer.echo(f"first trade: {result.status} ({result.reason})")
+            except Exception:
+                log.exception("first trade failed; trading anyway")
         await bridge.run(Loops())
 
     try:
