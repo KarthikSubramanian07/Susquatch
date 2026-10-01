@@ -81,8 +81,10 @@ services:
       dockerfile: ops/docker/rust.Dockerfile
       args: { GIT_SHA: "${SUSQ_GIT_SHA:-unknown}" }
     # `susq-live run`, plus `--election` on Nov 3-4 (SUSQ_LIVE_FLAGS=--election in .env): the results pollers run
-    # inside rust-live and publish county batches on NATS for the needle.
-    entrypoint: ["/bin/sh", "-c", "exec susq-live run $${SUSQ_LIVE_FLAGS:-}"]
+    # inside rust-live and publish county batches on NATS for the needle. SUSQ_LIVE_CMD=paper-run in .env is the
+    # pre-cutover paper run: it trades against live books on its own lease, intents log and status file while the
+    # bridge keeps trading for real.
+    entrypoint: ["/bin/sh", "-c", "exec susq-live $${SUSQ_LIVE_CMD:-run} $${SUSQ_LIVE_FLAGS:-}"]
     environment:
       <<: *susq-env
       # rust-live refuses non-loopback metrics addresses: /healthz and /metrics stay inside the container
