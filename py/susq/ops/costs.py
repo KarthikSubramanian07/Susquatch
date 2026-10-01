@@ -1,9 +1,11 @@
-"""`make costs`: prove every external service is still $0/month, or fail loudly.
+"""`make costs`: prove every external service still costs the owner $0, or fail loudly.
 
 For each service it prints the free limit, the usage it can measure (live APIs when credentials exist, the
 local ops records otherwise), and the headroom. Where nothing is measurable it prints the budget implied
 by our own configuration, so that a config change that would blow a free tier fails here before it
-deploys. The things only a human can confirm (above all, that Oracle is **not** on Pay-As-You-Go) are
+deploys. The server is the one thing not on a free tier: an Azure for Students VM paid from the one-time
+$100 credit, with no card on file, so the guard is that the VM stays the size the runway was planned for.
+The things only a human can confirm (above all, that Azure is **not** upgraded to Pay-As-You-Go) are
 printed as a checklist every run.
 
 Exit status: 0 = everything provably free, 1 = something costs money or would exceed a free limit.
@@ -30,25 +32,27 @@ import httpx
 from susq.ops.common import OpsPaths, load_config, ops_setting, susq_home, utc_now
 
 # Free-tier limits (checked 2026-09-28; OPS_FREE_AUTONOMY.md §A and each vendor's pricing page).
-ORACLE_A1_OCPU = 2
-ORACLE_A1_MEM_GB = 12
-ORACLE_BLOCK_GB = 200
+# Server: Azure for Students, Standard_B2pls_v2 (checked 2026-09-30). ~$34/month of the $100 credit
+# (VM $0.04/h + static IP $0.005/h + 30 GB StandardSSD), so the credit lasts past Nov 30 at this size only.
+AZURE_VM_SIZE = "Standard_B2pls_v2"
+AZURE_VCPUS = 2
+AZURE_MEM_GB = 4
+AZURE_DISK_GB = 64
 GH_ACTIONS_MIN_PER_MONTH = 2000
 CF_REQUESTS_PER_DAY = 100_000  # Workers + Pages Functions, shared
 CF_KV_WRITES_PER_DAY = 1_000
 CF_KV_READS_PER_DAY = 100_000
-CF_R2_BYTES = 10_000_000_000
-CF_R2_CLASS_A_PER_MONTH = 1_000_000
+B2_FREE_BYTES = 10_000_000_000  # Backblaze B2: 10 GB free, no card, uploads stop at the cap
 CLAUDE_ROUTINES_PRO_PER_DAY = 5
 DASHBOARD_REFRESH_S = 20  # dashboard/public/app.js polls /api/status at this cadence while open
 WARN_FRAC = 0.8
 
 HUMAN_CHECKLIST = (
-    "Oracle Cloud account is Always Free and NOT upgraded to Pay-As-You-Go "
-    "(Billing -> Upgrade and Manage Payment shows 'Free Tier').",
+    "Azure subscription is Azure for Students (no card, credit-funded); no Pay-As-You-Go upgrade "
+    "(portal -> Subscriptions shows 'Azure for Students' and the remaining credit).",
     "Claude subscription: 'extra usage' is OFF (claude.ai -> Settings -> Usage).",
-    "Cloudflare: account is on the Workers Free plan and the R2 bucket uses Standard storage "
-    "(Infrequent Access is not free).",
+    "Cloudflare: account is on the Workers Free plan (no card on file).",
+    "Backblaze B2: no card on file, so the 10 GB free tier stops uploads instead of billing.",
     "GitHub: Actions/Codespaces spending limit is $0 (Settings -> Billing and licensing -> Budgets).",
     "Super Market deposits: none needed (play money). Real-money venues: ACH only, never debit card.",
 )
@@ -73,7 +77,7 @@ def _frac_status(frac: float) -> str:
     return "ok"
 
 
-# ── Oracle ─────────────────────────────────────────────────────────────────────
+# ── Server (Azure for Students) ────────────────────────────────────────────────
 
 
 def _mem_gb() -> float | None:
@@ -86,7 +90,10 @@ def _mem_gb() -> float | None:
     return None
 
 
-def oracle_row(
+HOST_SERVICE = "Azure for Students B2pls_v2 (paid from $100 credit, no card)"
+
+
+def host_row(
     *,
     system: str,
     machine: str,
@@ -94,14 +101,15 @@ def oracle_row(
     mem_gb: float | None,
     disk_gb: float | None,
 ) -> Row:
-    limit = f"A1 {ORACLE_A1_OCPU} OCPU / {ORACLE_A1_MEM_GB} GB, {ORACLE_BLOCK_GB} GB block"
+    """The server's shape. Anything bigger than B2pls_v2 burns the credit faster than the plan allows."""
+    limit = f"{AZURE_VCPUS} vCPU / {AZURE_MEM_GB} GB, <= {AZURE_DISK_GB} GB disk"
     if system != "Linux" or machine not in {"aarch64", "arm64"}:
-        return Row("Oracle Always Free A1", limit, f"not on the server ({system}/{machine})", "unmeasured")
+        return Row(HOST_SERVICE, limit, f"not on the server ({system}/{machine})", "unmeasured")
     usage = f"{cpus} vCPU / {mem_gb:.1f} GB RAM / {disk_gb:.0f} GB disk" if mem_gb and disk_gb else "?"
-    over = (cpus or 0) > ORACLE_A1_OCPU or (mem_gb or 0) > ORACLE_A1_MEM_GB + 0.5
-    over |= (disk_gb or 0) > ORACLE_BLOCK_GB
-    note = "shape exceeds Always Free: this instance is billable" if over else ""
-    return Row("Oracle Always Free A1", limit, usage, "fail" if over else "ok", note)
+    over = (cpus or 0) > AZURE_VCPUS or (mem_gb or 0) > AZURE_MEM_GB + 0.5
+    over |= (disk_gb or 0) > AZURE_DISK_GB
+    note = f"bigger than {AZURE_VM_SIZE}: the $100 credit runs out before Nov 30" if over else ""
+    return Row(HOST_SERVICE, limit, usage, "fail" if over else "ok", note)
 
 
 # ── GitHub ─────────────────────────────────────────────────────────────────────
@@ -171,8 +179,6 @@ def cloudflare_rows(
     design: Design,
     *,
     kv_writes_today: int | None,
-    r2_bytes: int | None,
-    r2_source: str,
     paid_subscriptions: list[str] | None,
     billing_error: str = "",
 ) -> list[Row]:
@@ -207,19 +213,6 @@ def cloudflare_rows(
     rows.append(
         Row("Cloudflare Pages", "500 builds/month, unlimited static", "direct upload, 0 builds", "ok")
     )
-    if r2_bytes is None:
-        rows.append(Row("Cloudflare R2", "10 GB-month, 1M class A/month", "no backup yet", "unmeasured"))
-    else:
-        frac = r2_bytes / CF_R2_BYTES
-        rows.append(
-            Row(
-                "Cloudflare R2",
-                "10 GB-month, 1M class A/month",
-                f"{r2_bytes / 1e9:.2f} GB ({frac:.0%}) via {r2_source}; ~100 class A/night",
-                _frac_status(frac),
-                "backup.sh refuses uploads at 80%",
-            )
-        )
     if paid_subscriptions is None:
         rows.append(
             Row(
@@ -256,8 +249,50 @@ def fetch_cf_paid_subscriptions(client: httpx.Client, account: str, token: str) 
     return paid
 
 
-def r2_bytes_live(remote: str, runner: Callable[..., subprocess.CompletedProcess[str]]) -> int | None:
-    """`rclone size --json <remote>` when rclone and R2 credentials are present."""
+# ── Backups (Backblaze B2) ─────────────────────────────────────────────────────
+
+B2_SERVICE = "Backblaze B2 (backups)"
+B2_LIMIT = "10 GB free, no card (stops at the cap)"
+
+
+def backup_row(bucket_bytes: int | None, source: str) -> Row:
+    if bucket_bytes is None:
+        return Row(B2_SERVICE, B2_LIMIT, "no backup yet", "unmeasured")
+    frac = bucket_bytes / B2_FREE_BYTES
+    return Row(
+        B2_SERVICE,
+        B2_LIMIT,
+        f"{bucket_bytes / 1e9:.2f} GB ({frac:.0%}) via {source}; transactions free",
+        _frac_status(frac),
+        "backup.sh refuses uploads at 80%",
+    )
+
+
+def backup_remote(env: dict[str, str]) -> tuple[str, dict[str, str]] | None:
+    """The rclone remote `backup_remote_init` in ops/lib.sh builds: any S3 bucket, configured by the
+    `SUSQ_R2_*` variables (the names predate the move to Backblaze B2). None without credentials."""
+    if override := env.get("SUSQ_BACKUP_REMOTE"):
+        return override, {}
+    if not (env.get("SUSQ_R2_ACCESS_KEY_ID") and env.get("SUSQ_R2_SECRET_ACCESS_KEY")):
+        return None
+    endpoint = env.get("SUSQ_R2_ENDPOINT", "")
+    if not endpoint:
+        if not env.get("CLOUDFLARE_ACCOUNT_ID"):
+            return None
+        endpoint = f"https://{env['CLOUDFLARE_ACCOUNT_ID']}.r2.cloudflarestorage.com"
+    rclone_env = {
+        "RCLONE_CONFIG_SUSQR2_TYPE": "s3",
+        "RCLONE_CONFIG_SUSQR2_PROVIDER": env.get("SUSQ_R2_PROVIDER") or "Cloudflare",
+        "RCLONE_CONFIG_SUSQR2_ACCESS_KEY_ID": env["SUSQ_R2_ACCESS_KEY_ID"],
+        "RCLONE_CONFIG_SUSQR2_SECRET_ACCESS_KEY": env["SUSQ_R2_SECRET_ACCESS_KEY"],
+        "RCLONE_CONFIG_SUSQR2_ENDPOINT": endpoint,
+        "RCLONE_CONFIG_SUSQR2_NO_CHECK_BUCKET": "true",
+    }
+    return f"susqr2:{env.get('SUSQ_R2_BUCKET') or 'susquatch-backups'}", rclone_env
+
+
+def bucket_bytes_live(remote: str, runner: Callable[..., subprocess.CompletedProcess[str]]) -> int | None:
+    """`rclone size --json <remote>` when rclone and bucket credentials are present."""
     if not shutil.which("rclone"):
         return None
     try:
@@ -319,7 +354,7 @@ def audit(home: Path, env: dict[str, str], client: httpx.Client, *, now: datetim
 
     disk = shutil.disk_usage("/").total / 1e9
     rows.append(
-        oracle_row(
+        host_row(
             system=platform.system(),
             machine=platform.machine(),
             cpus=os.cpu_count(),
@@ -341,23 +376,16 @@ def audit(home: Path, env: dict[str, str], client: httpx.Client, *, now: datetim
     push = _read_json(paths.push_record) or {}
     kv_today = int(push["count"]) if push.get("date") == now.strftime("%Y-%m-%d") else None
     backup = _read_json(paths.backup_record) or {}
-    r2_bytes, r2_source = None, ""
-    if env.get("SUSQ_R2_ACCESS_KEY_ID") and env.get("CLOUDFLARE_ACCOUNT_ID"):
-        remote = f"susqr2:{env.get('SUSQ_R2_BUCKET', 'susquatch-backups')}"
-        live_env = {
-            "RCLONE_CONFIG_SUSQR2_TYPE": "s3",
-            "RCLONE_CONFIG_SUSQR2_PROVIDER": "Cloudflare",
-            "RCLONE_CONFIG_SUSQR2_ACCESS_KEY_ID": env.get("SUSQ_R2_ACCESS_KEY_ID", ""),
-            "RCLONE_CONFIG_SUSQR2_SECRET_ACCESS_KEY": env.get("SUSQ_R2_SECRET_ACCESS_KEY", ""),
-            "RCLONE_CONFIG_SUSQR2_ENDPOINT": f"https://{env['CLOUDFLARE_ACCOUNT_ID']}.r2.cloudflarestorage.com",
-        }
+    bucket_bytes, bucket_source = None, ""
+    if (live := backup_remote(env)) is not None:
+        remote, live_env = live
 
         def runner(argv: list[str], **kw: Any) -> subprocess.CompletedProcess[str]:
             return subprocess.run(argv, env={**os.environ, **live_env}, **kw)  # noqa: S603
 
-        r2_bytes, r2_source = r2_bytes_live(remote, runner), "rclone size"
-    if r2_bytes is None and backup.get("bucket_bytes") is not None:
-        r2_bytes, r2_source = int(backup["bucket_bytes"]), "last backup record"
+        bucket_bytes, bucket_source = bucket_bytes_live(remote, runner), "rclone size"
+    if bucket_bytes is None and backup.get("bucket_bytes") is not None:
+        bucket_bytes, bucket_source = int(backup["bucket_bytes"]), "last backup record"
 
     paid: list[str] | None = None
     billing_error = ""
@@ -370,11 +398,10 @@ def audit(home: Path, env: dict[str, str], client: httpx.Client, *, now: datetim
     rows += cloudflare_rows(
         design_budget(config),
         kv_writes_today=kv_today,
-        r2_bytes=r2_bytes,
-        r2_source=r2_source,
         paid_subscriptions=paid,
         billing_error=billing_error,
     )
+    rows.append(backup_row(bucket_bytes, bucket_source))
     rows.append(claude_row())
     rows.append(
         Row("Data sources", "free/public only", "platform API, Kalshi/Polymarket public, SoS feeds", "ok")
