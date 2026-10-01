@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Fresh Ubuntu 24.04 aarch64 (Oracle Always Free A1) -> a Susquatch host. Idempotent: safe to re-run.
+# Fresh Ubuntu 24.04 aarch64 (Azure B2pls_v2 today, Oracle A1 also works) -> a Susquatch host. Idempotent: safe to re-run.
 #
 #   sudo ops/install.sh                   # from a checkout (it installs itself where it is)
 #   sudo SUSQ_REPO_URL=... ops/install.sh # or let it clone into $SUSQ_HOME (cloud-init does this)
@@ -7,7 +7,7 @@
 # What it does, in order:
 #   packages (git, zstd, jq, rclone, python3), Docker Engine + compose/buildx plugins from Docker's repo,
 #   chrony (clock), ufw (deny inbound except SSH), unattended security upgrades WITHOUT auto-reboot,
-#   a swapfile (native Rust builds on 12 GB), the checkout + .env placeholder (0600), and the systemd units:
+#   a swapfile (native Rust builds on a 4 GB VM), the checkout + .env placeholder (0600), and the systemd units:
 #   susquatch.service (the stack), nightly backup, daily self-check, election-night priority on/off.
 #
 # Inputs (env): SUSQ_HOME=/opt/susquatch  SUSQ_USER=ubuntu  SUSQ_REPO_URL  SUSQ_BRANCH=main
@@ -23,11 +23,12 @@ SUSQ_USER="${SUSQ_USER:-ubuntu}"
 SUSQ_BRANCH="${SUSQ_BRANCH:-main}"
 SUSQ_REPO_URL="${SUSQ_REPO_URL:-git@github.com:KarthikSubramanian07/Susquatch.git}"
 export DEBIAN_FRONTEND=noninteractive
+export HOME="${HOME:-/root}"   # cloud-init's runcmd has no HOME, and `git config --global` needs one
 step() { printf '\n== %s\n' "$*"; }
 
 step "base packages"
 apt-get update -q
-apt-get install -y -q ca-certificates curl git jq zstd rclone python3 chrony ufw unattended-upgrades
+apt-get install -y -q ca-certificates curl git jq make zstd rclone python3 chrony ufw unattended-upgrades
 
 step "docker engine (official repo, arm64)"
 if ! command -v docker >/dev/null || ! docker compose version >/dev/null 2>&1; then
@@ -69,7 +70,7 @@ printf '%s\n' 'APT::Periodic::Update-Package-Lists "1";' 'APT::Periodic::Unatten
 printf '%s\n' 'Unattended-Upgrade::Automatic-Reboot "false";' > /etc/apt/apt.conf.d/52susquatch-no-reboot
 systemctl enable --now unattended-upgrades
 
-step "swap (4 GB; native Rust/C++ builds on 12 GB RAM)"
+step "swap (4 GB; native Rust/C++ builds on a 4 GB VM)"
 if ! swapon --show | grep -q /swapfile; then
   [ -f /swapfile ] || { fallocate -l 4G /swapfile && chmod 600 /swapfile && mkswap /swapfile >/dev/null; }
   swapon /swapfile
