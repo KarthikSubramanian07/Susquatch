@@ -132,6 +132,29 @@ class Lease:
                     await result
                 return
 
+    async def hold(
+        self,
+        renew_s: float,
+        on_lost: Callable[[], Awaitable[None] | None],
+        on_regained: Callable[[], Awaitable[None] | None] | None = None,
+    ) -> None:
+        """Renew every ``renew_s`` seconds forever. On a lapse call ``on_lost`` once, then keep trying to
+        take the lease back (``acquire`` only succeeds once it is free or expired, so a live holder is
+        never displaced) and call ``on_regained`` when we have it again."""
+        holding = self.held()
+        while True:
+            await asyncio.sleep(renew_s)
+            if self.renew():
+                holding = True
+                continue
+            if holding:
+                holding = False
+                await _call(on_lost)
+            if self.acquire():
+                holding = True
+                if on_regained is not None:
+                    await _call(on_regained)
+
     def _is_ours(self, lease: ops_pb2.TraderLease) -> bool:
         return lease.holder == self._holder and lease.host == self._host and lease.pid == self._pid
 
@@ -147,3 +170,9 @@ class Lease:
             yield
         finally:
             os.close(fd)
+
+
+async def _call(fn: Callable[[], Awaitable[None] | None]) -> None:
+    result = fn()
+    if inspect.isawaitable(result):
+        await result

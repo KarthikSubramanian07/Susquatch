@@ -185,6 +185,9 @@ class Bridge:
     async def start(self) -> bool:
         """Load state and reconcile before acting. Returns True if we hold the trader lease."""
         trader = self.lease.acquire()
+        # Renew from the moment we take it: the open sequence (load, reconcile, measure-day1) can outlast
+        # the 30 s TTL when the platform is slow, and a lapsed lease used to stay lost for good.
+        self._hold_lease()
         if not trader:
             current = self.lease.read()
             self.events.append(f"read-only: lease held by {current.holder if current else '?'}")
@@ -265,15 +268,31 @@ class Bridge:
             await asyncio.sleep(wait)
         await self.gateway.cancel_all("lock: last_order_utc reached")
 
+    def _hold_lease(self) -> None:
+        if any(task.get_name() == "lease" and not task.done() for task in self.tasks):
+            return
+        self._spawn(
+            self.lease.hold(self.config.lease_renew_s, self._on_lease_lost, self._on_lease_regained), "lease"
+        )
+
     async def _on_lease_lost(self) -> None:
         self.journal.event("lease_lost", {})
         self.events.append("lease lost: trading paused (gateway refuses writes)")
+
+    async def _on_lease_regained(self) -> None:
+        self.journal.event("lease_regained", {})
+        self.events.append("lease regained: trading resumed")
+        try:
+            await self.gateway.resume_intents()
+            await self.oms.reconcile()
+        except Exception:
+            log.exception("resync after regaining the lease failed; the reconcile loop retries")
 
     async def run(self, loops: Loops | None = None) -> None:
         """Run until cancelled. Strategies only act while this process holds the lease."""
         loops = loops or Loops()
         cfg = self.config
-        self._spawn(self.lease.keep_alive(cfg.lease_renew_s, self._on_lease_lost), "lease")
+        self._hold_lease()
         self._spawn(self._watch_kill(), "kill")
         self._spawn(self._lock_gate(), "lock-gate")
         self._spawn(self.oms.run(cfg.oms.reconcile_interval_s, cfg.fair.stale_after_s), "reconcile")
