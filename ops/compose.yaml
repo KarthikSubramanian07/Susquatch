@@ -97,7 +97,7 @@ services:
       interval: 15s
       timeout: 3s
       retries: 3
-      start_period: 60s   # reconcile from REST before reporting healthy
+      start_period: 300s  # /healthz answers during the REST bootstrap, which can take minutes under the rate budget
     stop_grace_period: 30s # SIGTERM -> cancel-all -> exit
     cpu_shares: 4096
     mem_limit: 1g

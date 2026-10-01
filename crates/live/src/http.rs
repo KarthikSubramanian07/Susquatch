@@ -17,6 +17,8 @@ pub struct Liveness {
     pub now_ns: i64,
     /// A step older than this is "stuck".
     pub max_step_age_ns: i64,
+    /// First contact (REST bootstrap) still running: healthy by definition, no step has happened yet.
+    pub bootstrapping: bool,
     pub body: Value,
 }
 
@@ -30,7 +32,7 @@ async fn healthz(State(s): State<AppState>) -> impl IntoResponse {
     let l = s.liveness.lock().clone();
     let now = susq_core::Clock::now_ns(&susq_core::SystemClock).max(l.now_ns);
     let age = now - l.last_step_ns;
-    let ok = l.last_step_ns > 0 && age <= l.max_step_age_ns;
+    let ok = l.bootstrapping || (l.last_step_ns > 0 && age <= l.max_step_age_ns);
     let status = if ok {
         StatusCode::OK
     } else {
@@ -38,7 +40,12 @@ async fn healthz(State(s): State<AppState>) -> impl IntoResponse {
     };
     (
         status,
-        Json(json!({ "ok": ok, "last_step_age_ms": age / 1_000_000, "detail": l.body })),
+        Json(json!({
+            "ok": ok,
+            "bootstrapping": l.bootstrapping,
+            "last_step_age_ms": age / 1_000_000,
+            "detail": l.body
+        })),
     )
 }
 
@@ -106,6 +113,12 @@ mod tests {
             out
         };
         assert!(get("/healthz").await.starts_with("HTTP/1.1 503"), "no step yet");
+        live.lock().bootstrapping = true;
+        assert!(
+            get("/healthz").await.starts_with("HTTP/1.1 200"),
+            "healthy while bootstrapping"
+        );
+        live.lock().bootstrapping = false;
         {
             let mut l = live.lock();
             l.last_step_ns = susq_core::Clock::now_ns(&susq_core::SystemClock);
