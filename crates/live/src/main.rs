@@ -15,7 +15,7 @@ async fn main() -> std::process::ExitCode {
         Command::PaperRun(args) => commands::run(&cli, args, true).await,
         Command::Smoke { exchange } => commands::smoke(&cli, exchange).await,
         Command::CancelAll { reason } => commands::cancel_all(&cli, reason).await,
-        Command::Lease => commands::lease(&cli),
+        Command::Lease { paper } => commands::lease(&cli, *paper),
     };
     match result {
         Ok(()) => std::process::ExitCode::SUCCESS,

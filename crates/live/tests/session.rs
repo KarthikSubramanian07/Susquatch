@@ -303,17 +303,19 @@ async fn kill_file_mid_run_cancels_everything_and_freezes() {
     assert!(status::snapshot(&s.engine, s.clock.now_ns(), 2).killed);
 }
 
+/// A paper session only competes for the paper lease: another paper process holding it makes
+/// this one read-only.
 #[tokio::test]
-async fn a_lease_held_by_the_bridge_prevents_any_write() {
+async fn a_lease_held_by_another_paper_process_prevents_any_write() {
     let bridge_clock = Arc::new(Mutex::default());
     let bc = bridge_clock.clone();
     let mut s = session(move |home, clock| {
         write_targets(home, clock.now_ns(), "targets-1.json");
         let bridge = Lease::new(
             LeaseConfig {
-                path: home.join("ops/state/trader.lease"),
+                path: home.join("ops/state/trader.paper.lease"),
                 ttl: Duration::from_secs(30),
-                holder: "bridge".into(),
+                holder: "paper-peer".into(),
                 host: "test".into(),
                 pid: 4242,
             },
@@ -342,6 +344,48 @@ async fn a_lease_held_by_the_bridge_prevents_any_write() {
     assert_eq!(s.paper_position("1").await, 0);
     let lease_health = s.engine.world.health.get("lease").map(|h| h.state.clone());
     assert_eq!(lease_health.as_deref(), Some("degraded"));
+}
+
+/// The live bridge's lease is not ours to take in paper mode: a paper session trades on its own
+/// lease and never touches `ops/state/trader.lease`, even once the bridge's lease has lapsed.
+#[tokio::test]
+async fn paper_mode_never_takes_the_live_lease() {
+    let live_path = |home: &Path| home.join("ops/state/trader.lease");
+    let mut s = session(move |home, clock| {
+        write_targets(home, clock.now_ns(), "targets-1.json");
+        let bridge = Lease::new(
+            LeaseConfig {
+                path: live_path(home),
+                ttl: Duration::from_secs(30),
+                holder: "bridge".into(),
+                host: "test".into(),
+                pid: 4242,
+            },
+            Arc::new(clock.clone()),
+        );
+        assert!(matches!(
+            bridge.acquire().expect("bridge lease"),
+            LeaseStatus::Held(_)
+        ));
+    })
+    .await;
+    // Well past the bridge's 30 s TTL without a renewal: the live lease has lapsed.
+    for _ in 0..10 {
+        s.tick(5).await;
+    }
+    assert!(s.engine.gateway().lease().holds(), "paper lease is ours");
+    let lease_health = s.engine.world.health.get("lease").map(|h| h.state.clone());
+    assert_eq!(lease_health.as_deref(), Some("ok"));
+    assert!(
+        s.engine.gateway().oms().lock().all().count() > 0,
+        "paper trading proceeds on its own lease"
+    );
+    let on_disk: v1::TraderLease = susq_contracts::from_json(
+        &std::fs::read_to_string(live_path(s.home.path())).expect("live lease file"),
+    )
+    .expect("lease json");
+    assert_eq!(on_disk.holder, "bridge", "the live lease file was left alone");
+    assert!(s.home.path().join("ops/state/trader.paper.lease").exists());
 }
 
 #[tokio::test]

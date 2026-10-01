@@ -40,7 +40,11 @@ pub enum Command {
         reason: String,
     },
     /// Print the trader lease on disk.
-    Lease,
+    Lease {
+        /// Print the paper-mode lease (`<lease.path>` with a `.paper` suffix) instead.
+        #[arg(long)]
+        paper: bool,
+    },
 }
 
 /// Options of the trading loop.
