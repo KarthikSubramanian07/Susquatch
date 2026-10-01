@@ -1,11 +1,13 @@
 # Operations: the $0/month layer
 
-`ops` · `docker-compose` · `oracle-always-free` · `cloudflare-pages` · `workers-kv` · `r2` · `cron-worker` · `dead-man-switch`
+`ops` · `docker-compose` · `azure-for-students` · `cloudflare-pages` · `workers-kv` · `backblaze-b2` · `cron-worker` · `dead-man-switch`
 
-Susquatch runs unattended on a free ARM box, reports to nobody in real time, and costs nothing. This document is how.
+Susquatch runs unattended on a small ARM box, reports to nobody in real time, and costs its owner nothing: no card is
+on file anywhere. This document is how.
 Three rules shape every decision below ([`brief/OPS_FREE_AUTONOMY.md`](../brief/OPS_FREE_AUTONOMY.md) is the authority):
 
-1. **$0/month.** Every service is on a free tier with headroom, and `make costs` proves it or fails.
+1. **$0 out of pocket, no card anywhere.** Every service is on a free tier with headroom, except the server, which is
+   paid from the one-time Azure for Students credit. `make costs` proves it or fails.
 2. **No alerts.** One daily summary, plus a dashboard you choose to open. Anything that "would have paged" becomes an
    **ACTION NEEDED** line in that summary.
 3. **Fail safe, heal yourself.** Restart what died, restart what hung, refuse what's stale, cancel at the lock. A dead
@@ -22,21 +24,23 @@ Three rules shape every decision below ([`brief/OPS_FREE_AUTONOMY.md`](../brief/
 ## 1. The shape of it
 
 ```
- ┌──────────────── Oracle Always Free A1 (aarch64, 2 OCPU / 12 GB), or the Mac fallback via colima ──────────────┐
+ ┌──────────────── Azure for Students B2pls_v2 (aarch64, 2 vCPU / 4 GB), or the Mac fallback via colima ─────────┐
  │  systemd: susquatch.service ── docker compose (ops/compose.yaml) ─────────────────────────────────────────────┐ │
  │    nats · python-scheduler (research) · bridge | rust-live · needle ← research, trading, models              │ │
  │    status-pusher ──── state/status.json ─▶ POST /api/push  (every 150 s, 120 s on election night)            │ │
  │    kill-poller   ◀─── GET /api/kill (every 10 s) ─▶ writes ops/KILL (never deletes it)                       │ │
  │    watchdog ── docker-proxy (list + restart only) ; post-lock ops/KILL at 16:55Z Nov 4                       │ │
- │  timers: backup 07:30Z → R2 · selfcheck 13:30Z · priority on 23:00Z Nov 3 / off 17:00Z Nov 4                │ │
+ │  timers: backup 07:30Z → B2 · selfcheck 13:30Z · priority on 23:00Z Nov 3 / off 17:00Z Nov 4                │ │
  └──────────────────────────────────────────────────────────┬────────────────────────────────────────────────────┘
-                                                            │ HTTPS out only (ufw: nothing in but SSH)
+                                                            │ HTTPS out only (Azure NSG + ufw: nothing in but SSH from one IP)
  ┌──────────────────────── Cloudflare (free) ───────────────▼────────────────────────────────────────────────────┐
  │  Pages "susquatch" → https://susquatch.pages.dev   login page + session cookie, noindex                         │
  │     /api/push (server) · /api/status · /api/kill · /api/summary        KV "SUSQ_KV": status · kill · summary:* │
  │  Worker "susquatch-summary"  cron 0 14 * * *  → summary:latest (dashboard) + comment on the pinned           │
  │     "Daily summary" issue in the private susquatch-reports repo (GitHub emails you)                           │
- │  R2 bucket ← nightly tar.zst snapshots (80 % quota guard)                                                     │
+ └───────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+ ┌──────────────── Backblaze B2 (free 10 GB, no card: uploads stop at the cap) ──────────────────────────────────┐
+ │  private bucket, key scoped to it ← nightly tar.zst snapshots (80 % quota guard)                              │
  └───────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -62,6 +66,10 @@ Every piece is in the repo: [`ops/cloud-init.yaml`](../ops/cloud-init.yaml), [`o
 Pick profiles with `COMPOSE_PROFILES` in `.env` (`bridge` on Oct 1; `rust` after the cutover; add `election` for Nov 3–4).
 The research scheduler always runs.
 
+The memory column is a ceiling per container, not a reservation, so it can add up to more than the server has. On the
+4 GB B2pls_v2 the whole stack measures about 400 MB and near-zero CPU, which also suits a burstable VM (30 % baseline,
+credits banked while idle). install.sh adds 4 GB of swap for the first native image builds.
+
 **The bridge reads `.env` itself** (a read-only mount, not `env_file`), so it starts the moment `SUSQ_API_KEY` lands
 there: no restart needed. Edit `.env` in place (`nano` does); an editor that saves by replacing the file isn't seen
 through a single-file mount, in which case `docker compose … restart bridge`.
@@ -81,26 +89,28 @@ by [`susq.ops.healthcheck`](../py/susq/ops/healthcheck.py)). Compose marks it un
 it (max 3 per hour, then an ACTION NEEDED item instead of a crash loop). A process that *exits* is restarted by
 Compose itself (`restart: unless-stopped`).
 
-## 3. What it costs: nothing (`make costs`)
+## 3. What it costs you: nothing (`make costs`)
 
 | Service | Free limit | Our design budget | Guard |
 |---|---|---|---|
-| Oracle A1 | 2 OCPU / 12 GB / 200 GB block, Always Free | exactly that shape | `make costs` fails on a bigger shape; **Pay-As-You-Go is a human check** |
+| Azure for Students VM | one-time $100 credit, no card; when it runs out the subscription is disabled, never billed | `Standard_B2pls_v2` + static IP + 30 GB StandardSSD ≈ $34/month: ≈ $41 to the Nov 4 lock, ≈ $72 to Nov 30 | `make costs` fails on anything bigger than B2pls_v2; **no Pay-As-You-Go upgrade is a human check** |
 | GitHub Actions (private) | 2,000 min/month | ~2 min per dashboard deploy + CI | billing summary API: any `netAmount > 0` fails |
 | Workers + Pages Functions | 100,000 requests/day | ~13,700/day (8,640 kill polls, ≤720 pushes, one open tab) | computed from config every run |
 | Workers KV writes | 1,000/day | ≤ 732/day (push budget 800 hard-capped at 720 by cadence, +2 summary, +kill) | pusher's daily budget; Functions refuse pushes < 100 s apart |
 | Workers KV reads | 100,000/day | ~18,000/day | |
 | Pages | 500 builds/month | 0 (direct upload) | |
-| R2 | 10 GB-month, 1 M class-A ops | a few hundred MB; ~100 ops/night | `backup.sh` refuses at 80 % (or when it can't measure) |
+| Backblaze B2 | 10 GB stored, free forever, no card: uploads stop at the cap instead of billing; transactions free | a few hundred MB | `backup.sh` refuses at 80 % (or when it can't measure) |
 | Claude routines | Pro 5/day | ~1.1/day (daily + weekly) | extra usage OFF (human check) |
 
 `make costs` prints this with live numbers wherever a free API can see them (GitHub billing with a `Plan: read` token,
 Cloudflare subscriptions with a `Billing: read` token, `rclone size`, the pusher's counter). It degrades to
-"unmeasured" without credentials, and **exits 1 if anything would cost money**. It always ends with the human checklist:
+"unmeasured" without credentials, and **exits 1 if anything would cost money** (for the server: if it is bigger than
+the credit was planned for). It always ends with the human checklist:
 
-- [ ] Oracle is **Always Free, never upgraded to Pay-As-You-Go**
+- [ ] Azure subscription is **Azure for Students** (no card, credit-funded); **no Pay-As-You-Go upgrade**
 - [ ] Claude "extra usage" is OFF
-- [ ] Cloudflare is on the Workers Free plan; the R2 bucket uses Standard storage
+- [ ] Cloudflare is on the Workers Free plan (no card on file)
+- [ ] Backblaze B2 has no card on file, so the 10 GB cap stops uploads instead of billing
 - [ ] GitHub spending limit is $0
 
 ## 4. Secrets: where each one lives
@@ -110,7 +120,7 @@ Cloudflare subscriptions with a `Billing: read` token, `rclone size`, the pusher
 | `SUSQ_API_KEY` | server `.env` | you | Super Market key, `read` + `trade` |
 | `SUSQ_STATUS_PUSH_TOKEN` | server `.env` **and** Pages secret (same value) | you | ≥ 32 random chars (`openssl rand -base64 36`). Opens only `/api/push` and `/api/kill` |
 | `DASHBOARD_PASSWORD` | Pages secret | you | ≥ 16 chars; the login page's password. Also accepted as HTTP Basic (any username) by curl and the tests. Sessions are HMAC cookies keyed from it, so changing it signs every browser out |
-| `SUSQ_R2_ACCESS_KEY_ID` / `SUSQ_R2_SECRET_ACCESS_KEY` | server `.env` | you | S3 key for the backup bucket, **read & write, this bucket only**. Backblaze B2 (10 GB free, no card) is in use: set `SUSQ_R2_ENDPOINT=https://s3.<region>.backblazeb2.com` and `SUSQ_R2_PROVIDER=Other` |
+| `SUSQ_R2_ACCESS_KEY_ID` / `SUSQ_R2_SECRET_ACCESS_KEY` | server `.env` | you | Backblaze B2 application key, **read & write, restricted to the one private bucket**. With it: `SUSQ_R2_ENDPOINT=https://s3.<region>.backblazeb2.com`, `SUSQ_R2_PROVIDER=Other`, `SUSQ_R2_BUCKET`. The `R2` in the names is history: they configure any S3 bucket, and without an endpoint they fall back to Cloudflare R2 via `CLOUDFLARE_ACCOUNT_ID` |
 | `GITHUB_TOKEN` (Worker) | Worker secret | you / CI | fine-grained PAT on `susquatch-reports` only: **Issues: read & write**, optional **Contents: read** (weekly link) |
 | `CLOUDFLARE_API_TOKEN` | GitHub Actions secret | you | Account → **Cloudflare Pages: Edit**, **Workers Scripts: Edit**, **Workers KV Storage: Edit** |
 | `CLOUDFLARE_ACCOUNT_ID`, `SUSQ_KV_NAMESPACE_ID` | GitHub Actions secrets (or variable) | you | not secret, but account-specific |
@@ -126,8 +136,9 @@ and CI. KV namespace ids are placeholders that CI substitutes.
 cd dashboard && npm install
 npx wrangler login                                          # or export CLOUDFLARE_API_TOKEN
 npx wrangler kv namespace create SUSQ_KV                    # note the id
-npx wrangler r2 bucket create susquatch-backups             # enable R2 on the account first (free, card on file)
 ```
+
+Backups don't use Cloudflare: R2 needs a card on file, so the bucket lives on Backblaze B2 (§7).
 
 1. **GitHub → Settings → Secrets → Actions:** `CLOUDFLARE_API_TOKEN` (permissions above), `CLOUDFLARE_ACCOUNT_ID`,
    `SUSQ_KV_NAMESPACE_ID`. Optional, and synced on every deploy: `DASHBOARD_PASSWORD`, `SUSQ_STATUS_PUSH_TOKEN`,
@@ -140,15 +151,41 @@ npx wrangler r2 bucket create susquatch-backups             # enable R2 on the a
 
 ## 6. Bringing it up
 
-### Oracle Always Free (primary)
+### Azure for Students (primary)
 
-1. Create `VM.Standard.A1.Flex`, **2 OCPU / 12 GB**, Ubuntu 24.04 (aarch64), in your home region. "Out of capacity"
-   is normal: retry, or try another availability domain.
-2. Paste [`ops/cloud-init.yaml`](../ops/cloud-init.yaml) as the cloud-init script after replacing its three
-   placeholders. It clones the repo and runs `ops/install.sh`, which is idempotent: re-run it any time.
-3. `ssh ubuntu@<ip>`, fill `/opt/susquatch/.env`, then `sudo systemctl restart susquatch`. First start builds every
-   image natively (no cross-compiling), about 10–15 minutes on A1.
+Paid from the one-time $100 student credit with no card on file. The student subscription only allows `norwayeast`,
+`westus`, `belgiumcentral`, `francecentral` and `mexicocentral`; we use `westus`.
+
+1. Fill a copy of [`ops/cloud-init.yaml`](../ops/cloud-init.yaml) (its three placeholders) somewhere that is never
+   committed, e.g. `ops/state/azure/cloud-init.yaml`. It clones the repo and runs `ops/install.sh`, which is
+   idempotent: re-run it any time.
+2. Create the VM. `Standard_B2pls_v2` is Arm (Ampere, 2 vCPU burstable, 4 GB). It doesn't support Trusted Launch, so
+   the security type must be `Standard`. `--nsg-rule NONE` starts with no inbound rules; the next command opens SSH to
+   your IP only.
+
+   ```bash
+   az group create --name susquatch --location westus
+   az vm create --resource-group susquatch --name susquatch \
+     --image Canonical:ubuntu-24_04-lts:server-arm64:latest \
+     --size Standard_B2pls_v2 --security-type Standard \
+     --admin-username ubuntu --ssh-key-values ~/.ssh/id_ed25519.pub \
+     --os-disk-size-gb 30 --storage-sku StandardSSD_LRS \
+     --public-ip-sku Standard --public-ip-address-allocation static \
+     --nsg-rule NONE \
+     --custom-data ops/state/azure/cloud-init.yaml
+   az network nsg rule create --resource-group susquatch --nsg-name susquatchNSG --name ssh-from-me \
+     --priority 1000 --direction Inbound --access Allow --protocol Tcp --destination-port-ranges 22 \
+     --source-address-prefixes "$(curl -s https://api.ipify.org)/32"
+   az vm show -d --resource-group susquatch --name susquatch --query publicIps -o tsv
+   ```
+
+   If your home IP changes, re-run the rule command with `az network nsg rule update` and the new address.
+3. `ssh ubuntu@<ip>`, fill `/opt/susquatch/.env`, then `sudo systemctl restart susquatch` (or `make restore` to come
+   back from the newest backup). First start builds every image natively (no cross-compiling), about 10–15 minutes.
 4. `make selfcheck && make costs`, then open the dashboard. The heartbeat goes green within about 3 minutes.
+
+The same cloud-init file and install script also work unchanged on Oracle's Always Free A1, which was the original
+plan; Oracle needs a card on file, so it isn't used.
 
 ### The Mac (fallback)
 
@@ -167,11 +204,12 @@ exactly the split brain a local lease can't see. Keep the Mac awake on election 
 [`ops/backup.sh`](../ops/backup.sh), nightly at 07:30 UTC (03:30 ET):
 
 - `tar` of `state/ journal/ data/ reports/ targets/` → `zstd -12` → `susq-<UTC>.tar.zst` + `.sha256`, uploaded with
-  rclone's S3 backend to `r2:<bucket>/susquatch/daily/`. Credentials come from env (no `rclone.conf` on disk).
+  rclone's S3 backend to `<bucket>/susquatch/daily/` on Backblaze B2. Credentials come from env (no `rclone.conf`
+  on disk).
 - Retention: **7 dailies**; Sunday's copy is promoted to `weekly/` and **4 weeklies** are kept. Every object is a full
   snapshot, so there are no delta chains to compact and any single object restores on its own. (Raw collector deltas
   are compacted into daily Parquet by the collectors themselves, before they ever reach a backup.)
-- **Quota guard:** the whole bucket is measured first. If `used + archive ≥ 80 %` of 10 GB, or if the bucket **can't be
+- **Quota guard:** the whole bucket is measured first. If `used + archive ≥ 80 %` of B2's free 10 GB, or if the bucket **can't be
   measured**, the upload is refused, the archive stays in `ops/state/backup-staging/`, and an ACTION NEEDED item
   appears. The item clears itself on the next good backup.
 - Never backed up: `.env`, `ops/` (so never `ops/GO_LIVE`). A restored host comes back **in paper mode** until you re-arm it.
@@ -184,19 +222,23 @@ exactly the split brain a local lease can't see. Keep the Mac awake on election 
 in **under 30 minutes**, most of it the first image build.
 
 **Verified (2026-09-28):** [`ops/tests/backup_restore_drill.sh`](../ops/tests/backup_restore_drill.sh) runs both scripts
-against a real S3 API (`rclone serve s3` standing in for R2, through the same `provider=Cloudflare` remote), 28 checks:
+against a real S3 API (`rclone serve s3` standing in for the bucket, through the same `provider=Other` remote B2 uses), 28 checks:
 retention, weekly promotion, the 80 % guard, refusal when the bucket can't be measured, recovery clearing the item,
 restore into a fresh home with byte-identical data, restore over existing data (moved aside), and a tampered archive
 rejected before anything changes. `uv run pytest py/tests/ops` runs it whenever rclone and zstd are installed.
+**Verified against B2 (2026-09-30):** a real nightly backup uploaded, `restore.sh --list` saw it, and the archive's
+sha256 matched after a download round trip.
 
-### Oracle's idle reclaim, and why we survive it
+### The credit runway, and what happens when it ends
 
-Oracle's policy (Always Free resources page, checked 2026-09-28): an Always Free instance may be reclaimed if, **over 7
-days**, CPU p95 < 20 %, network < 20 % **and** (A1 only) memory < 20 %. A trading stack plus a co-tenant rarely looks that
-idle, but the design doesn't bet on it and **never fakes load**. A reclaim costs one night's data at most (backups are
-nightly and before the lock) and about 30 minutes: new instance → cloud-init → `.env` → `make restore`. Meanwhile every
-order carries a GTD expiry, so nothing we left resting outlives the host by more than its TTL. And the summary Worker,
-which runs on Cloudflare, reports "server silent since …" the next morning.
+The server costs about $34 a month of the $100 credit: about $41 through the Nov 4 lock and about $72 through Nov 30,
+so there is room to spare at this size and none for a bigger one (`make costs` fails if the VM grows). Azure has no
+idle-reclaim policy, so a quiet stack is never taken away for looking idle. When the credit runs out, or the
+subscription period ends, Azure **disables** the subscription and stops the VM. It never bills, because there is no
+card to bill. Recovery is the same as any lost host: the Mac fallback (§6) and `make restore` from the newest backup in
+B2. Meanwhile every order carries a GTD expiry, so nothing we left resting outlives the host by more than its TTL, and
+the summary Worker, which runs on Cloudflare, reports "server silent since …" the next morning. Check the remaining
+credit in the Azure portal (Subscriptions) now and then.
 
 ## 8. Status, Kill, and the KV budget
 
@@ -237,11 +279,12 @@ plus whatever the trading processes put in their snapshot. Each clears itself on
 | tls | upstream cert < 7 days | | reported only (not ours to renew) |
 | lease | | nobody holds it after the open, or it expired > 60 s ago | |
 | backup | | none in 30 h | |
-| quotas | R2 ≥ 68 % | R2 ≥ 80 % | |
+| quotas | B2 ≥ 68 % | B2 ≥ 80 % | |
 
 ## 11. Election-night priority (Nov 3 18:00 ET → Nov 4 12:00 ET)
 
-The 2 OCPUs are shared with **calshi**, a separate project whose repo we don't edit. Two layers:
+The server's 2 vCPUs are shared with **calshi** whenever it runs on the same host, a separate project whose repo we
+don't edit. Two layers:
 
 1. **Always on:** cgroup v2 CPU weights in `compose.yaml` (rust-live/bridge 4096, needle/nats 3072, kill-poller 2048,
    helpers 1024, scheduler 256 + a 1.5-CPU cap). Weights only matter under contention, and then the trading path wins.
@@ -257,7 +300,7 @@ The 2 OCPUs are shared with **calshi**, a separate project whose repo we don't e
 
 | What | Command | Verified |
 |---|---|---|
-| ops helpers (pusher, poller, self-check, watchdog, healthcheck, costs) | `uv run pytest py/tests/ops` | 67 tests, mocked HTTP |
+| ops helpers (pusher, poller, self-check, watchdog, healthcheck, costs) | `uv run pytest py/tests/ops` | 71 tests, mocked HTTP |
 | backup / restore against a real S3 API | `ops/tests/backup_restore_drill.sh` | 28 checks |
 | install.sh ×2 on Ubuntu 24.04 arm64 + cloud-init schema + systemd verify | `ops/tests/install_smoke.sh` | 19 checks |
 | Functions + Worker (auth, KV budget, kill, dead-man, GitHub) | `make dashboard-test` | 52 tests |

@@ -21,7 +21,7 @@ Three phases (SPEC §3): **October** (capital, calibration, signal) → **late O
 ## 1. Architecture
 
 ```
-                   ┌────────────── Oracle Always Free (aarch64, 2 OCPU / 12 GB) ──────────────┐
+                   ┌────────────── Azure for Students B2pls_v2 (aarch64, 2 vCPU / 4 GB) ──────┐
                    │                                                                           │
  Kalshi / Poly ──► │  python-scheduler ── collectors ─► data/ (parquet)                        │
  (read-only)       │        │  calibrate ─► sim (C++ via pybind11)                              │
@@ -37,7 +37,7 @@ Three phases (SPEC §3): **October** (capital, calibration, signal) → **late O
                                                                                 ▼
              Cloudflare (free): KV ◄─ status/kill ─► Pages dashboard (login page, Kill button)
                                  cron Worker ─► daily summary (dashboard + pinned issue in private *-reports repo)
-                                 R2 ◄─ nightly backups (80 % quota guard)
+             Backblaze B2 (free 10 GB, no card) ◄─ nightly backups (80 % quota guard)
 ```
 
 **Hard boundaries** (from `LANGUAGES_AND_BOUNDARIES.md`):
@@ -79,7 +79,7 @@ Every milestone is a feature branch → PR (with CI) → merge into `main`. The 
 | 6 | `feat/cpp-models` | `sim`, `tourney`, `needle` (NATS service) + pybind11 + tests | Oct 1–15 |
 | 7 | `feat/research` | Kalshi + Polymarket collectors, fair value, calibration, optimizer, leaderboard telemetry, crowd inference | Oct 1–15 |
 | 8 | `feat/election-night` | `enr` adapters (CA SoS, Clarity), synthetic 2022/2024 replays, drills, poll-close table | Oct 11–25 |
-| 9 | `feat/ops` | Docker Compose, systemd, cloud-init, one-command restore, R2 backups, `make costs` | Sep 30 |
+| 9 | `feat/ops` | Docker Compose, systemd, cloud-init, one-command restore, S3 backups (Backblaze B2), `make costs` | Sep 30 |
 | 10 | `feat/dashboard` | Cloudflare Pages dashboard + Functions (auth, Kill) + cron Worker daily summary | Sep 30 |
 | 11 | `docs/*` | README, runbooks, `.claude/commands`, write-up skeleton | continuous |
 
@@ -159,19 +159,21 @@ Ordered by deadline. Already done for you: the private `susquatch-reports` repo 
 1. **Before Oct 1:** register at sig.thesuper.market (student eligibility), confirm the email, accept the Terms and Rules, and opt in to recruiting contact.
 2. **Before Oct 1:** create an API key (Settings → API Keys) with `read` + `trade`. Put it in `.env` as `SUSQ_API_KEY=…` and never paste it in chat.
    Then run `uv run susq-bridge record` once so the market map can be built before open.
-3. **Before Oct 1:** pick the day-one host. The Mac works now (`make up` with colima running). Oracle is step 6.
+3. **Before Oct 1:** pick the day-one host. The Mac works now (`make up` with colima running). The server is step 7.
 4. **Before Oct 1:** run `/parse-rules`, read `reports/rules_review.md`, paste Info-tab text for risky markets into `state/info_tabs/<id>.md`,
    then approve rows with `uv run susq research verify --clean` plus any risky races you have checked.
 5. **Oct 1, before 12:00 ET:** say **"go live"** (`/go-live` runs the pre-flight). Without it, everything stays in paper mode.
 6. **Oct 1, after the open:** read `reports/DAY1.md`. If its collateral section says so, set `[risk] use_collateral_buying_power = true`.
-7. **This week:** sign up for Oracle Cloud Always Free (card hold only; **never** upgrade to Pay-As-You-Go), then run `ops/install.sh`.
+7. ~~Sign up for Oracle Cloud Always Free, then run `ops/install.sh`.~~ **Replaced, done 2026-09-30:** Oracle needs a card on file, so the
+   server is an Azure for Students `Standard_B2pls_v2` in `westus` (one-time $100 credit, no card; disabled, never billed, when it runs out),
+   created with the same `ops/cloud-init.yaml` as custom data (`docs/OPS.md` §6). Never upgrade it to Pay-As-You-Go. The Mac stays the fallback.
 8. **This week (optional, for zero-touch redeploys):** add a `CLOUDFLARE_API_TOKEN` GitHub secret (Pages, Workers Scripts and KV edit;
    `docs/OPS.md` §4). The account id, KV id, dashboard password and push token are already set as secrets.
-9. **This week:** create a fine-grained GitHub token on `susquatch-reports` only (Issues: read and write; Contents: read), then run
+9. **Done 2026-09-30** (the Worker's `GITHUB_TOKEN` secret is set): create a fine-grained GitHub token on `susquatch-reports` only (Issues: read and write; Contents: read), then run
    `cd dashboard && npx wrangler secret put GITHUB_TOKEN --config ../worker/wrangler.jsonc`, or add it as `SUSQ_REPORTS_GITHUB_TOKEN`.
-   Until then the daily summary appears on the dashboard only.
-10. **Enable R2** in the Cloudflare dashboard (free tier; card on file), then `npx wrangler r2 bucket create susquatch-backups` and put an
-   R2 access key in `.env`, so nightly backups work.
+10. ~~Enable R2 in the Cloudflare dashboard and create the bucket.~~ **Replaced, done 2026-09-30:** R2 needs a card on file, so backups
+   go to a private Backblaze B2 bucket (10 GB free, no card, uploads stop at the cap) with a key restricted to it, set in `.env` as
+   `SUSQ_R2_*` (`docs/OPS.md` §4). A real backup, `restore.sh --list` and a sha256 round trip were verified.
 11. **Mid-October:** when `4-testing-schedule-v21.pdf` is posted, confirm Oct 21/28/31 (errata E18). Turn on Claude Code cloud routines for
     `/daily-review` (daily) and `/weekly-strategy` (Sundays) with **extra usage OFF**.
 12. **Early November:** once Georgia lists the Nov 3 election, check `data/enr/last_health.json`, where `discovery.contests` should have no nulls.

@@ -1,4 +1,4 @@
-# Susquatch stack. aarch64-first (Oracle A1), identical on Apple Silicon via colima.
+# Susquatch stack. aarch64-first (Azure B2pls_v2, Ampere), identical on Apple Silicon via colima.
 #
 #   make up                     # = docker compose --project-directory . -f ops/compose.yaml up -d --build
 #   COMPOSE_PROFILES=bridge   (in .env) picks the optional services below
@@ -13,7 +13,7 @@
 # Paths are relative to the project directory (the checkout). Nothing is published to the internet:
 # Docker-published ports bypass ufw, so nothing is published; health/metrics stay inside each container.
 #
-# CPU priority: the host is 2 OCPU, shared with another project. cpu_shares (cgroup v2 cpu.weight) only
+# CPU priority: the host is 2 vCPU, possibly shared with another project. cpu_shares (cgroup v2 cpu.weight) only
 # matter under contention, and then the trading path wins: rust-live/bridge 4096, needle/nats 3072,
 # kill-poller 2048, ops helpers 1024, scheduler 256 and hard-capped at 1.5 CPUs. The co-tenant's
 # containers default to 1024; ops/priority.sh lowers its non-critical jobs further on election night.

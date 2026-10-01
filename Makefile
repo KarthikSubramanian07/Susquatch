@@ -70,7 +70,7 @@ docs-fetch: ## Snapshot the official API docs (flags changes)
 secrets-scan: ## Full-history secret scan
 	gitleaks git --no-banner --redact --config .gitleaks.toml
 
-# ── server (Oracle A1 or the Mac fallback; see docs/OPS.md) ─────────────
+# ── server (Azure for Students or the Mac fallback; see docs/OPS.md) ─────
 COMPOSE := docker compose --project-directory $(CURDIR) -f ops/compose.yaml
 # Host-side Python helpers: uv where it exists (Mac, dev), else the stack's own image (server).
 OPS_PY = $(if $(shell command -v $(UV)),$(UV) run python -m,$(COMPOSE) run --rm --no-deps -T status-pusher python -m)
@@ -95,10 +95,10 @@ ps: ## Service status + health
 costs: ## Free-tier audit: exits non-zero if anything would cost money
 	$(OPS_PY) susq.ops.costs
 
-backup: ## Back up state/journal/data/reports/targets to R2 now
+backup: ## Back up state/journal/data/reports/targets to the B2 bucket now
 	ops/backup.sh
 
-restore: ## Restore the latest R2 backup (ARGS="--list" / "--archive NAME" / "--no-start")
+restore: ## Restore the latest backup from the bucket (ARGS="--list" / "--archive NAME" / "--no-start")
 	ops/restore.sh $(ARGS)
 
 selfcheck: ## Disk, clock, expiries, lease, backups, quotas -> ACTION NEEDED items

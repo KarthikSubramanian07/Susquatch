@@ -2,12 +2,12 @@
 # Install (or remove) the Mac fallback-host launch agents. Switching hosts is this one command.
 #
 #   ops/launchd/install.sh            # load: stack (at login, kept alive), nightly backup, daily self-check
-#   ops/launchd/install.sh --remove   # unload and delete them (e.g. once Oracle is back)
+#   ops/launchd/install.sh --remove   # unload and delete them (e.g. once the Azure server is back)
 #
 # Only ever run ONE host at a time: two hosts pushing status and holding leases against the same venue
 # account is exactly the split-brain the lease can't see across machines. Stop the other one first:
-#   Oracle -> Mac:  ssh server 'sudo systemctl stop susquatch'  then this script
-#   Mac -> Oracle:  this script --remove; docker compose ... down; then start Oracle
+#   Azure -> Mac:  ssh server 'sudo systemctl stop susquatch'  then this script
+#   Mac -> Azure:  this script --remove; docker compose ... down; then start the server
 # Requires: brew install colima docker docker-compose docker-buildx rclone zstd (and `uv` for selfcheck).
 set -euo pipefail
 SUSQ_HOME="${SUSQ_HOME:-$(cd "$(dirname "$0")/../.." && pwd)}"

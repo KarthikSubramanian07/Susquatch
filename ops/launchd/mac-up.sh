@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Mac fallback host: make sure colima (arm64 VM, same aarch64 images as Oracle) is running, then bring the
+# Mac fallback host: make sure colima (arm64 VM, same aarch64 images as the Azure server) is running, then bring the
 # compose stack up. launchd re-runs this on failure (KeepAlive SuccessfulExit=false).
 set -euo pipefail
 # shellcheck source=ops/lib.sh
@@ -8,7 +8,7 @@ set -euo pipefail
 SUSQ_HOME="${SUSQ_HOME:-$(cd "$(dirname "$0")/../.." && pwd)}"
 susq_init
 
-# Sizing: the whole stack fits in 2 CPU / 6 GB (the A1 host is 2 OCPU / 12 GB, shared with the co-tenant).
+# Sizing: the whole stack fits in 2 CPU / 6 GB (the Azure host is 2 vCPU / 4 GB; the stack measures ~400 MB).
 if ! colima status >/dev/null 2>&1; then
   log "starting colima"
   colima start --cpu "${SUSQ_COLIMA_CPU:-2}" --memory "${SUSQ_COLIMA_MEM_GB:-6}" --arch aarch64

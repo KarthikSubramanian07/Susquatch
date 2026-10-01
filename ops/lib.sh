@@ -76,7 +76,8 @@ action_resolve() { rm -f "$ACTIONS_DIR/$1.txt"; }
 ops_event() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >> "$OPS_STATE/events.log"; }
 
 # Configure the backup remote: any S3-compatible bucket via rclone's env-var config (no rclone.conf on disk).
-# Default is Cloudflare R2; Backblaze B2 = SUSQ_R2_ENDPOINT=https://s3.<region>.backblazeb2.com + SUSQ_R2_PROVIDER=Other.
+# In use: Backblaze B2 = SUSQ_R2_ENDPOINT=https://s3.<region>.backblazeb2.com + SUSQ_R2_PROVIDER=Other. Without an
+# endpoint it falls back to Cloudflare R2 (the SUSQ_R2_* names date from then).
 # SUSQ_BACKUP_REMOTE overrides it entirely, e.g. a local directory or another rclone remote for drills.
 backup_remote_init() {
   if [ -n "${SUSQ_BACKUP_REMOTE:-}" ]; then

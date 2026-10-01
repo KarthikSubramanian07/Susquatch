@@ -14,7 +14,7 @@ elections, traded on [The Super Market](https://sig.thesuper.market/) with 100,0
 
 [![ci](https://github.com/KarthikSubramanian07/Susquatch/actions/workflows/ci.yml/badge.svg)](https://github.com/KarthikSubramanian07/Susquatch/actions/workflows/ci.yml)
 ![license](https://img.shields.io/badge/license-MIT-a1a1aa?style=flat-square)
-![cost](https://img.shields.io/badge/infra%20cost-%240%2Fmonth-d97757?style=flat-square)
+![cost](https://img.shields.io/badge/infra%20cost-%240%20out%20of%20pocket-d97757?style=flat-square)
 
 </div>
 
@@ -61,7 +61,8 @@ generates the types for all of them.
                                                                   ┌─ needle (C++) ─────────────┴┐   needle.heartbeat
                                                                   │ county expected-vote model  │
                                                                   └─────────────────────────────┘
-      Cloudflare (free): Pages dashboard (auth + Kill) · KV status · cron Worker daily summary · R2 backups
+      Cloudflare (free): Pages dashboard (auth + Kill) · KV status · cron Worker daily summary
+      Host: Azure for Students Arm VM (student credit, no card) · Mac fallback · Backblaze B2 backups (free 10 GB)
 ```
 
 | Layer | Language | Why this language |
@@ -105,7 +106,8 @@ heartbeat dot rings when a fresh push lands. Clay is reserved for the three thin
 *server silent since…*, and **Kill**, which takes a written reason and a press-and-hold. It is plain HTML, CSS and one
 module: no framework, no build, nothing rendered with `innerHTML`.
 Once a day a cron Worker, running on Cloudflare rather than the server, writes the summary (ACTION NEEDED first, usually
-empty) to the dashboard and to a pinned GitHub issue, so a dead server still gets reported. All of it costs $0, and
+empty) to the dashboard and to a pinned GitHub issue, so a dead server still gets reported. None of it costs a cent or
+needs a card: the server runs on Azure for Students credit, backups sit in Backblaze B2's free 10 GB, and
 `make costs` fails the build if that ever stops being true. See [`docs/OPS.md`](docs/OPS.md) and
 [`docs/RUNBOOK.md`](docs/RUNBOOK.md).
 
@@ -158,7 +160,7 @@ touched the real API yet, because that needs a participant key, and the whole sy
 | `sim` · `tourney` · `needle` (C++20) + `susq_models` | ✅ calibrated, coverage-checked | 101 C++ |
 | Research: collectors, fair value, calibration, optimizer, telemetry, reports | ✅ live against public Kalshi/Polymarket | part of 667 Python |
 | Election night: `enr` pollers, Georgia auto-discovery, replays, poll-close table, chaos drills | ✅ real CA SoS 2026 test feed captured; CA test windows auto-captured Oct 21/28/31 | part of 450 Rust / 667 Python |
-| Ops (Compose, backups, restore, self-check, `make costs`) | ✅ drills pass locally | 28 + 19 drill checks |
+| Ops (Compose, backups, restore, self-check, `make costs`) | ✅ drills pass locally; a real backup, listing and checksum round trip verified on Backblaze B2 | 28 + 19 drill checks |
 | Dashboard + daily-summary Worker | ✅ **live** at `susquatch.pages.dev` (password-protected, not indexed) | 52 + 18 e2e |
 | ALL collateral (relationship-backed buying power) | ✅ modeled in mock, paper, bridge and Rust; **off for live sizing** until `measure-day1` confirms the engine matches | part of both |
 
