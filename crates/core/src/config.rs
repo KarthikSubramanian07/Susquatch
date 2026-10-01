@@ -428,6 +428,10 @@ pub struct LiveCfg {
     /// hold, are violated on, have fair values for, or saw book activity on most recently; every
     /// other market stays on REST polling.
     pub realtime_market_channels: usize,
+    /// `/healthz` reports the loop stuck once no step completed for this long. A step issues its
+    /// REST reads serially under the per-account rate budget (about 1 req/s), so it must allow
+    /// for far more than one tick.
+    pub max_step_age_s: u64,
 }
 
 impl Default for LiveCfg {
@@ -438,6 +442,7 @@ impl Default for LiveCfg {
             book_max_age_s: 10,
             tick_ms: 500,
             realtime_market_channels: 80,
+            max_step_age_s: 120,
         }
     }
 }

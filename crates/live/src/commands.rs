@@ -204,8 +204,12 @@ pub async fn run(cli: &Cli, args: &RunArgs, force_paper: bool) -> anyhow::Result
     // can take minutes, and a health check that cannot connect gets the container restarted (watchdog)
     // before it ever finishes, which also burns the budget the live trader shares.
     let tick_ms = rt.cfg.live.tick_ms.max(50);
+    let max_step_age_ns = i64::try_from(rt.cfg.live.max_step_age_s.max(1))
+        .unwrap_or(120)
+        .saturating_mul(1_000_000_000)
+        .max(i64::try_from(tick_ms).unwrap_or(500) * 20 * 1_000_000);
     let liveness = Arc::new(Mutex::new(Liveness {
-        max_step_age_ns: i64::try_from(tick_ms).unwrap_or(500) * 20 * 1_000_000,
+        max_step_age_ns,
         bootstrapping: true,
         ..Liveness::default()
     }));
