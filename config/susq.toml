@@ -7,12 +7,15 @@ base_url = "https://www.thesuper.market/api/v1"
 alt_base_url = "https://sig.thesuper.market/api/v1"
 tournament_slug = "midterm-elections"
 request_timeout_ms = 10000
-# Adaptive limiter starts here and adapts to 429 / Retry-After (docs publish no numbers).
-initial_rps = 4.0
-min_rps = 0.5
-max_rps = 20.0
-# Share of the request budget reserved for order placement/cancel (never starved by reads).
-order_budget_frac = 0.35
+# Published budget since 2026-10-01: ONE budget per account, shared by every key and every process:
+# 100 reads + 30 writes a minute (2.17 req/s). A 429 carries Retry-After: 60, so staying under it matters
+# more than speed. While the bridge and a rust-live paper run share the account, each gets half; raise
+# max_rps to 2.0 once only one trader runs. The limiter still adapts down on 429 / Retry-After.
+initial_rps = 1.0
+min_rps = 0.25
+max_rps = 1.0
+# Share of the request budget reserved for order placement/cancel (never starved by reads): 30/130.
+order_budget_frac = 0.23
 
 [calendar]
 # 2026-10-01 12:00 EDT and 2026-11-04 12:00 EST, in UTC.
@@ -68,6 +71,10 @@ kalshi_weight = 0.8
 sim_weight = 0.2
 stale_after_s = 60                 # orders built on older fair values are cancelled
 mapping_error_pts = 25.0           # |cup_mid - fair| beyond this = assume mis-mapping, block + flag
+
+[live]
+# Per-market realtime topics rust-live joins (Supabase caps channels per connection); the rest is polled.
+realtime_market_channels = 80
 
 [strategies.racer]
 enabled = true

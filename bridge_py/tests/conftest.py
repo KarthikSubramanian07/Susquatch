@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -117,9 +118,8 @@ def make_home(tmp_path: Path) -> Path:
     home = tmp_path / "home"
     (home / "config").mkdir(parents=True)
     toml = (REPO / "config" / "susq.toml").read_text()
-    toml = toml.replace("initial_rps = 4.0", "initial_rps = 500.0").replace(
-        "max_rps = 20.0", "max_rps = 1000.0"
-    )
+    toml = re.sub(r"^initial_rps = .*$", "initial_rps = 500.0", toml, flags=re.MULTILINE)
+    toml = re.sub(r"^max_rps = .*$", "max_rps = 1000.0", toml, flags=re.MULTILINE)
     (home / "config" / "susq.toml").write_text(toml)
     return home
 
