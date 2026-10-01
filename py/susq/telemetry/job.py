@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 from susq.collectors.store import read_snapshots
@@ -15,9 +16,23 @@ from susq.telemetry.cupdata import read_leaderboard, read_prices
 CROWD_LOOKBACK = timedelta(days=14)
 
 
+def tournament_members(status_path: Path) -> int | None:
+    """`fieldSize` from the bridge's `state/status.json` (the tournament member count), else None."""
+    try:
+        value = json.loads(status_path.read_text()).get("fieldSize")
+        members = int(value) if value is not None else 0
+    except (OSError, ValueError, TypeError, AttributeError):
+        return None
+    return members if members > 0 else None
+
+
 def run_telemetry(paths: Paths, cfg: ResearchConfig, *, now_ns: int) -> dict[str, Any]:
     cup = paths.data / "cup"
-    lb = leaderboard.summarize(read_leaderboard(cup), lock_ns=int(cfg.lock_utc.timestamp() * 1e9))
+    lb = leaderboard.summarize(
+        read_leaderboard(cup),
+        lock_ns=int(cfg.lock_utc.timestamp() * 1e9),
+        members=tournament_members(paths.status),
+    )
     since = datetime.fromtimestamp(now_ns / 1e9, tz=UTC) - CROWD_LOOKBACK
     mm = load_best_map(paths)
     crowd_summary = (

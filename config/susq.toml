@@ -95,6 +95,14 @@ price_snapshot_interval_s = 60
 dir = "targets"
 max_age_h = 36                     # tightened in the final days
 
+[optimizer]
+# Scenario book (SPEC §3 Phase 2): the daily targets run spends this share of equity on the book.
+book_frac = 0.60                   # full size: 50-70% of capital in the scenario book
+early_book_frac = 0.30             # smaller size while the book is bought gradually (from Oct 7)
+early_until_utc = "2026-10-21T16:00:00Z"   # full size from here (Oct 21 12:00 EDT)
+max_legs = 12                      # most legs in one scenario book
+max_leg_frac = 0.12                # most equity in any single leg
+
 [needle]
 heartbeat_timeout_s = 10
 resume_after_healthy = 5

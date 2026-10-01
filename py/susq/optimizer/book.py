@@ -6,8 +6,9 @@ For each scenario S:
 1. *consistent legs* = legs with P(YES | S) ≥ `min_leg_prob_in_scenario` that are likelier in S than
    overall (lift ≥ `min_lift`), ranked by payoff per SUSQie in S, P(YES | S) / ask — cheap legs
    that S makes likely come first;
-2. concentration: for k = 1..`max_legs`, spend `book_frac` of equity on the top-k legs in equal
-   cost slices (capped per leg and by book depth) and keep the k with the best P(M > T | S).
+2. concentration: for k = 1..`max_legs`, spend `book_frac` of equity (`early_book_frac` before
+   `early_until_utc`: the book is bought gradually, full size from Oct 21) on the top-k legs in
+   equal cost slices (capped per leg and by book depth) and keep the k with the best P(M > T | S).
    Fewer, cheaper legs are how a book reaches the 10-30× multiples that win (SPEC §6);
 3. M_S(ω) = (cash left + Σ qty_j · YES_j(ω)) / 100,000 — the final-balance multiple;
 4. crowding: the field's exposure e_S ∈ [−1, 1] inflates the bar, T_S(ω) = T(ω)·(1 + λ·e_S), because
@@ -99,8 +100,10 @@ def score_scenarios(
     *,
     equity: float = INITIAL_BALANCE,
     cluster_drift_pts: Mapping[str, float] | None = None,
+    book_frac: float | None = None,
 ) -> list[ScenarioScore]:
-    """Score every scenario, best first."""
+    """Score every scenario, best first. `book_frac` (default `cfg.book_frac`) is the spend cap."""
+    budget = (cfg.book_frac if book_frac is None else book_frac) * equity
     asks = np.array([leg.ask for leg in legs])
     uncond = outcomes.mean(axis=0) if legs else np.zeros(0)
     scored: list[ScenarioScore] = []
@@ -113,7 +116,9 @@ def score_scenarios(
         ranked = [int(j) for j in eligible[np.argsort(-(cond[eligible] / asks[eligible]), kind="stable")]]
         e = exposure(s.signs, cluster_drift_pts or {})
         t_s = threshold[s.mask] * (1 + cfg.crowding_lambda * e)
-        idx, qty, p_beat, close = _best_concentration(legs, y_s, ranked[: cfg.max_legs], t_s, equity, cfg)
+        idx, qty, p_beat, close = _best_concentration(
+            legs, y_s, ranked[: cfg.max_legs], t_s, equity, cfg, budget=budget
+        )
         scored.append(ScenarioScore(s, e, tuple(idx), tuple(qty), p_beat, s.prob * p_beat, s.prob * close))
     scored.sort(key=lambda x: (-x.score, -x.closeness, x.scenario.scenario_id))
     return scored
@@ -126,12 +131,14 @@ def _best_concentration(
     t_s: FloatArray,
     equity: float,
     cfg: OptimizerConfig,
+    *,
+    budget: float,
 ) -> tuple[list[int], list[int], float, float]:
     """(legs, qty, P(M > T | S), E[min(M/T, 1) | S]) for the best top-k prefix of `ranked`."""
     best: tuple[list[int], list[int], float, float] = ([], [], 0.0, 0.0)
     for k in range(1, len(ranked) + 1):
         idx = list(ranked[:k])
-        qty = _allocate(legs, idx, cfg.book_frac * equity, equity, cfg)
+        qty = _allocate(legs, idx, budget, equity, cfg)
         cost = sum(q * legs[j].ask for j, q in zip(idx, qty, strict=True))
         m = np.broadcast_to(_multiple(y_s, idx, qty, equity - cost), t_s.shape)
         p_beat = p_first(m, t_s)
@@ -173,14 +180,29 @@ def build_book(
     *,
     equity: float = INITIAL_BALANCE,
     cluster_drift_pts: Mapping[str, float] | None = None,
+    book_frac: float | None = None,
 ) -> OptimizerResult:
-    """Score scenarios and turn the best one into target positions."""
+    """Score scenarios and turn the best one into target positions.
+
+    `book_frac` is the share of equity the book may spend (callers pass `cfg.book_frac_at(now)` so
+    the early, smaller size applies before `early_until_utc`); it defaults to `cfg.book_frac`.
+    """
+    frac = cfg.book_frac if book_frac is None else book_frac
     ranked = score_scenarios(
-        legs, outcomes, scenarios, threshold, cfg, equity=equity, cluster_drift_pts=cluster_drift_pts
+        legs,
+        outcomes,
+        scenarios,
+        threshold,
+        cfg,
+        equity=equity,
+        cluster_drift_pts=cluster_drift_pts,
+        book_frac=frac,
     )
     best = ranked[0] if ranked else None
     if best is None or not best.legs:
-        return OptimizerResult(best, ranked, explanation="no scenario has any consistent, priced leg")
+        return OptimizerResult(
+            best, ranked, explanation=f"no scenario has any consistent, priced leg (book frac {frac:.0%})"
+        )
 
     s = best.scenario
     cond, uncond = outcomes[s.mask].mean(axis=0), outcomes.mean(axis=0)
@@ -216,8 +238,8 @@ def build_book(
         explanation=(
             f"scenario {s.scenario_id} ({s.describe()}): P(S)={s.prob:.3f}, "
             f"P(M>T|S)={best.p_beat_given_s:.3f}, field exposure {best.exposure:+.2f}; "
-            f"{len(positions)} legs costing {cost:,.0f} ({cost / equity:.0%} of equity); "
-            f"unconditional P(1st)={pf:.4f}"
+            f"{len(positions)} legs costing {cost:,.0f} ({cost / equity:.0%} of equity, "
+            f"book frac {frac:.0%}); unconditional P(1st)={pf:.4f}"
         ),
     )
 

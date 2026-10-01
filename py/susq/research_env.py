@@ -34,9 +34,12 @@ class FairConfig:
 
 @dataclass(frozen=True)
 class OptimizerConfig:
-    """Scenario-book knobs (SPEC §3 Phase 2). Not in susq.toml yet, so defaults live here."""
+    """Scenario-book knobs (SPEC §3 Phase 2); `[optimizer]` in susq.toml overrides the first five."""
 
-    book_frac: float = 0.60  # 50-70% of capital in the scenario book
+    book_frac: float = 0.60  # 50-70% of capital in the scenario book, once the field has shown itself
+    # Buy the book gradually at a smaller size first (from Oct 7), full size from Oct 21 16:00Z.
+    early_book_frac: float = 0.30
+    early_until_utc: datetime = datetime(2026, 10, 21, 16, 0, tzinfo=UTC)
     max_legs: int = 12
     min_leg_prob_in_scenario: float = 0.30  # "consistent with S": pays at least this often in S...
     min_lift: float = 1.10  # ...and more often than it does overall
@@ -44,6 +47,10 @@ class OptimizerConfig:
     idiosyncratic_frac: float = 0.015
     crowding_lambda: float = 0.5  # T inflation per unit of field exposure to a scenario
     price_slippage_ticks: int = 2
+
+    def book_frac_at(self, now: datetime) -> float:
+        """The share of equity the book may spend at `now`: smaller before `early_until_utc`."""
+        return self.early_book_frac if now < self.early_until_utc else self.book_frac
 
 
 @dataclass(frozen=True)
@@ -77,8 +84,15 @@ class ResearchConfig:
             mapping_error_pts=float(fair_raw.get("mapping_error_pts", 25.0)),
         )
         opt_raw = raw.get("optimizer", {})
+        opt_default = OptimizerConfig()
         optimizer = OptimizerConfig(
-            **{k: v for k, v in opt_raw.items() if k in OptimizerConfig.__annotations__}
+            book_frac=float(opt_raw.get("book_frac", opt_default.book_frac)),
+            early_book_frac=float(opt_raw.get("early_book_frac", opt_default.early_book_frac)),
+            early_until_utc=_parse_utc(opt_raw["early_until_utc"])
+            if "early_until_utc" in opt_raw
+            else opt_default.early_until_utc,
+            max_legs=int(opt_raw.get("max_legs", opt_default.max_legs)),
+            max_leg_frac=float(opt_raw.get("max_leg_frac", opt_default.max_leg_frac)),
         )
         lock = raw.get("calendar", {}).get("lock_utc")
         tele = raw.get("telemetry", {})
@@ -154,8 +168,11 @@ class Paths:
         return ResearchConfig.from_toml(self.config) if self.config.exists() else ResearchConfig()
 
 
-def _parse_utc(text: str) -> datetime:
-    return datetime.fromisoformat(text.replace("Z", "+00:00")).astimezone(UTC)
+def _parse_utc(value: str | datetime) -> datetime:
+    """An RFC 3339 string (or a TOML datetime literal) as an aware UTC datetime."""
+    if isinstance(value, datetime):
+        return value.astimezone(UTC) if value.tzinfo else value.replace(tzinfo=UTC)
+    return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(UTC)
 
 
 def atomic_write_bytes(path: Path, data: bytes) -> None:

@@ -37,9 +37,15 @@ from susq_bridge.status import StatusWriter
 from susq_bridge.strategies.racer import Racer
 from susq_bridge.strategies.sniper import Sniper
 
-__all__ = ["Bridge", "BridgeError", "Loops"]
+__all__ = ["REALTIME_MARKET_CHANNELS", "Bridge", "BridgeError", "Loops"]
 
 log = logging.getLogger(__name__)
+
+#: Since 2026-10-01 market updates arrive per market on ``tournament:{tid}:market:{marketId}``
+#: (``market_batch``, ``book_dirty``, ``market_settled``, batched in one-second windows); the
+#: tournament-wide topic no longer carries them. Supabase caps channels per client, so the bridge
+#: joins the most liquid markets up to this many (237 markets listed today do not all fit).
+REALTIME_MARKET_CHANNELS = 80
 
 
 class BridgeError(RuntimeError):
@@ -226,16 +232,38 @@ class Bridge:
         tid = self.tournament.id
         if self.config.racer.enabled:
             rt.subscribe(f"relationships:violations:{tid}", "violation", self.racer.on_violation)
-        rt.subscribe(f"tournament:{tid}", "market_batch", self._on_market_batch)
+        for channel in self.market_channels():
+            rt.subscribe(channel, "market_batch", self._on_market_batch)
+            rt.subscribe(channel, "book_dirty", self._on_market_batch)
+            rt.subscribe(channel, "market_settled", self._on_market_settled)
         if first_token is not None and (user := first_token.channels.get("user")):
             rt.subscribe(user, "account_batch", self._on_account_batch)
         self.realtime = rt
         return rt
 
+    def market_channels(self, cap: int = REALTIME_MARKET_CHANNELS) -> list[str]:
+        """Per-market realtime topics for the `cap` most liquid markets (every exchange of a
+        multi-outcome market shares its market's topic; handlers demux on ``exchangeId``)."""
+        tid = self.tournament.id
+        return [f"tournament:{tid}:market:{mid}" for mid in self.market.most_liquid_markets(cap)]
+
+    @staticmethod
+    def _exchange_ids(payload: dict[str, Any], key: str) -> list[str]:
+        """``exchangeId`` of a single-item payload (``book_dirty``) plus every item under ``key``."""
+        items = [payload, *(payload.get(key) or [])]
+        return [str(ex) for item in items if isinstance(item, dict) and (ex := item.get("exchangeId"))]
+
     def _on_market_batch(self, payload: dict[str, Any], meta: BroadcastMeta) -> None:
-        for item in payload.get("bookDirty") or []:
-            if isinstance(item, dict) and (ex := item.get("exchangeId")):
-                self.market.invalidate_book(str(ex))
+        """``market_batch`` (``trades``/``bookDirty``/``marketSettled`` arrays) or one ``book_dirty`` item."""
+        for ex in self._exchange_ids(payload, "bookDirty"):
+            self.market.invalidate_book(ex)
+        if payload.get("marketSettled"):
+            self._on_market_settled(payload, meta)
+
+    def _on_market_settled(self, payload: dict[str, Any], meta: BroadcastMeta) -> None:
+        for ex in self._exchange_ids(payload, "marketSettled"):
+            self.market.invalidate_book(ex)
+        self.oms.request_resync("market_settled", meta.channel)
 
     def _on_account_batch(self, payload: dict[str, Any], meta: BroadcastMeta) -> None:
         if payload.get("fills") or payload.get("orderUpdates") or payload.get("settlements"):

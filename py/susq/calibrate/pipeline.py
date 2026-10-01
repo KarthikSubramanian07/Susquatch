@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -127,6 +128,9 @@ def run_targets(
         threshold = sim_t(all_outcomes, prices, FieldParams(n_players=field_size), seed)
         t_source = f"field-model({name}, N={field_size})"
     drift = (tele.get("crowd") or {}).get("cluster_drift_pts") or {}
+    now = datetime.fromtimestamp(now_ns / 1e9, tz=UTC)
+    book_frac = cfg.optimizer.book_frac_at(now)
+    early = now < cfg.optimizer.early_until_utc
     result = build_book(
         legs,
         outcomes,
@@ -135,6 +139,7 @@ def run_targets(
         cfg.optimizer,
         equity=equity,
         cluster_drift_pts=drift,
+        book_frac=book_frac,
     )
     tourney = targets_pb2.TourneyEstimate(
         p_first=result.p_first,
@@ -144,9 +149,14 @@ def run_targets(
         threshold_t_p90=float(np.quantile(threshold, 0.9)),
         scenario=result.best.scenario.scenario_id if result.best and result.positions else "",
     )
+    sizing = (
+        f"early book frac {book_frac:.2f} until {cfg.optimizer.early_until_utc:%Y-%m-%dT%H:%MZ}"
+        if early
+        else f"full book frac {book_frac:.2f}"
+    )
     notes = (
         f"engine={calib.engine} draws={calib.n_draws}; T from {t_source}; legs {len(legs)}/{len(universe)} "
-        f"tradable (require_verified={require_verified}); {result.explanation}"
+        f"tradable (require_verified={require_verified}); {sizing}; {result.explanation}"
         + (f"; WARN: {' | '.join(calib.warnings)}" if calib.warnings else "")
         + ("; p_top3 = 2.5 x P(1st) heuristic (SPEC 6)" if result.positions else "")
     )

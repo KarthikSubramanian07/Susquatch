@@ -103,7 +103,8 @@ forged tokens are refused on join and kicked (`system` error + `phx_close`) mid-
 
 | Channel | Event | When |
 |---|---|---|
-| `tournament:{tournamentId}` | `market_batch` | after any trade or book change (`trades`, `bookDirty`, `delivery.revision/previousRevision`) |
+| `tournament:{tournamentId}:market:{marketId}` | `market_batch` | after any trade or book change in that market (`trades`, `bookDirty`, `delivery.revision/previousRevision`); the platform's per-market topic since 2026-10-01 |
+| `tournament:{tournamentId}` | `market_batch` | the same batch tournament-wide (legacy topic, kept for older clients; the real platform no longer carries market updates here) |
 | `user:{profileId}` | `account_batch` | your fills, order updates and `collateralChanges` (`delta`, `outstandingAdvanceAfter`, `componentId`) |
 | `relationships:violations:{tournamentId}` | `violation` | a trade (or `/_mock/violation`) leaves a relationship violated |
 
@@ -153,8 +154,8 @@ floor ≤ payout in every allowed outcome, and nothing outstanding after settlem
 
 ## Not simulated
 
-Market closure before settlement, `REFUND`/N/A settlements, fees, and the 250 ms batching window
-(the mock broadcasts one batch per request). Settlement happens only through `/_mock/settle`.
+Market closure before settlement, `REFUND`/N/A settlements, fees, and the one-second batching window
+(the mock broadcasts one batch per request; the platform coalesces updates per second since 2026-10-01). Settlement happens only through `/_mock/settle`.
 Relationship evaluation uses last tournament trade prices; the production engine's exact price
 source is unverified.
 
