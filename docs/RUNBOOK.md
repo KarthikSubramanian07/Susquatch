@@ -67,6 +67,20 @@ what you saw in the reason. It goes into `ops/KILL` and tomorrow's summary.
 **What healthy looks like at 22:00 ET:** heartbeat < 3 min and green, `needle` ok with detail "posteriors …",
 `kalshi` ok, `status-writer` ok, stage **emerge**, events every few minutes, no clay anywhere except the Kill button.
 
+**API capacity on the night.** The platform gives each **account** one rate budget shared by every key:
+**100 reads and 30 writes a minute** (changelog Oct 1; more keys add nothing). A `429` carries `Retry-After: 60`, and
+the trading engine has its own throttle under the same code, so one 429 is a minute of lost writes. What that means:
+
+- Only run **one** trader. The bridge and rust-live use the same key, so running both at once splits the one budget
+  even though the lease stops them trading together. Set `COMPOSE_PROFILES` to one of them, never both.
+- Don't poll from your laptop with the same key while the bot is working (a `curl` loop is a read the bot can't make).
+  The dashboard reads our own status files, not the platform, so it is free.
+- Books come over realtime (`tournament:{id}:market:{market_id}`, one-second batches, full `asOf`-versioned books),
+  so REST reads are for reconciliation, not for watching prices. The bulk `/exchanges/prices` call covers 100 markets
+  per read.
+- 30 writes a minute is one order every 2 s, or one 50-order batch. The executor's limiter is tuned to 100/30; if the
+  summary shows `RATE_LIMITED` in events, something else is spending the budget.
+
 ## 3. Kill and un-kill
 
 | To | Do | Takes effect |
