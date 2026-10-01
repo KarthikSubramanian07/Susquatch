@@ -87,6 +87,13 @@ order_ttl_s = 30
 [strategies.mm]
 enabled = false                    # decided by the decision table after measure_day1
 
+[strategies.scenario]
+enabled = true
+tranche_frac = 0.25                # fraction of the remaining gap to target worked per tranche
+start_utc = "2026-10-07T16:00:00Z" # no scenario tranche before this (book is bought from week two)
+min_interval_s = 900               # at least 15 min between tranches on the same exchange
+max_hourly_notional_frac = 0.02    # stop once the trailing hour's tranches exceed 2% of equity
+
 [telemetry]
 leaderboard_interval_s = 3600
 price_snapshot_interval_s = 60

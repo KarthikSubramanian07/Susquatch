@@ -9,11 +9,12 @@ use serde_json::json;
 use susq_contracts::v1::{
     self, Header, MarketMap, MarketRule, Producer, TargetFile, TargetPointer, TargetPosition,
 };
-use susq_core::{Action, Clock, Config, ManualClock, Mode, Pips, Side, TournamentId};
+use susq_core::{Action, Clock, Config, ExchangeId, ManualClock, MarketId, Mode, Pips, Side, TournamentId};
 use susq_gateway::{Lease, LeaseConfig, LeaseStatus};
 use susq_journal::Journal;
 use susq_live::{
     engine::Engine,
+    realtime::RealtimeFeed,
     status,
     wiring::{BuildOpts, build},
 };
@@ -21,6 +22,7 @@ use susq_oms::OrderState;
 use susq_platform::{
     OrderStatusFilter, all_orders,
     mock::{MockConfig, MockPlatform},
+    realtime::{BookDirty, MarketBatch, RealtimeEvent, ResyncReason, RtBook, RtLevel},
 };
 
 const TID: &str = "tid-1";
@@ -158,6 +160,14 @@ async fn session(prepare: impl FnOnce(&Path, &ManualClock)) -> Session {
 }
 
 async fn session_with(tweak: impl FnOnce(&mut Config), prepare: impl FnOnce(&Path, &ManualClock)) -> Session {
+    session_full(tweak, prepare, None).await
+}
+
+async fn session_full(
+    tweak: impl FnOnce(&mut Config),
+    prepare: impl FnOnce(&Path, &ManualClock),
+    realtime: Option<RealtimeFeed>,
+) -> Session {
     let home = tempfile::tempdir().expect("tmp");
     let mut cfg = config();
     tweak(&mut cfg);
@@ -185,7 +195,7 @@ async fn session_with(tweak: impl FnOnce(&mut Config), prepare: impl FnOnce(&Pat
         journal: Journal::discard(),
         tournament: TournamentId::new(TID),
         paper_balance: 100_000.0,
-        realtime: None,
+        realtime,
         needle: None,
         host: "test".into(),
         pid: 1,
@@ -303,17 +313,19 @@ async fn kill_file_mid_run_cancels_everything_and_freezes() {
     assert!(status::snapshot(&s.engine, s.clock.now_ns(), 2).killed);
 }
 
+/// A paper session only competes for the paper lease: another paper process holding it makes
+/// this one read-only.
 #[tokio::test]
-async fn a_lease_held_by_the_bridge_prevents_any_write() {
+async fn a_lease_held_by_another_paper_process_prevents_any_write() {
     let bridge_clock = Arc::new(Mutex::default());
     let bc = bridge_clock.clone();
     let mut s = session(move |home, clock| {
         write_targets(home, clock.now_ns(), "targets-1.json");
         let bridge = Lease::new(
             LeaseConfig {
-                path: home.join("ops/state/trader.lease"),
+                path: home.join("ops/state/trader.paper.lease"),
                 ttl: Duration::from_secs(30),
-                holder: "bridge".into(),
+                holder: "paper-peer".into(),
                 host: "test".into(),
                 pid: 4242,
             },
@@ -342,6 +354,48 @@ async fn a_lease_held_by_the_bridge_prevents_any_write() {
     assert_eq!(s.paper_position("1").await, 0);
     let lease_health = s.engine.world.health.get("lease").map(|h| h.state.clone());
     assert_eq!(lease_health.as_deref(), Some("degraded"));
+}
+
+/// The live bridge's lease is not ours to take in paper mode: a paper session trades on its own
+/// lease and never touches `ops/state/trader.lease`, even once the bridge's lease has lapsed.
+#[tokio::test]
+async fn paper_mode_never_takes_the_live_lease() {
+    let live_path = |home: &Path| home.join("ops/state/trader.lease");
+    let mut s = session(move |home, clock| {
+        write_targets(home, clock.now_ns(), "targets-1.json");
+        let bridge = Lease::new(
+            LeaseConfig {
+                path: live_path(home),
+                ttl: Duration::from_secs(30),
+                holder: "bridge".into(),
+                host: "test".into(),
+                pid: 4242,
+            },
+            Arc::new(clock.clone()),
+        );
+        assert!(matches!(
+            bridge.acquire().expect("bridge lease"),
+            LeaseStatus::Held(_)
+        ));
+    })
+    .await;
+    // Well past the bridge's 30 s TTL without a renewal: the live lease has lapsed.
+    for _ in 0..10 {
+        s.tick(5).await;
+    }
+    assert!(s.engine.gateway().lease().holds(), "paper lease is ours");
+    let lease_health = s.engine.world.health.get("lease").map(|h| h.state.clone());
+    assert_eq!(lease_health.as_deref(), Some("ok"));
+    assert!(
+        s.engine.gateway().oms().lock().all().count() > 0,
+        "paper trading proceeds on its own lease"
+    );
+    let on_disk: v1::TraderLease = susq_contracts::from_json(
+        &std::fs::read_to_string(live_path(s.home.path())).expect("live lease file"),
+    )
+    .expect("lease json");
+    assert_eq!(on_disk.holder, "bridge", "the live lease file was left alone");
+    assert!(s.home.path().join("ops/state/trader.paper.lease").exists());
 }
 
 #[tokio::test]
@@ -522,4 +576,92 @@ async fn a_malformed_fair_file_is_refused_and_the_old_values_age_out() {
     s.tick(61).await;
     s.tick(1).await;
     assert_eq!(s.intents("sniper").len(), 2, "once they age out, nothing more");
+}
+
+/// A versioned `books` item for one exchange, and a batch on that exchange's market channel.
+fn rt_batch(ex: &str, market: &str, version: u64, bid: f64, ask: f64) -> RealtimeEvent {
+    let level = |price: f64| RtLevel {
+        price,
+        quantity: 10.0,
+    };
+    RealtimeEvent::MarketBatch {
+        channel: format!("tournament:{TID}:market:{market}"),
+        batch: MarketBatch {
+            book_dirty: vec![BookDirty {
+                exchange_id: ExchangeId::new(ex),
+                market_id: Some(MarketId::new(market)),
+                tournament_id: Some(TournamentId::new(TID)),
+                at: None,
+            }],
+            books: vec![RtBook {
+                exchange_id: ExchangeId::new(ex),
+                market_id: Some(MarketId::new(market)),
+                tournament_id: Some(TournamentId::new(TID)),
+                version: Some(version),
+                bids: vec![level(bid)],
+                asks: vec![level(ask)],
+                at: None,
+            }],
+            ..MarketBatch::default()
+        },
+    }
+}
+
+/// Versioned books in a per-market batch replace the cached book without a REST fetch, older
+/// versions are ignored, and a resync scoped to one market's channel leaves other markets alone.
+#[tokio::test]
+async fn realtime_books_are_applied_by_version_and_market_resyncs_stay_scoped() {
+    let (tx, rx) = tokio::sync::mpsc::channel(16);
+    let mut s = session_full(|_| {}, |_, _| {}, Some(RealtimeFeed::fixed(rx))).await;
+    let ex1 = ExchangeId::new("1");
+    let ex4 = ExchangeId::new("4");
+    let best_bid = |s: &Session, ex: &ExchangeId| {
+        s.engine
+            .world
+            .books
+            .get(ex)
+            .and_then(|b| b.best_bid())
+            .map(|l| l.price.get())
+    };
+    tx.try_send(rt_batch("1", "m1", 2, 0.11, 0.12)).expect("send");
+    tx.try_send(rt_batch("4", "m2", 1, 0.21, 0.22)).expect("send");
+    s.tick(1).await;
+    assert_eq!(best_bid(&s, &ex1), Some(1100), "the batch's book was applied");
+    assert_eq!(best_bid(&s, &ex4), Some(2100));
+    assert!(
+        !s.engine.world.books.is_dirty(&ex1),
+        "a book in the batch clears its own dirty mark"
+    );
+    // An older version is stale and ignored: its `bookDirty` still stands, so the book comes
+    // back from REST (the seeded 0.40 bid), never from the stale item. A newer one is applied.
+    tx.try_send(rt_batch("1", "m1", 1, 0.31, 0.32)).expect("send");
+    s.tick(1).await;
+    assert_eq!(best_bid(&s, &ex1), Some(4000));
+    tx.try_send(rt_batch("1", "m1", 3, 0.33, 0.34)).expect("send");
+    s.tick(1).await;
+    assert_eq!(best_bid(&s, &ex1), Some(3300));
+    // A revision gap on m1's channel: m1's books are refetched from REST, m2's is untouched.
+    tx.try_send(RealtimeEvent::Resync {
+        reason: ResyncReason::RevisionGap {
+            channel: format!("tournament:{TID}:market:m1"),
+            expected: 3,
+            got: Some(1),
+        },
+    })
+    .expect("send");
+    s.tick(1).await;
+    assert_eq!(
+        best_bid(&s, &ex1),
+        Some(4000),
+        "refetched from the seeded REST book"
+    );
+    assert_eq!(best_bid(&s, &ex4), Some(2100));
+    assert!(!s.engine.world.books.is_dirty(&ex4));
+    // A reconnect taints every book, including markets nobody is working.
+    tx.try_send(RealtimeEvent::Resync {
+        reason: ResyncReason::Reconnect,
+    })
+    .expect("send");
+    s.tick(1).await;
+    assert!(s.engine.world.books.is_dirty(&ex4));
 }

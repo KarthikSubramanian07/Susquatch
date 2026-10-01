@@ -15,13 +15,13 @@ use std::{
 use susq_book::L2Book;
 use susq_bus::monitor::NeedleSnapshot;
 use susq_contracts::v1::{self, MarketMap};
-use susq_core::{Clock, Config, ExchangeId, MarketIndex, OrderBundle, clock::duration_ns};
+use susq_core::{Clock, Config, ExchangeId, MarketId, MarketIndex, OrderBundle, clock::duration_ns};
 use susq_gateway::{Blocked, Gateway, LeaseStatus, PaperBroker, SendOutcome};
 use susq_platform::{
     OrderStatusFilter, PlatformAdapter, PlatformError, PnlPeriod, all_orders, all_relationships,
     collateral::CollateralGraph,
     models::LeaderboardPeriod,
-    realtime::{RealtimeEvent, ResyncReason},
+    realtime::{RealtimeEvent, ResyncReason, market_of_channel},
 };
 use susq_risk::{BreakerConfig, Breakers, BundleCost, PreTrade, RiskContext, RiskLimits};
 use susq_strategies::{
@@ -29,12 +29,12 @@ use susq_strategies::{
     Strategy,
 };
 use susq_targets::{FairOutcome, FairReader, ReaderConfig, RefreshOutcome, TargetsReader};
-use tokio::{
-    sync::{mpsc, watch},
-    task::JoinHandle,
-};
+use tokio::{sync::watch, task::JoinHandle};
 
-use crate::world::{World, intent_views, live_orders};
+use crate::{
+    realtime::RealtimeFeed,
+    world::{World, intent_views, live_orders},
+};
 
 const S: i64 = 1_000_000_000;
 /// Books fetched per step at most (keeps reads inside the rate budget).
@@ -47,6 +47,8 @@ const RELATIONSHIPS_EVERY_NS: i64 = 3600 * S;
 const FAIR_FORGET_NS: i64 = 3600 * S;
 /// Market map re-read period.
 const MARKET_MAP_EVERY_NS: i64 = 60 * S;
+/// How often the wanted set of per-market realtime channels is recomputed.
+const REALTIME_MARKETS_EVERY_NS: i64 = 60 * S;
 
 /// Everything the engine is built from.
 pub struct EngineDeps {
@@ -62,7 +64,7 @@ pub struct EngineDeps {
     pub paper: Option<Arc<PaperBroker>>,
     pub gateway: Arc<Gateway>,
     pub tournament: susq_core::TournamentId,
-    pub realtime: Option<mpsc::Receiver<RealtimeEvent>>,
+    pub realtime: Option<RealtimeFeed>,
     pub needle: Option<watch::Receiver<NeedleSnapshot>>,
 }
 
@@ -74,6 +76,7 @@ struct Due {
     relationships: i64,
     market_map: i64,
     leaderboard: i64,
+    realtime: i64,
 }
 
 /// The engine.
@@ -100,6 +103,8 @@ pub struct Engine {
     collateral: CollateralCost,
     /// `[risk] use_collateral_buying_power` resolved at start (`"auto"` reads the day-one confirmation).
     collateral_sizing: bool,
+    /// Latest realtime book version applied per exchange (older `books` items are stale).
+    book_versions: HashMap<ExchangeId, u64>,
 }
 
 /// Collateral-aware bundle cost for risk's buying-power check.
@@ -154,6 +159,7 @@ impl Engine {
             market_map_mtime: None,
             collateral: CollateralCost::default(),
             collateral_sizing,
+            book_versions: HashMap::new(),
             world,
             d,
         }
@@ -181,6 +187,9 @@ impl Engine {
         self.load_market_map(now);
         self.refresh_relationships(now).await;
         self.reconcile(now).await;
+        self.refresh_targets(now);
+        self.refresh_fair(now);
+        self.refresh_realtime_markets(now);
         self.world.initial_equity = self.world.equity;
         self.world
             .event(format!("started in {} mode", self.d.gateway.mode().as_str()));
@@ -290,15 +299,75 @@ impl Engine {
     // ───────────────────────────── inputs ─────────────────────────────
 
     fn drain_realtime(&mut self, now: i64) {
-        let Some(rx) = self.d.realtime.as_mut() else {
+        let Some(feed) = self.d.realtime.as_mut() else {
             return;
         };
         let mut events = Vec::new();
-        while let Ok(ev) = rx.try_recv() {
+        while let Some(ev) = feed.try_recv() {
             events.push(ev);
         }
         for ev in events {
             self.apply_realtime(ev, now);
+        }
+    }
+
+    /// Markets that deserve a per-market channel, most important first: the targets file, then
+    /// everything else the strategies read books for (positions, violations, fresh fair values,
+    /// needle races), then the books that moved most recently.
+    fn realtime_market_candidates(&self, now: i64) -> Vec<MarketId> {
+        let markets = &self.world.markets;
+        let mut out: Vec<MarketId> = Vec::new();
+        if let Some(t) = self.targets.current().map(|t| t.file()) {
+            out.extend(
+                t.positions
+                    .iter()
+                    .filter_map(|p| markets.market_of(&ExchangeId::new(p.exchange_id.clone()))),
+            );
+        }
+        let fair_max_age = i64::try_from(self.d.cfg.fair.stale_after_s)
+            .unwrap_or(60)
+            .saturating_mul(S);
+        let targets = self.targets.current().map(|t| t.file());
+        out.extend(
+            self.world
+                .exchanges_of_interest(targets, now, fair_max_age)
+                .iter()
+                .filter_map(|ex| markets.market_of(ex)),
+        );
+        let mut recent: Vec<&L2Book> = self.world.books.iter().collect();
+        recent.sort_by(|a, b| {
+            b.observed_at_ns
+                .cmp(&a.observed_at_ns)
+                .then_with(|| a.exchange_id.cmp(&b.exchange_id))
+        });
+        out.extend(recent.iter().filter_map(|b| markets.market_of(&b.exchange_id)));
+        out
+    }
+
+    /// Keep the per-market realtime channels on the markets that matter (rebuilds are
+    /// rate-limited inside the feed).
+    fn refresh_realtime_markets(&mut self, now: i64) {
+        self.due.realtime = now + REALTIME_MARKETS_EVERY_NS;
+        let Some(cap) = self.d.realtime.as_ref().map(RealtimeFeed::cap) else {
+            return;
+        };
+        let wanted = self.realtime_market_candidates(now);
+        let Some(feed) = self.d.realtime.as_mut() else {
+            return;
+        };
+        if let Some(channels) = feed.ensure(wanted, now) {
+            let markets = feed.markets().len();
+            self.world.event(format!(
+                "realtime session built: {channels} channels ({markets} of {cap} market slots)"
+            ));
+        }
+    }
+
+    /// Every exchange of a market is suspect: mark their books dirty.
+    fn mark_market_dirty(&mut self, market: &MarketId, now: i64) {
+        let exchanges: Vec<ExchangeId> = self.world.markets.exchanges_for_market(market).to_vec();
+        for ex in exchanges {
+            self.world.books.mark_dirty(&ex, now);
         }
     }
 
@@ -307,6 +376,20 @@ impl Engine {
             RealtimeEvent::MarketBatch { batch, .. } => {
                 for d in &batch.book_dirty {
                     self.world.books.mark_dirty(&d.exchange_id, now);
+                }
+                // A versioned book in the batch is as good as a REST fetch made now: it clears the
+                // dirty mark set above and saves the refetch. Older versions are ignored.
+                for b in &batch.books {
+                    let known = self.book_versions.get(&b.exchange_id).copied();
+                    if b.version.zip(known).is_some_and(|(v, k)| v <= k) {
+                        continue;
+                    }
+                    if let Some(v) = b.version {
+                        self.book_versions.insert(b.exchange_id.clone(), v);
+                    }
+                    self.world
+                        .books
+                        .apply_snapshot(L2Book::from_api(&b.to_order_book(), now));
                 }
                 if !batch.market_settled.is_empty() {
                     self.due.reconcile = 0;
@@ -322,12 +405,25 @@ impl Engine {
             }
             RealtimeEvent::LeaderboardTick { .. } => self.due.leaderboard = 0,
             RealtimeEvent::Resync { reason } => {
+                // A gap or rejoin on one market's channel only taints that market's books; anything
+                // wider taints everything.
+                let scoped = match &reason {
+                    ResyncReason::SocketError { channel } | ResyncReason::RevisionGap { channel, .. } => {
+                        market_of_channel(channel)
+                    }
+                    _ => None,
+                };
                 if !matches!(reason, ResyncReason::InitialSubscribe) {
                     self.world.event(format!("realtime resync: {reason:?}"));
                 }
-                self.world.books.mark_all_dirty(now);
-                self.due.reconcile = 0;
-                self.due.constraints = 0;
+                match scoped {
+                    Some(market) => self.mark_market_dirty(&market, now),
+                    None => {
+                        self.world.books.mark_all_dirty(now);
+                        self.due.reconcile = 0;
+                        self.due.constraints = 0;
+                    }
+                }
             }
             RealtimeEvent::Connected => self.world.set_health("realtime", "ok", "connected", now),
             RealtimeEvent::Disconnected { reason } => self.world.set_health(
@@ -358,6 +454,9 @@ impl Engine {
         self.refresh_targets(now);
         self.refresh_fair(now);
         self.refresh_needle(now);
+        if now >= self.due.realtime {
+            self.refresh_realtime_markets(now);
+        }
         self.world
             .violations
             .retain(|_, (_, at)| now - *at <= VIOLATION_TTL_NS);

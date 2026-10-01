@@ -276,6 +276,11 @@ impl BookStore {
         ids
     }
 
+    /// Every book held, in no particular order.
+    pub fn iter(&self) -> impl Iterator<Item = &L2Book> {
+        self.books.values()
+    }
+
     /// Number of books held.
     pub fn len(&self) -> usize {
         self.books.len()

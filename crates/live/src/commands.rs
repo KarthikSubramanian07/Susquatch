@@ -13,11 +13,13 @@ use susq_bus::{
     watchdog::WatchdogCfg,
 };
 use susq_contracts::v1::MarketMap;
-use susq_core::{Action, ExchangeId, OrderBundle, OrderSpec, Pips, Qty, Side, TournamentId, clock::from_ns};
+use susq_core::{
+    Action, ExchangeId, Mode, OrderBundle, OrderSpec, Pips, Qty, Side, TournamentId, clock::from_ns,
+};
 use susq_gateway::KillSwitch;
 use susq_oms::OrderState;
-use susq_platform::realtime::{RealtimeClient, RealtimeConfig, RealtimeEvent, tournament_channels};
-use tokio::sync::{mpsc, watch};
+use susq_platform::realtime::{RealtimeClient, RealtimeConfig, tournament_channels};
+use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
@@ -25,22 +27,23 @@ use crate::{
     election,
     engine::Engine,
     http::{self, Liveness},
+    realtime::{RealtimeFeed, Spawner},
     runtime::{Runtime, connect},
     status,
-    wiring::{BuildOpts, build, host_name},
+    wiring::{BuildOpts, RunPaths, build, host_name},
 };
 
 fn build_engine(
     rt: &Runtime,
-    force_paper: bool,
-    realtime: Option<mpsc::Receiver<RealtimeEvent>>,
+    mode: Mode,
+    realtime: Option<RealtimeFeed>,
     needle: Option<watch::Receiver<NeedleSnapshot>>,
     kill: Option<KillSwitch>,
 ) -> anyhow::Result<Engine> {
     build(BuildOpts {
         cfg: rt.cfg.clone(),
         home: rt.home.clone(),
-        mode: rt.mode(force_paper),
+        mode,
         clock: rt.clock.clone(),
         platform: rt.platform.clone(),
         journal: rt.journal.clone(),
@@ -69,11 +72,14 @@ fn known_races(rt: &Runtime) -> HashSet<String> {
         .unwrap_or_default()
 }
 
+/// The realtime feed: tournament-scope channels plus up to `live.realtime_market_channels`
+/// per-market channels, which the engine picks and rebuilds as its markets of interest change.
+/// Nothing connects until the engine's first market selection.
 async fn start_realtime(
     rt: &Runtime,
     tid: &TournamentId,
     shutdown: &CancellationToken,
-) -> Option<mpsc::Receiver<RealtimeEvent>> {
+) -> Option<RealtimeFeed> {
     let token = match rt.platform.realtime_token().await {
         Ok(t) => t,
         Err(e) => {
@@ -81,15 +87,26 @@ async fn start_realtime(
             return None;
         }
     };
-    let rc = &rt.cfg.realtime;
-    let cfg = RealtimeConfig {
-        heartbeat: Duration::from_secs(rc.heartbeat_s),
-        refresh_before: Duration::from_secs(rc.refresh_before_s),
-        max_backoff: Duration::from_secs(rc.max_backoff_s),
-        ..RealtimeConfig::new(tournament_channels(tid, &token.channels.user))
-    };
-    let (rx, _task) = RealtimeClient::spawn(cfg, rt.platform.clone(), rt.clock.clone(), shutdown.clone());
-    Some(rx)
+    let base = tournament_channels(tid, &token.channels.user);
+    let rc = rt.cfg.realtime.clone();
+    let (platform, clock, shutdown) = (rt.platform.clone(), rt.clock.clone(), shutdown.clone());
+    let spawn: Spawner = Box::new(move |channels| {
+        let cfg = RealtimeConfig {
+            heartbeat: Duration::from_secs(rc.heartbeat_s),
+            refresh_before: Duration::from_secs(rc.refresh_before_s),
+            max_backoff: Duration::from_secs(rc.max_backoff_s),
+            ..RealtimeConfig::new(channels)
+        };
+        let cancel = shutdown.child_token();
+        let (rx, _task) = RealtimeClient::spawn(cfg, platform.clone(), clock.clone(), cancel.clone());
+        (rx, cancel)
+    });
+    Some(RealtimeFeed::new(
+        tid.clone(),
+        base,
+        rt.cfg.live.realtime_market_channels,
+        spawn,
+    ))
 }
 
 /// Connect to NATS, wire `ops.kill` to `kill`, and start the needle monitor. Returns the bus
@@ -154,6 +171,7 @@ async fn terminate_signal() {
 /// `run` / `paper-run`: the trading loop until SIGTERM / Ctrl-C.
 pub async fn run(cli: &Cli, args: &RunArgs, force_paper: bool) -> anyhow::Result<()> {
     let rt = connect(&cli.home, &cli.config_path()).await?;
+    let mode = rt.mode(force_paper);
     let metrics = PrometheusBuilder::new().install_recorder().ok();
     let shutdown = CancellationToken::new();
     let tid = rt.tid();
@@ -180,7 +198,7 @@ pub async fn run(cli: &Cli, args: &RunArgs, force_paper: bool) -> anyhow::Result
         }
     };
     // The same switch (shared flag) is wired to NATS ops.kill and handed to the gateway.
-    let mut engine = build_engine(&rt, force_paper, realtime, needle, Some(kill))?;
+    let mut engine = build_engine(&rt, mode, realtime, needle, Some(kill))?;
     engine.bootstrap().await;
 
     let tick_ms = rt.cfg.live.tick_ms.max(50);
@@ -192,7 +210,7 @@ pub async fn run(cli: &Cli, args: &RunArgs, force_paper: bool) -> anyhow::Result
     let server = tokio::spawn(http::serve(addr, liveness.clone(), metrics, shutdown.clone()));
 
     let status_every = i64::try_from(rt.cfg.live.status_interval_s).unwrap_or(60) * 1_000_000_000;
-    let status_path = rt.home.join(&rt.cfg.paths.status);
+    let status_path = RunPaths::resolve(&rt.cfg, &rt.home, mode).status;
     let (mut next_status, mut seq) = (0i64, 0u64);
     let mut tick = tokio::time::interval(Duration::from_millis(tick_ms));
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -283,7 +301,7 @@ fn smoke_price(book: &susq_platform::OrderBook) -> Pips {
 /// `smoke`: place one contract and cancel it, through every gate. Prints a JSON result.
 pub async fn smoke(cli: &Cli, exchange: &str) -> anyhow::Result<()> {
     let rt = connect(&cli.home, &cli.config_path()).await?;
-    let mut engine = build_engine(&rt, false, None, None, None)?;
+    let mut engine = build_engine(&rt, rt.mode(false), None, None, None)?;
     engine.bootstrap().await;
     let ex = ExchangeId::new(exchange);
     let book = engine.platform().orderbook(&rt.tid(), &ex, 5).await?;
@@ -342,7 +360,7 @@ pub async fn smoke(cli: &Cli, exchange: &str) -> anyhow::Result<()> {
 /// `cancel-all`: needs the lease (refuses while another process trades).
 pub async fn cancel_all(cli: &Cli, reason: &str) -> anyhow::Result<()> {
     let rt = connect(&cli.home, &cli.config_path()).await?;
-    let mut engine = build_engine(&rt, false, None, None, None)?;
+    let mut engine = build_engine(&rt, rt.mode(false), None, None, None)?;
     engine.bootstrap().await;
     let resp = engine
         .gateway()
@@ -359,10 +377,11 @@ pub async fn cancel_all(cli: &Cli, reason: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// `lease`: print the lease on disk (no API key needed).
-pub fn lease(cli: &Cli) -> anyhow::Result<()> {
+/// `lease`: print the lease on disk (no API key needed); `--paper` shows the paper-mode lease.
+pub fn lease(cli: &Cli, paper: bool) -> anyhow::Result<()> {
     let cfg = susq_core::Config::load(&cli.config_path())?;
-    let path = cli.home.join(&cfg.lease.path);
+    let mode = if paper { Mode::Paper } else { Mode::Live };
+    let path = RunPaths::resolve(&cfg, &cli.home, mode).lease;
     match std::fs::read_to_string(&path) {
         Ok(text) => {
             let lease: susq_contracts::v1::TraderLease = susq_contracts::from_json(&text)?;

@@ -295,6 +295,13 @@ pub struct ScenarioCfg {
     pub tranche_frac: f64,
     pub min_tranche_qty: i64,
     pub order_ttl_s: u64,
+    /// No scenario tranche is sent before this instant (RFC 3339); `None` means immediately.
+    pub start_utc: Option<DateTime<Utc>>,
+    /// Minimum seconds between two tranches on the same exchange.
+    pub min_interval_s: u64,
+    /// Stop sending once the notional of tranches sent in the trailing hour exceeds this fraction
+    /// of equity (the platform allows 30 order writes per minute per account); `1.0` = no cap.
+    pub max_hourly_notional_frac: f64,
 }
 
 impl Default for ScenarioCfg {
@@ -304,6 +311,9 @@ impl Default for ScenarioCfg {
             tranche_frac: 0.25,
             min_tranche_qty: 1,
             order_ttl_s: 120,
+            start_utc: None,
+            min_interval_s: 0,
+            max_hourly_notional_frac: 1.0,
         }
     }
 }
@@ -413,6 +423,11 @@ pub struct LiveCfg {
     pub book_max_age_s: u64,
     /// Main decision loop period.
     pub tick_ms: u64,
+    /// How many per-market realtime channels to join at most (Supabase caps channels per
+    /// connection, commonly at 100). Markets in the targets file come first, then the ones we
+    /// hold, are violated on, have fair values for, or saw book activity on most recently; every
+    /// other market stays on REST polling.
+    pub realtime_market_channels: usize,
 }
 
 impl Default for LiveCfg {
@@ -422,6 +437,7 @@ impl Default for LiveCfg {
             metrics_addr: "127.0.0.1:9464".into(),
             book_max_age_s: 10,
             tick_ms: 500,
+            realtime_market_channels: 80,
         }
     }
 }
@@ -497,6 +513,10 @@ impl Config {
             ("risk.loss_per_hour_frac", self.risk.loss_per_hour_frac),
             ("risk.max_order_notional_frac", self.risk.max_order_notional_frac),
             ("platform.order_budget_frac", self.platform.order_budget_frac),
+            (
+                "strategies.scenario.max_hourly_notional_frac",
+                self.strategies.scenario.max_hourly_notional_frac,
+            ),
         ];
         for (name, v) in fracs
             .into_iter()
@@ -585,11 +605,20 @@ mod tests {
         );
         assert!(!cfg.strategies.mm.enabled);
         assert!(cfg.strategies.racer.enabled);
+        let scenario = &cfg.strategies.scenario;
+        assert_eq!(
+            scenario.start_utc.map(|t| t.to_rfc3339()).as_deref(),
+            Some("2026-10-07T16:00:00+00:00")
+        );
+        assert_eq!(scenario.min_interval_s, 900);
+        assert_eq!(scenario.max_hourly_notional_frac, 0.02);
+        assert_eq!(scenario.tranche_frac, 0.25);
         assert_eq!(cfg.needle.resume_after_healthy, 5);
         // Rust-only sections fall back to defaults.
         assert_eq!(cfg.bus.nats_url, "nats://127.0.0.1:4222");
         assert_eq!(cfg.paths.fair_live, PathBuf::from("state/fair_live.json"));
         assert!(cfg.live.metrics_addr.starts_with("127.0.0.1:"));
+        assert_eq!(cfg.live.realtime_market_channels, 80);
     }
 
     #[test]
