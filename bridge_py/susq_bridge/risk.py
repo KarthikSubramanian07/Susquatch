@@ -89,6 +89,8 @@ class RiskEngine:
     cash: float | None = None
     #: Cash (pip-units) a sequence of requests would consume under the ALL collateral model.
     cost_model: Callable[[Sequence[OrderRequest]], int] | None = None
+    #: Set at the open when ``collateral_auto`` is on and measure_day1 confirmed the model.
+    collateral_confirmed: bool = False
     _rejects: deque[datetime] = field(default_factory=deque)
     _equity: deque[tuple[datetime, float]] = field(default_factory=deque)
     on_trip: Callable[[str], None] | None = None
@@ -248,7 +250,10 @@ class RiskEngine:
 
     @property
     def uses_collateral(self) -> bool:
-        return self.config.use_collateral_buying_power and self.cost_model is not None
+        enabled = self.config.use_collateral_buying_power or (
+            self.config.collateral_auto and self.collateral_confirmed
+        )
+        return enabled and self.cost_model is not None
 
     def buying_power_room(
         self,

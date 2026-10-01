@@ -56,6 +56,7 @@ __all__ = [
     "COLLATERAL_TOLERANCE",
     "Day1Report",
     "Section",
+    "collateral_confirmed",
     "decide",
     "load_report",
     "measure_day1",
@@ -505,7 +506,7 @@ def _collateral_recommendation(section: Section | None) -> str:
             f"Collateral: the engine's `all` economics matched the model within "
             f"{section.data.get('tolerance')} SUSQies on {section.data.get('filled')} fill(s) "
             f"(savings {section.data.get('savings')}): set use_collateral_buying_power = true in "
-            "config/susq.toml (experiment PR)."
+            'config/susq.toml (experiment PR); with "auto" the bridge has already switched it on.'
         )
     return f"Collateral: keep [risk] use_collateral_buying_power = false. {section.summary}"
 
@@ -645,6 +646,26 @@ async def measure_day1(
 
 
 # ── persistence ─────────────────────────────────────────────────────────────────────────────
+
+
+def collateral_confirmed(report: Day1Report | None, state_dir: Path) -> bool:
+    """The ``use_collateral_buying_power = "auto"`` decision, persisted across restarts.
+
+    A collateral section that matched the model confirms (and records) it; one that measured a
+    mismatch revokes it; anything else (skipped, pending, no report) keeps the last recorded answer.
+    """
+    path = state_dir / "bridge" / "collateral_confirmed.json"
+    section = report.get("collateral") if report is not None else None
+    if section is not None and section.status == "ok" and section.data.get("matches"):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        assert report is not None  # a section implies a report
+        record = {"confirmedAt": report.generated_at, **section.data}
+        path.write_bytes(orjson.dumps(record, option=orjson.OPT_INDENT_2))
+        return True
+    if section is not None and section.status in ("ok", "failed"):
+        path.unlink(missing_ok=True)
+        return False
+    return path.exists()
 
 
 def write_report(report: Day1Report, reports_dir: Path) -> tuple[Path, Path]:

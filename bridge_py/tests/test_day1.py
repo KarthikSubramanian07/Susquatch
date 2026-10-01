@@ -8,12 +8,13 @@ from pathlib import Path
 import orjson
 from susq.mock import MockConfig
 from susq.mock.testing import KEY, serve_mock
-from susq_bridge.cli import app
+from susq_bridge.cli import _apply_collateral, app
 from susq_bridge.config import load_config
 from susq_bridge.first_trade import first_trade
 from susq_bridge.lease import Lease
 from susq_bridge.measure_day1 import (
     Day1Report,
+    collateral_confirmed,
     decide,
     load_report,
     measure_day1,
@@ -80,6 +81,12 @@ async def test_measure_day1_live(harness) -> None:  # type: ignore[no-untyped-de
         assert "Decision table" in md.read_text()
         assert load_report(harness.config.reports_dir).get("tick").status == "ok"  # type: ignore[union-attr]
         assert js.exists()
+        # The repo config says "auto": the matched probe switches collateral sizing on at once.
+        assert harness.config.risk.collateral_auto
+        assert not bridge.gateway.risk.uses_collateral
+        _apply_collateral(bridge, harness.config, report)
+        assert bridge.gateway.risk.uses_collateral
+        assert (harness.config.state_dir / "bridge" / "collateral_confirmed.json").exists()
     finally:
         await bridge.close()
 
@@ -104,6 +111,8 @@ async def test_collateral_mismatch_keeps_the_flag_off(harness) -> None:  # type:
         rec = next(r for r in report.recommendations if r.startswith("Collateral"))
         assert "keep [risk] use_collateral_buying_power = false" in rec
         assert all("= true" not in r for r in report.recommendations)
+        _apply_collateral(bridge, harness.config, report)
+        assert not bridge.gateway.risk.uses_collateral  # "auto" stays off on a mismatch
     finally:
         await bridge.close()
 
@@ -228,3 +237,27 @@ async def test_realtime_probe_joins(home: Path) -> None:
             assert realtime.data["joined"] is True
         finally:
             await bridge.close()
+
+
+# ── collateral "auto" decision ──────────────────────────────────────────────────────────────
+
+
+def _with_collateral(status: str, **data: object) -> Day1Report:
+    report = Day1Report(generated_at="2026-10-01T16:00:05Z", mode="live")
+    report.add("collateral", status, "probe", **data)
+    return report
+
+
+def test_collateral_auto_confirms_persists_and_revokes(tmp_path: Path) -> None:
+    record = tmp_path / "bridge" / "collateral_confirmed.json"
+    assert collateral_confirmed(None, tmp_path) is False  # nothing measured yet
+    assert collateral_confirmed(_with_collateral("ok", matches=True, filled=2), tmp_path) is True
+    assert record.exists()
+    # A restart after the open re-measures; a skipped probe keeps the earlier confirmation.
+    assert collateral_confirmed(_with_collateral("skipped"), tmp_path) is True
+    assert collateral_confirmed(None, tmp_path) is True
+    # A measured mismatch switches it back off and forgets the confirmation.
+    assert collateral_confirmed(_with_collateral("ok", matches=False), tmp_path) is False
+    assert not record.exists()
+    assert collateral_confirmed(_with_collateral("ok", matches=True), tmp_path) is True
+    assert collateral_confirmed(_with_collateral("failed"), tmp_path) is False

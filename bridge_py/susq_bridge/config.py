@@ -69,6 +69,9 @@ class RiskConfig:
     clusters: dict[str, float] = field(default_factory=dict)
     #: Size buying power on modeled ALL effective cost instead of full notional (default off).
     use_collateral_buying_power: bool = False
+    #: ``use_collateral_buying_power = "auto"``: off until measure_day1 confirms the engine matches the
+    #: model, then on (the confirmation persists in state/bridge/collateral_confirmed.json).
+    collateral_auto: bool = False
 
 
 @dataclass(frozen=True)
@@ -182,6 +185,11 @@ def load_config(home: Path | None = None, env: Mapping[str, str] | None = None) 
     racer = strategies.get("racer", {})
     sniper = strategies.get("sniper", {})
     state_dir = path(paths["state"])
+    collateral = risk.get("use_collateral_buying_power", False)
+    if collateral not in (True, False, "auto"):
+        raise ValueError(
+            f'[risk] use_collateral_buying_power must be true, false or "auto", not {collateral!r}'
+        )
     return BridgeConfig(
         home=root,
         platform=platform,
@@ -195,7 +203,8 @@ def load_config(home: Path | None = None, env: Mapping[str, str] | None = None) 
             reject_breaker_per_min=int(risk["reject_breaker_per_min"]),
             max_order_notional_frac=float(risk["max_order_notional_frac"]),
             clusters={k: float(v) for k, v in risk.get("clusters", {}).items()},
-            use_collateral_buying_power=bool(risk.get("use_collateral_buying_power", False)),
+            use_collateral_buying_power=collateral is True,
+            collateral_auto=collateral == "auto",
         ),
         oms=OmsConfig(
             default_ttl_s=float(raw["oms"]["default_ttl_s"]),

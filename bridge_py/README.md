@@ -121,9 +121,11 @@ nothing). The engine's exact rules are not documented, so the bridge keeps two t
 | | What happens | When |
 |---|---|---|
 | **Record** | every order response's `all` block is journaled as `all_economics`, next to what the shared model (`susq.platform.collateral`, the same code as the mock and paper broker) predicted for that fill; counters and the last known outstanding advance per component live on `gateway.collateral` | always |
-| **Size** | the buying-power cap and the racer's per-bundle budget count the modeled *effective* cost (`netBuyingPowerImpact`-style: nominal minus the advance) instead of full notional; bundle legs are costed together, in order | only with `[risk] use_collateral_buying_power = true` |
+| **Size** | the buying-power cap and the racer's per-bundle budget count the modeled *effective* cost (`netBuyingPowerImpact`-style: nominal minus the advance) instead of full notional; bundle legs are costed together, in order | with `[risk] use_collateral_buying_power = true`, or `"auto"` once day 1 confirmed the model |
 
-The flag ships **false**. `measure-day1` decides: its `collateral` section compares the engine's `all`
+The flag ships **`"auto"`**: off until `measure-day1` confirms the model, then on by itself (recorded in
+`state/bridge/collateral_confirmed.json`, so a restart keeps it; a later measured mismatch removes it).
+`true` / `false` force it either way. `measure-day1` decides: its `collateral` section compares the engine's `all`
 on a linked fill (the racer's, or live-only a 1-share NO+NO probe on a mutually exclusive pair, which
 pays at least 1 whatever happens) with the model field by field, and the decision table says
 "set use_collateral_buying_power = true" only if every field matches within 0.01 SUSQies. Otherwise

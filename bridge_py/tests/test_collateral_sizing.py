@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import pytest
 from susq.platform.models import (
     AllEconomics,
     Collateral,
@@ -67,16 +68,47 @@ def risk(config: RiskConfig, *, cash: float | None, positions: dict[str, int] | 
 # ── config ──────────────────────────────────────────────────────────────────────────────────
 
 
-def test_flag_is_off_in_the_repo_config(home: Path) -> None:
-    assert load_config(home, env={}).risk.use_collateral_buying_power is False
+def test_repo_config_is_auto_so_the_flag_starts_off(home: Path) -> None:
+    risk_config = load_config(home, env={}).risk
+    assert risk_config.use_collateral_buying_power is False
+    assert risk_config.collateral_auto is True
 
 
-def test_flag_can_be_turned_on(home: Path) -> None:
+def _set_flag(home: Path, value: str) -> None:
     toml = home / "config" / "susq.toml"
     toml.write_text(
-        toml.read_text().replace("use_collateral_buying_power = false", "use_collateral_buying_power = true")
+        toml.read_text().replace(
+            'use_collateral_buying_power = "auto"', f"use_collateral_buying_power = {value}"
+        )
     )
-    assert load_config(home, env={}).risk.use_collateral_buying_power is True
+
+
+def test_flag_can_be_forced_on_or_off(home: Path) -> None:
+    _set_flag(home, "true")
+    on = load_config(home, env={}).risk
+    assert (on.use_collateral_buying_power, on.collateral_auto) == (True, False)
+    toml = home / "config" / "susq.toml"
+    toml.write_text(
+        toml.read_text().replace("use_collateral_buying_power = true", "use_collateral_buying_power = false")
+    )
+    off = load_config(home, env={}).risk
+    assert (off.use_collateral_buying_power, off.collateral_auto) == (False, False)
+
+
+def test_flag_rejects_anything_else(home: Path) -> None:
+    _set_flag(home, '"yes"')
+    with pytest.raises(ValueError, match="true, false or"):
+        load_config(home, env={})
+
+
+def test_auto_sizes_on_effective_cost_only_once_confirmed() -> None:
+    engine = risk(dataclasses.replace(LOOSE, collateral_auto=True), cash=1_000.0)
+    assert not engine.uses_collateral
+    engine.collateral_confirmed = True
+    assert engine.uses_collateral
+    forced_off = risk(LOOSE, cash=1_000.0)
+    forced_off.collateral_confirmed = True  # without auto, a confirmation changes nothing
+    assert not forced_off.uses_collateral
 
 
 # ── buying power (flag off: full notional) ──────────────────────────────────────────────────
