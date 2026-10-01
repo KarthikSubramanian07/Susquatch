@@ -124,6 +124,29 @@ class MarketState:
         else:
             self._books.pop(exchange_id, None)
 
+    def most_liquid_markets(self, limit: int | None = None) -> list[str]:
+        """Market ids, most liquid first: the tightest two-sided quote across a market's exchanges
+        wins, one-sided quotes come next, unquoted markets last; ties break on market id."""
+
+        def key(market_id: str) -> tuple[int, float, str]:
+            best: tuple[int, float] | None = None
+            for ex in self.markets[market_id].exchanges:
+                snap = self.prices.get(ex.id)
+                if snap is None:
+                    continue
+                if snap.best_bid is not None and snap.best_ask is not None:
+                    spread = snap.spread if snap.spread is not None else snap.best_ask - snap.best_bid
+                    rank = (0, float(spread))
+                elif snap.best_bid is not None or snap.best_ask is not None:
+                    rank = (1, 1.0)
+                else:
+                    continue
+                best = rank if best is None or rank < best else best
+            return (*(best or (2, 1.0)), market_id)
+
+        ranked = sorted(self.markets, key=key)
+        return ranked if limit is None else ranked[: max(0, limit)]
+
     # ── files ───────────────────────────────────────────────────────────────────────────────
 
     def load_market_map(self, path: Path | None = None) -> int:

@@ -103,7 +103,8 @@ forged tokens are refused on join and kicked (`system` error + `phx_close`) mid-
 
 | Channel | Event | When |
 |---|---|---|
-| `tournament:{tournamentId}` | `market_batch` | after any trade or book change (`trades`, `bookDirty`, `delivery.revision/previousRevision`) |
+| `tournament:{tournamentId}:market:{marketId}` | `market_batch` | after any trade or book change in that market (`trades`, `bookDirty`, `delivery.revision/previousRevision`); the platform's per-market topic since 2026-10-01 |
+| `tournament:{tournamentId}` | `market_batch` | the same batch tournament-wide (legacy topic, kept for older clients; the real platform no longer carries market updates here) |
 | `user:{profileId}` | `account_batch` | your fills, order updates and `collateralChanges` (`delta`, `outstandingAdvanceAfter`, `componentId`) |
 | `relationships:violations:{tournamentId}` | `violation` | a trade (or `/_mock/violation`) leaves a relationship violated |
 

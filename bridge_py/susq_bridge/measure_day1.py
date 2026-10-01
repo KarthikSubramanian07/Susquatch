@@ -160,16 +160,19 @@ async def probe_realtime(bridge: Bridge, timeout_s: float = 10.0) -> dict[str, A
 
     rt = RealtimeClient(provider)
     tid = bridge.tournament.id
-    for channel, event in (
-        (f"tournament:{tid}", "market_batch"),
-        (f"relationships:violations:{tid}", "violation"),
-    ):
+    channels = [(f"relationships:violations:{tid}", "violation")]
+    channels += [(channel, "market_batch") for channel in bridge.market_channels(cap=1)]
+    for channel, event in channels:
         rt.subscribe(channel, event, lambda payload, meta: None)
     started = time.perf_counter()
     task = asyncio.create_task(rt.run())
     try:
         await asyncio.wait_for(rt.connected.wait(), timeout=timeout_s)
-        return {"joined": True, "joinMs": round((time.perf_counter() - started) * 1000, 1), "channels": 2}
+        return {
+            "joined": True,
+            "joinMs": round((time.perf_counter() - started) * 1000, 1),
+            "channels": len(channels),
+        }
     except TimeoutError:
         return {"joined": False, "error": rt.stats.last_error}
     finally:

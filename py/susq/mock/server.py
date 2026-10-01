@@ -252,32 +252,42 @@ class MockExchange:
             touched.add(ex)
         if not touched and not trades:
             return
+        trade_items = [
+            {
+                "exchangeId": t.exchange_id,
+                "marketId": t.market_id,
+                "price": to_price(t.yes_price),
+                "quantity": t.size,
+                "executedAt": iso(t.created_at),
+                "tournamentId": self.tid,
+            }
+            for t in trades
+        ]
+        dirty_items = [
+            {
+                "exchangeId": ex,
+                "marketId": eng.by_exchange[ex].market_id,
+                "tournamentId": self.tid,
+                "at": iso(now),
+            }
+            for ex in sorted(touched)
+        ]
+        # Since 2026-10-01 the platform batches market updates per market on
+        # `tournament:{tid}:market:{marketId}`; the tournament-wide topic is kept for older clients.
+        for market_id in sorted({str(item["marketId"]) for item in trade_items + dirty_items}):
+            await self.hub.broadcast(
+                f"tournament:{self.tid}:market:{market_id}",
+                "market_batch",
+                {
+                    "trades": [i for i in trade_items if str(i["marketId"]) == market_id],
+                    "bookDirty": [i for i in dirty_items if str(i["marketId"]) == market_id],
+                    "marketSettled": [],
+                },
+            )
         await self.hub.broadcast(
             f"tournament:{self.tid}",
             "market_batch",
-            {
-                "trades": [
-                    {
-                        "exchangeId": t.exchange_id,
-                        "marketId": t.market_id,
-                        "price": to_price(t.yes_price),
-                        "quantity": t.size,
-                        "executedAt": iso(t.created_at),
-                        "tournamentId": self.tid,
-                    }
-                    for t in trades
-                ],
-                "bookDirty": [
-                    {
-                        "exchangeId": ex,
-                        "marketId": eng.by_exchange[ex].market_id,
-                        "tournamentId": self.tid,
-                        "at": iso(now),
-                    }
-                    for ex in sorted(touched)
-                ],
-                "marketSettled": [],
-            },
+            {"trades": trade_items, "bookDirty": dirty_items, "marketSettled": []},
         )
         by_owner: dict[str, list[FillRecord]] = {}
         for f in new_fills:

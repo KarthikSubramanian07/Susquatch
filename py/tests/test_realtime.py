@@ -63,6 +63,12 @@ async def harness(
 
     rt.subscribe(f"relationships:violations:{tid}", "violation", record)
     rt.subscribe(f"tournament:{tid}", "market_batch", record)
+    for market_id in list(live.mx.engine.markets)[:2]:  # the per-market topics the real platform uses
+
+        def record_market(payload: dict[str, Any], meta: BroadcastMeta, market_id: str = market_id) -> None:
+            h.events.append((f"market:{market_id}", payload))
+
+        rt.subscribe(f"tournament:{tid}:market:{market_id}", "market_batch", record_market)
     task = asyncio.create_task(rt.run())
     try:
         yield h
@@ -86,7 +92,7 @@ async def test_joins_and_receives_violations(live_mock: LiveMock) -> None:
     async with harness(live_mock) as h:
         await asyncio.wait_for(h.rt.connected.wait(), 5)
         assert h.resyncs[0] == ("connect", None)
-        assert live_mock.mx.hub.joins == 2
+        assert live_mock.mx.hub.joins == 4
         r = await h.admin.post("/_mock/violation", json={"amount": 0.06})
         rel_id = r.json()["relationshipId"]
         await h.wait_for(lambda: any(e == "violation" for e, _ in h.events))
@@ -94,6 +100,28 @@ async def test_joins_and_receives_violations(live_mock: LiveMock) -> None:
         assert violation["relationshipId"] == rel_id
         assert violation["evaluationStatus"] == "violated"
         assert any(e == "market_batch" for e, _ in h.events)
+
+
+async def test_per_market_topics_carry_only_that_markets_updates(live_mock: LiveMock) -> None:
+    first, second = list(live_mock.mx.engine.markets.values())[:2]
+    async with harness(live_mock) as h:
+        await asyncio.wait_for(h.rt.connected.wait(), 5)
+        # A fair move touches one exchange: its market's topic fires, the other market's stays quiet,
+        # and the legacy tournament-wide topic still carries the same batch for older clients.
+        await h.admin.post("/_mock/fair", json={"exchangeId": first.exchange_id, "fair": 0.55})
+        await h.wait_for(lambda: any(e == f"market:{first.market_id}" for e, _ in h.events))
+        (batch,) = [p for e, p in h.events if e == f"market:{first.market_id}"]
+        assert {i["exchangeId"] for i in batch["bookDirty"]} == {first.exchange_id}
+        assert {i["marketId"] for i in batch["bookDirty"]} == {first.market_id}
+        assert batch["delivery"]["revision"] == 1
+        assert not any(e == f"market:{second.market_id}" for e, _ in h.events)
+        legacy = [p for e, p in h.events if e == "market_batch"]
+        assert any({i["exchangeId"] for i in p["bookDirty"]} == {first.exchange_id} for p in legacy)
+        # Re-quoting the Sponsor touches every exchange: each subscribed market topic gets its own slice.
+        await h.admin.post("/_mock/sponsor", json={"halfWidth": 0.02})
+        await h.wait_for(lambda: any(e == f"market:{second.market_id}" for e, _ in h.events))
+        (batch,) = [p for e, p in h.events if e == f"market:{second.market_id}"]
+        assert {i["exchangeId"] for i in batch["bookDirty"]} == {second.exchange_id}
 
 
 async def test_gap_triggers_resync_and_duplicates_are_dropped(live_mock: LiveMock) -> None:
