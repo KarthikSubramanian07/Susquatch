@@ -31,10 +31,16 @@ if TYPE_CHECKING:
     from susq_bridge.config import FarQuoteConfig
     from susq_bridge.gateway import Gateway
     from susq_bridge.market_state import MarketState
+    from susq_bridge.oms import TrackedOrder
 
 __all__ = ["FarQuoteStats", "FarQuoter", "Quote"]
 
 log = logging.getLogger(__name__)
+
+
+def _side_price(o: TrackedOrder) -> int:
+    """What one share of a resting order costs, on the side it buys (pips)."""
+    return o.yes_price if o.yes_dir > 0 else PIPS_PER_UNIT - o.yes_price
 
 
 @dataclass(frozen=True, slots=True)
@@ -121,17 +127,20 @@ class FarQuoter:
         if self.gateway.oms is None:
             return 0.0
         return sum(
-            o.remaining * (o.yes_price if o.yes_dir > 0 else PIPS_PER_UNIT - o.yes_price) / PIPS_PER_UNIT
+            o.remaining * _side_price(o) / PIPS_PER_UNIT
             for o in self.gateway.oms.open_orders(strategy="farquote")
         )
 
     async def scan(self) -> list[OrderOutcome]:
         """Top up every near-certain market's ladder; pull quotes from markets that left the band."""
         self.stats.scans += 1
-        self.market.load_fair()
-        await self.market.refresh_prices()
         if self.gateway.oms is None:
             return []
+        if (why := await self.gateway.gate()) is not None:
+            self._block(why)  # no lease / killed / frozen: one note, not 300 blocked orders
+            return []
+        self.market.load_fair()
+        await self.market.refresh_prices()
         outcomes: list[OrderOutcome] = []
         resting = self.gateway.oms.open_orders(strategy="farquote")
         by_market: dict[str, list] = {}
@@ -156,10 +165,24 @@ class FarQuoter:
                         self.stats.cancelled += 1
                         counts["cancelled"] += 1
                 continue
+            wanted_levels = {
+                (q.side, q.price_pips if q.side == "yes" else PIPS_PER_UNIT - q.price_pips) for q in quotes
+            }
+            seen: set[tuple[str, int]] = set()
+            for o in have:
+                level = (o.side, o.yes_price)
+                # Duplicates (ladders re-placed across restarts) and levels no longer wanted go.
+                if level in seen or level not in wanted_levels:
+                    if await self.gateway.cancel(o.order_id):
+                        self.stats.cancelled += 1
+                        counts["cancelled"] += 1
+                        reserved -= o.remaining * _side_price(o) / PIPS_PER_UNIT
+                    continue
+                seen.add(level)
             for q in quotes:
                 counts["wanted"] += 1
                 yes_price = q.price_pips if q.side == "yes" else PIPS_PER_UNIT - q.price_pips
-                if any(o.side == q.side and o.yes_price == yes_price for o in have):
+                if (q.side, yes_price) in seen:
                     counts["resting"] += 1
                     continue
                 cost = q.quantity * q.price_pips / PIPS_PER_UNIT

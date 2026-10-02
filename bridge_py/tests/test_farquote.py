@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from susq.platform.prices import PIPS_PER_UNIT
+from susq_bridge.gateway import OrderSpec
 
 
 async def near_certain(harness, *, low: bool) -> str:  # type: ignore[no-untyped-def]
@@ -97,5 +98,49 @@ async def test_a_stale_fair_leaves_resting_ladders_alone(harness) -> None:  # ty
         after = len([o for o in bridge.oms.open_orders(strategy="farquote") if o.exchange_id == ex])
         assert after == before
         assert bridge.farquote.stats.cancelled == 0
+    finally:
+        await bridge.close()
+
+
+async def test_ladders_are_recognised_after_a_restart(harness) -> None:  # type: ignore[no-untyped-def]
+    await harness.write_market_map()
+    await harness.write_fair()
+    ex = await near_certain(harness, low=True)
+    bridge = await harness.open_bridge("live")
+    try:
+        await bridge.farquote.scan()
+        before = len([o for o in bridge.oms.open_orders(strategy="farquote") if o.exchange_id == ex])
+        assert before
+    finally:
+        await bridge.close()
+    # A fresh process: nothing in memory, only the intents log and the platform's open orders.
+    bridge = await harness.open_bridge("live")
+    try:
+        resting = [o for o in bridge.oms.open_orders(strategy="farquote") if o.exchange_id == ex]
+        assert len(resting) == before
+        again = await bridge.farquote.scan()
+        assert not [o for o in again if o.request and o.request.exchange_id == ex]
+    finally:
+        await bridge.close()
+
+
+async def test_duplicate_ladders_are_trimmed_to_one_per_level(harness) -> None:  # type: ignore[no-untyped-def]
+    await harness.write_market_map()
+    await harness.write_fair()
+    ex = await near_certain(harness, low=True)
+    bridge = await harness.open_bridge("live")
+    try:
+        await bridge.farquote.scan()
+        levels = len(bridge.config.farquote.levels)
+        # Simulate a ladder placed twice (what restarts without strategy attribution did).
+        for q in bridge.farquote.wanted(ex, markets_in_band=1):
+            spec = OrderSpec(ex, q.side, "buy", q.quantity, q.price_pips, ttl_s=3600)  # type: ignore[arg-type]
+            await bridge.gateway.place(f"farquote:{ex}:{q.side}:{q.price_pips}:dup", "farquote", spec)
+        assert (
+            len([o for o in bridge.oms.open_orders(strategy="farquote") if o.exchange_id == ex]) == 2 * levels
+        )
+        await bridge.farquote.scan()
+        assert len([o for o in bridge.oms.open_orders(strategy="farquote") if o.exchange_id == ex]) == levels
+        assert bridge.farquote.stats.cancelled == levels
     finally:
         await bridge.close()
