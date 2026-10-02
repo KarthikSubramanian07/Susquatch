@@ -107,6 +107,17 @@ class SniperConfig:
 
 
 @dataclass(frozen=True)
+class FarQuoteConfig:
+    enabled: bool
+    max_fair: float  # rest on markets with fair <= this (buy NO) or >= 1 - this (buy YES)
+    levels: tuple[float, ...]  # side-relative prices to rest at
+    reserve_frac: float  # cash tied up by all far quotes, as a fraction of equity
+    max_market_frac: float  # ...and per market
+    order_ttl_s: float
+    interval_s: float
+
+
+@dataclass(frozen=True)
 class BridgeConfig:
     home: Path
     platform: PlatformConfig
@@ -116,6 +127,7 @@ class BridgeConfig:
     fair: FairConfig
     racer: RacerConfig
     sniper: SniperConfig
+    farquote: FarQuoteConfig
     mode_default: str
     lease_path: Path
     lease_ttl_s: float
@@ -184,6 +196,7 @@ def load_config(home: Path | None = None, env: Mapping[str, str] | None = None) 
         raise ValueError("calendar must satisfy open < last_order < lock")
     racer = strategies.get("racer", {})
     sniper = strategies.get("sniper", {})
+    farquote = strategies.get("farquote", {})
     state_dir = path(paths["state"])
     collateral = risk.get("use_collateral_buying_power", False)
     if collateral not in (True, False, "auto"):
@@ -229,6 +242,15 @@ def load_config(home: Path | None = None, env: Mapping[str, str] | None = None) 
             min_edge_pts=float(sniper.get("min_edge_pts", 3.5)),
             max_mistake_frac=float(sniper.get("max_mistake_frac", 0.01)),
             order_ttl_s=float(sniper.get("order_ttl_s", 30)),
+        ),
+        farquote=FarQuoteConfig(
+            enabled=bool(farquote.get("enabled", False)),
+            max_fair=float(farquote.get("max_fair", 0.05)),
+            levels=tuple(float(x) for x in farquote.get("levels", [0.01, 0.03, 0.05, 0.10])),
+            reserve_frac=float(farquote.get("reserve_frac", 0.15)),
+            max_market_frac=float(farquote.get("max_market_frac", 0.02)),
+            order_ttl_s=float(farquote.get("order_ttl_s", 86400)),
+            interval_s=float(farquote.get("interval_s", 600)),
         ),
         mode_default=str(raw.get("mode", {}).get("default", "paper")),
         lease_path=path(raw["lease"]["path"]),
