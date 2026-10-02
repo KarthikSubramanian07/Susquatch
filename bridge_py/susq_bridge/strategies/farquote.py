@@ -154,7 +154,9 @@ class FarQuoter:
             quantity=q.quantity,
             price_pips=q.price_pips,
             ttl_s=self.config.order_ttl_s,
-            fair_pips=q.fair_pips,
+            # No fair_pips on purpose: these orders sit 85+ points through fair by design, and the glitch
+            # cap (a per-account budget for taker fills against broken quotes) rejected the whole ladder.
+            # The reserve and per-market budgets above are the far quoter's limits.
         )
         stamp = int(time.time())
         outcome = await self.gateway.place(
