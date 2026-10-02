@@ -94,6 +94,19 @@ min_edge_pts = 3.5                 # through fair, after ticks
 max_mistake_frac = 0.01            # size so a wrong fill costs < 1% of bankroll
 order_ttl_s = 30
 
+[strategies.farquote]
+# Passive far quotes (bridge): on every verified market with fair <= max_fair rest BUY NO at these NO prices
+# (selling YES at 0.90-0.99); on markets with fair >= 1 - max_fair rest BUY YES at them. Day one's leaders were
+# paid by accounts dumping whole balances at those prices. A fill is a ~0.99 share for a few cents; the cost of
+# resting is reserved cash, capped per market and in total.
+enabled = true
+max_fair = 0.05
+levels = [0.01, 0.03, 0.05, 0.10]
+reserve_frac = 0.15
+max_market_frac = 0.02
+order_ttl_s = 86400               # capped at last_order_utc by the gateway
+interval_s = 600                  # top-up cadence: 30 writes/min is the whole account's budget
+
 [strategies.mm]
 enabled = false                    # decided by the decision table after measure_day1
 

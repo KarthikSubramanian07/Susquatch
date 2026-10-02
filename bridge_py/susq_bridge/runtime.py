@@ -34,6 +34,7 @@ from susq_bridge.oms import Oms
 from susq_bridge.recorder import Recorder
 from susq_bridge.risk import RiskEngine
 from susq_bridge.status import StatusWriter
+from susq_bridge.strategies.farquote import FarQuoter
 from susq_bridge.strategies.racer import Racer
 from susq_bridge.strategies.sniper import Sniper
 
@@ -56,6 +57,7 @@ class BridgeError(RuntimeError):
 class Loops:
     racer: bool = True
     sniper: bool = True
+    farquote: bool = True
     recorder: bool = True
     realtime: bool = True
     sniper_interval_s: float = 5.0
@@ -80,6 +82,7 @@ class Bridge:
     status: StatusWriter
     racer: Racer
     sniper: Sniper
+    farquote: FarQuoter
     clock: Callable[[], datetime]
     realtime: RealtimeClient | None = None
     tasks: list[asyncio.Task[Any]] = field(default_factory=list)
@@ -167,6 +170,7 @@ class Bridge:
             status=StatusWriter(config.status_path, clock=clock),
             racer=Racer(gateway, market, config.racer, clock=clock),
             sniper=Sniper(gateway, market, config.sniper, clock=clock),
+            farquote=FarQuoter(gateway, market, config.farquote, clock=clock),
             clock=clock,
         )
         journal.event(
@@ -352,6 +356,8 @@ class Bridge:
             self._spawn(self._racer(), "racer-poll")
         if loops.sniper and cfg.sniper.enabled:
             self._spawn(self._every(loops.sniper_interval_s, self.sniper.scan, "sniper"), "sniper")
+        if loops.farquote and cfg.farquote.enabled:
+            self._spawn(self._every(cfg.farquote.interval_s, self.farquote.scan, "farquote"), "farquote")
         if loops.recorder:
             self._spawn(
                 self._until_ok(lambda: self.recorder.snapshot_markets(self.gateway, self.market), "markets"),
