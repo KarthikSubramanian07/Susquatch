@@ -51,9 +51,9 @@ use_collateral_buying_power = "auto"
 # Every race carries "national", so this is the cap on everything. 25% starved the sniper from the first
 # evening of the Cup (every order rejected "cap: cluster:national" once fills reached 27k at cost), while the
 # positions are near-certain outcomes bought 3.5+ points through a two-reference fair: a national wave moves
-# their value by far less than their cost. Raised to half of equity; total_gross (60%) still binds above it.
-national = 0.50
-region = 0.30
+# their value by far less than their cost. Set equal to total_gross (60%), which is the binding cap.
+national = 0.60
+region = 0.40
 state = 0.10
 house = 0.20
 
