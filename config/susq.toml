@@ -30,10 +30,10 @@ default = "paper"
 
 [risk]
 per_market_gross_frac = 0.05
-# 0.60 was fully used by sniper fills (near-certain outcomes at marks) by the second night, leaving no room
-# for the far quoter's cheap resting ladders; 0.75 leaves ~15% for them. Revisit at the Oct 2 review: the
-# scenario book from Oct 7 needs its own room, so the sniper will get a cap of its own.
-total_gross_frac = 0.75
+# Gross = positions at mark + resting orders. The sniper filled 72% with near-certain outcomes before it got
+# its own 35% budget (it never sells), so 0.90 is what leaves ~15% for the far quoter's cheap resting
+# ladders. The Oct 2 review decides how the sniper book is trimmed to fund the scenario book from Oct 7.
+total_gross_frac = 0.90
 glitch_through_fair_pts = 15.0     # an order this far through fair is a "glitch trade"...
 glitch_max_frac = 0.02             # ...and is capped at this share of capital
 loss_per_hour_frac = 0.03          # MTM loss in any rolling hour that trips cancel-all + freeze
@@ -55,7 +55,7 @@ use_collateral_buying_power = "auto"
 # evening of the Cup (every order rejected "cap: cluster:national" once fills reached 27k at cost), while the
 # positions are near-certain outcomes bought 3.5+ points through a two-reference fair: a national wave moves
 # their value by far less than their cost. Set equal to total_gross, which is the binding cap.
-national = 0.75
+national = 0.90
 region = 0.40
 state = 0.10
 house = 0.20
