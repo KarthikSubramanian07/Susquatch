@@ -640,7 +640,17 @@ mod tests {
 
     #[test]
     fn rejects_unsafe_values() {
-        let text = shared_toml().replace("total_gross_frac = 0.60", "total_gross_frac = 1.60");
+        let text = shared_toml()
+            .lines()
+            .map(|l| {
+                if l.starts_with("total_gross_frac") {
+                    "total_gross_frac = 1.60"
+                } else {
+                    l
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
         assert!(matches!(
             Config::from_toml_str(&text),
             Err(ConfigError::Invalid(_))
