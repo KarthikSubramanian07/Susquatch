@@ -81,3 +81,21 @@ async def test_leaves_ordinary_markets_alone(harness) -> None:  # type: ignore[n
         assert not [o for o in outcomes if o.request and o.request.exchange_id == "1309"]
     finally:
         await bridge.close()
+
+
+async def test_a_stale_fair_leaves_resting_ladders_alone(harness) -> None:  # type: ignore[no-untyped-def]
+    await harness.write_market_map()
+    await harness.write_fair()
+    ex = await near_certain(harness, low=True)
+    bridge = await harness.open_bridge("live")
+    try:
+        await bridge.farquote.scan()
+        before = len([o for o in bridge.oms.open_orders(strategy="farquote") if o.exchange_id == ex])
+        assert before
+        await harness.write_fair(age_s=harness.config.fair.stale_after_s + 1)
+        await bridge.farquote.scan()
+        after = len([o for o in bridge.oms.open_orders(strategy="farquote") if o.exchange_id == ex])
+        assert after == before
+        assert bridge.farquote.stats.cancelled == 0
+    finally:
+        await bridge.close()
