@@ -353,7 +353,9 @@ class Gateway:
             request, self.oms.open_orders(), fair_pips=spec.fair_pips, max_notional=spec.max_notional
         )
         if not decision.accepted:
-            self.journal.event("risk_reject", {"intent": intent_id, "reason": decision.reason})
+            self.journal.event(
+                "risk_reject", {"intent": intent_id, "reason": decision.reason, **decision.detail}
+            )
             return OrderOutcome(intent_id, "risk_rejected", request, reason=decision.reason)
         if decision.quantity != request.quantity:
             request = replace(request, quantity=decision.quantity)
