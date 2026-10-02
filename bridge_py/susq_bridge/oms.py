@@ -135,6 +135,10 @@ class Oms:
         marks = self.market.marks()
         portfolio = await self.gateway.portfolio(marks)
         fresh: dict[int, TrackedOrder] = {}
+        # After a restart nothing is in memory, but the intents log remembers which strategy placed
+        # each order: without this every resting order looks like "unknown", the far quoter re-places
+        # its whole ladder on top of the old one and its reserve accounting starts from zero.
+        by_order = {i.order_id: i for i in self.gateway.intents.all().values() if i.order_id}
         for order in portfolio.open_orders:
             tracked = TrackedOrder.from_order(order)
             known = self.orders.get(order.id)
@@ -144,6 +148,8 @@ class Oms:
                     known.intent_id,
                     known.input_ts,
                 )
+            elif (intent := by_order.get(order.id)) is not None:
+                tracked.strategy, tracked.intent_id = intent.strategy, intent.intent_id
             fresh[order.id] = tracked
         self.orders = fresh
         self.positions = portfolio.positions
