@@ -136,6 +136,7 @@ class FarQuoter:
         budget = self.config.reserve_frac * self.gateway.risk.equity
         reserved = self._reserved()
         in_band = sum(1 for ex in self.market.rules if self.in_band(ex) is not None)
+        counts = {"inBand": in_band, "wanted": 0, "resting": 0, "placed": 0, "cancelled": 0}
         for exchange_id in sorted(self.market.rules):
             quotes = self.wanted(exchange_id, markets_in_band=in_band)
             have = by_market.get(exchange_id, [])
@@ -143,10 +144,13 @@ class FarQuoter:
                 for o in have:
                     if await self.gateway.cancel(o.order_id):
                         self.stats.cancelled += 1
+                        counts["cancelled"] += 1
                 continue
             for q in quotes:
+                counts["wanted"] += 1
                 yes_price = q.price_pips if q.side == "yes" else PIPS_PER_UNIT - q.price_pips
                 if any(o.side == q.side and o.yes_price == yes_price for o in have):
+                    counts["resting"] += 1
                     continue
                 cost = q.quantity * q.price_pips / PIPS_PER_UNIT
                 if reserved + cost > budget:
@@ -156,6 +160,17 @@ class FarQuoter:
                 outcomes.append(outcome)
                 if outcome.placed:
                     reserved += cost
+                    counts["placed"] += 1
+        self.gateway.journal.event(
+            "farquote_scan",
+            {
+                **counts,
+                "reserved": round(reserved, 2),
+                "budget": round(budget, 2),
+                "equity": round(self.gateway.risk.equity, 2),
+                "blocked": dict(self.stats.blocked),
+            },
+        )
         return outcomes
 
     async def place(self, q: Quote) -> OrderOutcome:
