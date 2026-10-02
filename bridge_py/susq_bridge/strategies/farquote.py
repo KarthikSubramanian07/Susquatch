@@ -81,24 +81,35 @@ class FarQuoter:
             return "yes"
         return None
 
-    def wanted(self, exchange_id: str) -> list[Quote]:
-        """The resting ladder this market should have right now (empty when out of band)."""
+    def in_band(self, exchange_id: str) -> tuple[str, int] | None:
+        """(side, fair) when the market is verified, fresh and near-certain."""
         check = self.market.fair_check(exchange_id)
         if not check.ok or check.fair_pips is None:
             self._block(check.reason)
-            return []
+            return None
         side = self.side_for(check.fair_pips)
-        if side is None:
+        return None if side is None else (side, check.fair_pips)
+
+    def wanted(self, exchange_id: str, *, markets_in_band: int = 1) -> list[Quote]:
+        """The resting ladder this market should have right now (empty when out of band).
+
+        The reserve budget is spread evenly over every market in the band (thin everywhere beats
+        deep on the first few), then capped per market.
+        """
+        band = self.in_band(exchange_id)
+        if band is None:
             return []
+        side, fair_pips = band
         equity = self.gateway.risk.equity
-        market_budget = min(self.config.max_market_frac, self.config.reserve_frac) * equity
+        spread = self.config.reserve_frac * equity / max(1, markets_in_band)
+        market_budget = min(self.config.max_market_frac * equity, spread)
         per_level = market_budget / max(1, len(self.config.levels))
         quotes = []
         for price in self.config.levels:
             pips = to_pips(price)
             qty = int(per_level * PIPS_PER_UNIT // pips)
             if qty >= 1:
-                quotes.append(Quote(exchange_id, side, pips, qty, check.fair_pips))
+                quotes.append(Quote(exchange_id, side, pips, qty, fair_pips))
         return quotes
 
     def _reserved(self) -> float:
@@ -124,8 +135,9 @@ class FarQuoter:
             by_market.setdefault(o.exchange_id, []).append(o)
         budget = self.config.reserve_frac * self.gateway.risk.equity
         reserved = self._reserved()
+        in_band = sum(1 for ex in self.market.rules if self.in_band(ex) is not None)
         for exchange_id in sorted(self.market.rules):
-            quotes = self.wanted(exchange_id)
+            quotes = self.wanted(exchange_id, markets_in_band=in_band)
             have = by_market.get(exchange_id, [])
             if not quotes:
                 for o in have:
