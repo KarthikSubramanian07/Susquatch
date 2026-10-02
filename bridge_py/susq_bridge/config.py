@@ -104,6 +104,7 @@ class SniperConfig:
     min_edge_pts: float
     max_mistake_frac: float
     order_ttl_s: float
+    max_total_gross_frac: float  # the sniper stops adding once total exposure reaches this share of equity
 
 
 @dataclass(frozen=True)
@@ -242,6 +243,7 @@ def load_config(home: Path | None = None, env: Mapping[str, str] | None = None) 
             min_edge_pts=float(sniper.get("min_edge_pts", 3.5)),
             max_mistake_frac=float(sniper.get("max_mistake_frac", 0.01)),
             order_ttl_s=float(sniper.get("order_ttl_s", 30)),
+            max_total_gross_frac=float(sniper.get("max_total_gross_frac", 0.35)),
         ),
         farquote=FarQuoteConfig(
             enabled=bool(farquote.get("enabled", False)),

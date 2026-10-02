@@ -118,6 +118,15 @@ class Sniper:
         self.market.load_fair()
         await self.market.refresh_prices()
         outcomes: list[OrderOutcome] = []
+        if self.gateway.oms is not None:
+            # The sniper's edge is a few points on near-certain outcomes held to settlement. Left
+            # alone it fills every cap and starves the strategies that can actually win (far quotes,
+            # the scenario book), so it stops adding once the book is this full.
+            risk = self.gateway.risk
+            total = risk.total_exposure_pips(self.gateway.oms.open_orders())
+            if total >= self.config.max_total_gross_frac * risk.equity * PIPS_PER_UNIT:
+                self._block("gross_budget")
+                return []
         busy = (
             {o.exchange_id for o in self.gateway.oms.open_orders(strategy="sniper")}
             if self.gateway.oms

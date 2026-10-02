@@ -100,6 +100,7 @@ max_relationship_notional_frac = 0.03  # cap on notional already held across a r
 enabled = true
 min_edge_pts = 3.5                 # through fair, after ticks
 max_mistake_frac = 0.01            # size so a wrong fill costs < 1% of bankroll
+max_total_gross_frac = 0.35        # stop adding once positions + resting orders reach 35% of equity
 order_ttl_s = 30
 
 [strategies.farquote]
