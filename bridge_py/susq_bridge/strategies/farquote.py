@@ -90,6 +90,10 @@ class FarQuoter:
         side = self.side_for(check.fair_pips)
         return None if side is None else (side, check.fair_pips)
 
+    def fair_unavailable(self, exchange_id: str) -> bool:
+        """True when fair is merely missing or stale (keep what is resting), not wrong or out of band."""
+        return self.market.fair_check(exchange_id).reason in ("stale", "no_fair", "no_cup_price")
+
     def wanted(self, exchange_id: str, *, markets_in_band: int = 1) -> list[Quote]:
         """The resting ladder this market should have right now (empty when out of band).
 
@@ -136,17 +140,27 @@ class FarQuoter:
         budget = self.config.reserve_frac * self.gateway.risk.equity
         reserved = self._reserved()
         in_band = sum(1 for ex in self.market.rules if self.in_band(ex) is not None)
+        counts = {"inBand": in_band, "wanted": 0, "resting": 0, "placed": 0, "cancelled": 0}
         for exchange_id in sorted(self.market.rules):
+            # A full pass places hundreds of orders at ~14 writes a minute, far longer than the fair
+            # file's staleness window: re-read the file (cheap) so later markets are judged on a
+            # fresh fair rather than all turning "stale" a minute into the scan.
+            self.market.load_fair()
             quotes = self.wanted(exchange_id, markets_in_band=in_band)
             have = by_market.get(exchange_id, [])
             if not quotes:
+                if self.fair_unavailable(exchange_id):
+                    continue  # no verdict: leave the ladder resting
                 for o in have:
                     if await self.gateway.cancel(o.order_id):
                         self.stats.cancelled += 1
+                        counts["cancelled"] += 1
                 continue
             for q in quotes:
+                counts["wanted"] += 1
                 yes_price = q.price_pips if q.side == "yes" else PIPS_PER_UNIT - q.price_pips
                 if any(o.side == q.side and o.yes_price == yes_price for o in have):
+                    counts["resting"] += 1
                     continue
                 cost = q.quantity * q.price_pips / PIPS_PER_UNIT
                 if reserved + cost > budget:
@@ -156,6 +170,17 @@ class FarQuoter:
                 outcomes.append(outcome)
                 if outcome.placed:
                     reserved += cost
+                    counts["placed"] += 1
+        self.gateway.journal.event(
+            "farquote_scan",
+            {
+                **counts,
+                "reserved": round(reserved, 2),
+                "budget": round(budget, 2),
+                "equity": round(self.gateway.risk.equity, 2),
+                "blocked": dict(self.stats.blocked),
+            },
+        )
         return outcomes
 
     async def place(self, q: Quote) -> OrderOutcome:
