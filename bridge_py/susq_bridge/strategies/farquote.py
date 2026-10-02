@@ -152,9 +152,6 @@ class FarQuoter:
         reserved = self._reserved()
         in_band = sum(1 for ex in self.market.rules if self.in_band(ex) is not None)
         counts = {"inBand": in_band, "wanted": 0, "resting": 0, "placed": 0, "cancelled": 0}
-        if in_band == 0:
-            self.gateway.journal.event("farquote_scan", {**counts, "blocked": dict(self.stats.blocked)})
-            return []
         for exchange_id in sorted(self.market.rules):
             # A full pass places hundreds of orders at ~14 writes a minute, far longer than the fair
             # file's staleness window: re-read the file (cheap) so later markets are judged on a
