@@ -150,6 +150,12 @@ class RiskEngine:
             return abs(qty) * PIPS_PER_UNIT
         return abs(qty) * _side_price(1 if qty > 0 else -1, mark)
 
+    def total_exposure_pips(self, open_orders: Iterable[OrderView]) -> int:
+        """Positions at mark plus resting orders, across every market (what ``total_gross`` caps)."""
+        orders = list(open_orders)
+        exchanges = set(self.positions) | {o.exchange_id for o in orders}
+        return sum(self.market_exposure_pips(e, orders) for e in exchanges)
+
     def market_exposure_pips(self, exchange_id: str, open_orders: Iterable[OrderView]) -> int:
         resting = sum(
             o.remaining * _side_price(o.yes_dir, o.yes_price)

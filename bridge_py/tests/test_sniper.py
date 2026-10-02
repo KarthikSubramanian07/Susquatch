@@ -146,3 +146,19 @@ async def test_reads_the_fair_file_research_writes(harness) -> None:  # type: ig
         assert check.fair_pips == round(state["fair"][EX] * 10_000)
     finally:
         await bridge.close()
+
+
+async def test_stops_adding_once_the_book_is_full(harness) -> None:  # type: ignore[no-untyped-def]
+    await harness.write_market_map()
+    await harness.mock.post_admin(
+        "/_mock/stale-order", {"exchangeId": EX, "side": "ask", "through": 0.05, "quantity": 40}
+    )
+    await harness.write_fair()
+    bridge = await harness.open_bridge("live")
+    try:
+        bridge.sniper.config = replace(bridge.sniper.config, max_total_gross_frac=0.0)
+        assert await bridge.sniper.scan() == []
+        assert bridge.sniper.stats.blocked["gross_budget"] == 1
+        assert await positions(harness) == {}
+    finally:
+        await bridge.close()
