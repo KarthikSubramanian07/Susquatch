@@ -139,8 +139,10 @@ class FarQuoter:
         if (why := await self.gateway.gate()) is not None:
             self._block(why)  # no lease / killed / frozen: one note, not 300 blocked orders
             return []
-        self.market.load_fair()
+        # Prices first (three bulk reads that can queue behind the rate budget), then the fair file,
+        # so the band is judged on a fair that is fresh now rather than one loaded a minute ago.
         await self.market.refresh_prices()
+        self.market.load_fair()
         outcomes: list[OrderOutcome] = []
         resting = self.gateway.oms.open_orders(strategy="farquote")
         by_market: dict[str, list] = {}
@@ -165,14 +167,17 @@ class FarQuoter:
                         self.stats.cancelled += 1
                         counts["cancelled"] += 1
                 continue
-            wanted_levels = {
-                (q.side, q.price_pips if q.side == "yes" else PIPS_PER_UNIT - q.price_pips) for q in quotes
+            wanted_qty = {
+                (q.side, q.price_pips if q.side == "yes" else PIPS_PER_UNIT - q.price_pips): q.quantity
+                for q in quotes
             }
             seen: set[tuple[str, int]] = set()
             for o in have:
                 level = (o.side, o.yes_price)
-                # Duplicates (ladders re-placed across restarts) and levels no longer wanted go.
-                if level in seen or level not in wanted_levels:
+                # Duplicates (ladders re-placed across restarts), levels no longer wanted, and orders far
+                # bigger than today's sizing (ladders placed before the budget was spread) go.
+                oversized = level in wanted_qty and o.remaining > 1.5 * wanted_qty[level]
+                if level in seen or level not in wanted_qty or oversized:
                     if await self.gateway.cancel(o.order_id):
                         self.stats.cancelled += 1
                         counts["cancelled"] += 1
