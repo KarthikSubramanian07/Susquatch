@@ -47,8 +47,13 @@ max_order_notional_frac = 0.02     # default per-order cap unless a strategy set
 use_collateral_buying_power = "auto"
 
 [risk.clusters]
-national = 0.25
-region = 0.15
+# Gross exposure (cost of positions plus resting orders) per correlated cluster, as a fraction of equity.
+# Every race carries "national", so this is the cap on everything. 25% starved the sniper from the first
+# evening of the Cup (every order rejected "cap: cluster:national" once fills reached 27k at cost), while the
+# positions are near-certain outcomes bought 3.5+ points through a two-reference fair: a national wave moves
+# their value by far less than their cost. Raised to half of equity; total_gross (60%) still binds above it.
+national = 0.50
+region = 0.30
 state = 0.10
 house = 0.20
 
