@@ -55,6 +55,8 @@ class Decision:
     reason: str | None = None
     binding: tuple[str, ...] = ()
     glitch: bool = False
+    #: What the caps saw (SUSQies): equity, total exposure, this market's exposure, resting count.
+    detail: dict[str, float] = field(default_factory=dict)
 
 
 def _side_price(yes_dir: int, yes_price: int) -> int:
@@ -250,9 +252,16 @@ class RiskEngine:
 
         qty = min(limits.values())
         binding = tuple(k for k, v in limits.items() if v == qty and k != "requested")
+        detail = {
+            "equity": round(self.equity, 2),
+            "total": round(total / PIPS_PER_UNIT, 2),
+            "market": round(self.market_exposure_pips(ex, orders) / PIPS_PER_UNIT, 2),
+            "positions": float(len(self.positions)),
+            "resting": float(len(orders)),
+        }
         if qty < 1:
-            return Decision(False, 0, f"cap: {', '.join(binding)}", binding, glitch)
-        return Decision(True, qty, None if qty == order.quantity else "reduced", binding, glitch)
+            return Decision(False, 0, f"cap: {', '.join(binding)}", binding, glitch, detail)
+        return Decision(True, qty, None if qty == order.quantity else "reduced", binding, glitch, detail)
 
     @property
     def uses_collateral(self) -> bool:
