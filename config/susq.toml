@@ -57,7 +57,10 @@ use_collateral_buying_power = "auto"
 # their value by far less than their cost. Set equal to total_gross, which is the binding cap.
 national = 0.90
 region = 0.40
-state = 0.10
+# 0.10 was full of sniper positions in RI, NH and FL by Oct 2 evening, so the far quoter's cheap ladders there
+# were rejected thousands of times a day. The sniper never adds past its own 35% budget, so 0.20 only opens
+# room for the ladders (a few hundred SUSQies of reserved cash per market).
+state = 0.20
 house = 0.20
 
 [oms]
