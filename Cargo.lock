@@ -2820,6 +2820,8 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "proptest",
+ "serde",
+ "serde_json",
  "susq-contracts",
  "susq-core",
  "thiserror",
@@ -2831,6 +2833,8 @@ name = "susq-strategies"
 version = "0.1.0"
 dependencies = [
  "proptest",
+ "serde",
+ "serde_json",
  "susq-book",
  "susq-contracts",
  "susq-core",

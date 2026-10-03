@@ -13,6 +13,8 @@ susq-core.workspace = true
 susq-contracts.workspace = true
 susq-book.workspace = true
 susq-platform.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true

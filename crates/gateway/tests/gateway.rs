@@ -15,7 +15,7 @@ use susq_core::{
     Side, TournamentId,
 };
 use susq_gateway::{Blocked, Gateway, GatewayDeps, KillSwitch, Lease, LeaseConfig, RetryPolicy, SendOutcome};
-use susq_journal::Journal;
+use susq_journal::{Journal, JournalConfig};
 use susq_oms::{Oms, OmsConfig, OrderState};
 use susq_platform::mock::{CALLER, Endpoint, Fault, MockConfig, MockPlatform};
 use susq_risk::{PreTrade, RiskContext, RiskLimits};
@@ -60,6 +60,10 @@ fn lease_for(root: &Path, holder: &str, pid: u32, clock: &ManualClock) -> Lease 
 }
 
 fn harness(mode: Mode) -> Harness {
+    harness_with(mode, |_| Journal::discard())
+}
+
+fn harness_with(mode: Mode, journal: impl FnOnce(&Path) -> Journal) -> Harness {
     let dir = tempfile::tempdir().expect("tmp");
     let root = dir.path().to_owned();
     let clock = ManualClock::at(t0());
@@ -102,7 +106,7 @@ fn harness(mode: Mode) -> Harness {
         lease,
         calendar: calendar(),
         tournament: TournamentId::new(TID),
-        journal: Journal::discard(),
+        journal: journal(&root),
         clock: arc_clock,
         retry: RetryPolicy::default(),
         oms: Arc::new(Mutex::new(oms)),
@@ -391,4 +395,54 @@ async fn freeze_and_risk_block_before_anything_is_written() {
         !h.gw.oms().lock().knows("t:14"),
         "a refused order leaves no intent behind"
     );
+}
+
+#[tokio::test(start_paused = true)]
+async fn risk_refusals_are_journaled_with_what_the_caps_saw() {
+    let threads = Mutex::new(None);
+    let h = harness_with(Mode::Paper, |root| {
+        let (journal, thread) = Journal::start(JournalConfig {
+            dir: root.join("journal"),
+            producer: "rust-live".into(),
+            capacity: 64,
+            redact: vec![],
+        })
+        .expect("journal");
+        *threads.lock() = Some(thread);
+        journal
+    });
+    assert!(matches!(
+        h.submit(&bundle("t:15", 20_000, 5000)),
+        Err(Blocked::Risk(_))
+    ));
+    let thread = threads.lock().take().expect("writer");
+    drop(h.gw);
+    thread.join().expect("thread").expect("io");
+    let day = susq_journal::utc_day(t0().timestamp_nanos_opt().expect("ns"));
+    let text = std::fs::read_to_string(susq_journal::journal_path(
+        &h.root.join("journal"),
+        &day,
+        "rust-live",
+    ))
+    .expect("journal file");
+    let blocked: Vec<serde_json::Value> = text
+        .lines()
+        .map(|l| serde_json::from_str::<serde_json::Value>(l).expect("json"))
+        .filter(|e| e["method"] == "blocked")
+        .map(|e| serde_json::from_str(e["bodyJson"].as_str().expect("body")).expect("body json"))
+        .collect();
+    assert_eq!(blocked.len(), 1, "{text}");
+    let b = &blocked[0];
+    assert!(
+        b["reason"]
+            .as_str()
+            .is_some_and(|r| r.starts_with("risk: order notional")),
+        "{b}"
+    );
+    assert_eq!(b["detail"]["equity"], 10_000.0);
+    assert_eq!(b["detail"]["total"], 0.0);
+    assert_eq!(b["detail"]["market"], 0.0);
+    assert_eq!(b["detail"]["positions"], 0);
+    assert_eq!(b["detail"]["resting"], 0);
+    assert_eq!(b["order"]["legs"][0]["intent_id"], "t:15");
 }

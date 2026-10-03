@@ -1,9 +1,9 @@
-//! Constraints racer, sniper, market maker, scenario executor, election-night executor.
+//! Constraints racer, sniper, far quoter, market maker, scenario executor, election-night executor.
 //!
 //! Every strategy is a pure decision function: it reads one [`Snapshot`] of the world (books, fair
-//! values, positions, our live intents, targets, needle posteriors, relationship violations) and
-//! returns a [`Decision`] (order bundles to send, intents to cancel, notes for the journal). No I/O,
-//! no clocks, no hidden state, so every decision is reproducible and unit-testable.
+//! values, positions, marks, our live intents, targets, needle posteriors, relationship violations)
+//! and returns a [`Decision`] (order bundles to send, intents to cancel, journal events, notes). No
+//! I/O, no clocks, no hidden state, so every decision is reproducible and unit-testable.
 //!
 //! Shared rules every strategy follows:
 //! * intent ids are deterministic: `"{strategy}:{key}:{now_s}"`;
@@ -14,6 +14,7 @@
 pub mod constraints_racer;
 mod draft;
 pub mod en_executor;
+pub mod farquote;
 pub mod market_maker;
 pub mod scenario_executor;
 pub mod snapshot;
@@ -23,9 +24,10 @@ mod testkit;
 
 pub use constraints_racer::ConstraintsRacer;
 pub use en_executor::EnExecutor;
+pub use farquote::FarQuoter;
 pub use market_maker::MarketMaker;
 pub use scenario_executor::ScenarioExecutor;
-pub use snapshot::{CancelRequest, Decision, FairQuote, IntentView, NeedleView, Snapshot};
+pub use snapshot::{CancelRequest, Decision, Event, FairQuote, IntentView, NeedleView, Snapshot};
 pub use sniper::Sniper;
 
 /// A trading strategy: a pure function from a snapshot to a decision.
@@ -50,7 +52,7 @@ mod tests {
     };
     use susq_core::{
         Pips,
-        config::{EnCfg, MmCfg, RacerCfg, ScenarioCfg, SniperCfg},
+        config::{EnCfg, FarQuoteCfg, MmCfg, RacerCfg, ScenarioCfg, SniperCfg},
     };
     use susq_platform::{NodeRole, RelationshipType};
 
@@ -109,7 +111,8 @@ mod tests {
             let mm = MarketMaker::new(MmCfg { enabled: true, ..MmCfg::default() });
             let scenario = ScenarioExecutor::new(ScenarioCfg::default());
             let en = EnExecutor::new(EnCfg { enabled: true, ..EnCfg::default() });
-            let all: [&dyn Strategy; 5] = [&racer, &sniper, &mm, &scenario, &en];
+            let farquote = FarQuoter::new(FarQuoteCfg { enabled: true, ..FarQuoteCfg::default() });
+            let all: [&dyn Strategy; 6] = [&racer, &sniper, &mm, &scenario, &en, &farquote];
             let snap = w.snap();
             for (name, d) in run_all(&all, &snap) {
                 let prefix = format!("{name}:");

@@ -16,7 +16,7 @@ use susq_oms::{FillDelta, Oms, PrepareError, Prepared};
 use susq_platform::{
     CancelAllResponse, CancelOutcome, CancelScope, PlatformAdapter, PlatformError, RetryClass,
 };
-use susq_risk::{PreTrade, Rejection, RiskContext};
+use susq_risk::{PreTrade, Rejection, RiskContext, RiskDetail};
 use tokio::task::JoinHandle;
 
 use crate::{
@@ -46,7 +46,8 @@ pub enum Blocked {
 }
 
 impl Blocked {
-    fn label(&self) -> &'static str {
+    /// Short metric / journal label for the gate that closed.
+    pub fn label(&self) -> &'static str {
         match self {
             Blocked::Killed(_) => "killed",
             Blocked::NoLease => "no_lease",
@@ -168,6 +169,11 @@ impl Gateway {
         }
     }
 
+    /// Journal a strategy or engine event (`farquote_scan`, ...) under this producer.
+    pub fn journal_event(&self, kind: &str, body: serde_json::Value) {
+        self.event(kind, body, "");
+    }
+
     fn event(&self, kind: &str, body: serde_json::Value, key: &str) {
         let entry = JournalEntry {
             ts_ns: self.d.clock.now_ns(),
@@ -188,6 +194,28 @@ impl Gateway {
         b
     }
 
+    /// A risk refusal is journaled and logged with what the caps saw, so a refused ladder or
+    /// snipe can be explained from the journal alone (the bridge's `Decision.detail`).
+    fn blocked_by_risk(&self, r: Rejection, what: &serde_json::Value, detail: &RiskDetail) -> Blocked {
+        let b = Blocked::Risk(r);
+        metrics::counter!("susq_gateway_blocked_total", "reason" => b.label()).increment(1);
+        tracing::info!(
+            reason = %b,
+            equity = detail.equity,
+            total = detail.total,
+            market = detail.market,
+            positions = detail.positions,
+            resting = detail.resting,
+            "order refused by risk"
+        );
+        self.event(
+            "blocked",
+            json!({ "reason": b.to_string(), "order": what, "detail": detail }),
+            "",
+        );
+        b
+    }
+
     /// Run every gate, risk-check and write-ahead the bundle, then send each request on its own task.
     /// Returns the send tasks (await them in tests; the live loop lets them run).
     pub fn submit(
@@ -203,7 +231,7 @@ impl Gateway {
             return Err(self.blocked(Blocked::TimeGate, &summary));
         }
         risk.check_bundle(ctx, bundle, &self.d.tournament)
-            .map_err(|r| self.blocked(r.into(), &summary))?;
+            .map_err(|r| self.blocked_by_risk(r, &summary, &risk.detail(ctx, bundle)))?;
         let prepared = self
             .d
             .oms

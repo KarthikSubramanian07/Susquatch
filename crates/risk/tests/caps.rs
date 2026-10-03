@@ -1,7 +1,8 @@
 //! Property: no accepted bundle ever leaves a cap breached.
 //!
-//! The expected exposures are recomputed here independently of the implementation: every live order
-//! and every leg is assumed to fill; exposure = |net shares| × price of the held side.
+//! The expected exposures are recomputed here independently of the implementation: a position is
+//! |net shares| × price of the held side at the mark; every live order is its remainder at its
+//! limit; every leg adds the shares it opens (closing shares are free) at its limit.
 
 use std::{
     collections::{HashMap, HashSet},
@@ -146,28 +147,46 @@ proptest! {
         }
 
         // Independent recomputation.
-        let mut before: HashMap<ExchangeId, i64> = positions.clone();
-        for o in &live_orders {
-            *before.entry(o.exchange_id.clone()).or_default() += o.book_side.yes_delta_sign() * o.remaining;
-        }
-        let mut after = before.clone();
         let mut leg_mark: HashMap<ExchangeId, f64> = HashMap::new();
         for l in &legs {
             prop_assert!(l.max_notional() <= 0.02 * equity + 1e-6, "order notional cap");
-            *after.entry(l.exchange_id.clone()).or_default() += l.yes_delta();
             leg_mark.entry(l.exchange_id.clone()).or_insert(l.yes_space().1.prob());
         }
         let mark = |e: &ExchangeId| marks.get(e).copied().or_else(|| leg_mark.get(e).copied()).unwrap_or(0.5);
-        let exp_after = |e: &ExchangeId| exposure(after.get(e).copied().unwrap_or(0), mark(e));
-        let increased: Vec<&ExchangeId> = legs
+        let mut after: HashMap<ExchangeId, f64> = positions
             .iter()
-            .map(|l| &l.exchange_id)
-            .filter(|e| exp_after(e) > exposure(before.get(*e).copied().unwrap_or(0), mark(e)) + 1e-9)
+            .map(|(e, net)| (e.clone(), exposure(*net, mark(e))))
             .collect();
+        for o in &live_orders {
+            let px = match o.book_side {
+                BookSide::Bid => o.yes_price.prob(),
+                BookSide::Ask => 1.0 - o.yes_price.prob(),
+            };
+            *after.entry(o.exchange_id.clone()).or_default() += o.remaining as f64 * px;
+        }
+        let mut held = positions.clone();
+        let mut increased: Vec<&ExchangeId> = Vec::new();
+        for l in &legs {
+            let delta = l.yes_delta();
+            let pos = held.get(&l.exchange_id).copied().unwrap_or(0);
+            let closing = if pos * delta < 0 { delta.abs().min(pos.abs()) } else { 0 };
+            let (side, yes) = l.yes_space();
+            let px = match side {
+                BookSide::Bid => yes.prob(),
+                BookSide::Ask => 1.0 - yes.prob(),
+            };
+            let opened = (delta.abs() - closing) as f64 * px;
+            if opened > 1e-9 {
+                increased.push(&l.exchange_id);
+            }
+            *after.entry(l.exchange_id.clone()).or_default() += opened;
+            *held.entry(l.exchange_id.clone()).or_default() += delta;
+        }
         if increased.is_empty() {
             return Ok(()); // pure risk reduction is always allowed
         }
-        let gross: f64 = after.keys().map(exp_after).sum();
+        let exp_after = |e: &ExchangeId| after.get(e).copied().unwrap_or(0.0);
+        let gross: f64 = after.values().sum();
         prop_assert!(gross <= 0.60 * equity + 1e-6, "gross {gross} > cap");
         for e in &increased {
             let m = markets.market_of(e).map(|m| m.to_string());
