@@ -1,6 +1,8 @@
 //! A simulated session of the full live loop in paper mode against the mock platform:
 //! the racer finds and trades a seeded violation, a kill file mid-run cancels everything,
-//! a lease held by the bridge prevents any write, and stale targets stop new exposure.
+//! a lease held by the bridge prevents any write, stale targets stop new exposure, and the far
+//! quoter rests, keeps, trims and pulls its ladders on its own cadence (and recognises them after
+//! a restart, in live mode against the mock's matching engine).
 
 use std::{path::Path, sync::Arc, time::Duration};
 
@@ -21,7 +23,7 @@ use susq_live::{
 use susq_oms::OrderState;
 use susq_platform::{
     OrderStatusFilter, all_orders,
-    mock::{MockConfig, MockPlatform},
+    mock::{CALLER, MockConfig, MockPlatform},
     realtime::{BookDirty, MarketBatch, RealtimeEvent, ResyncReason, RtBook, RtLevel},
 };
 
@@ -41,7 +43,8 @@ fn config() -> Config {
     cfg
 }
 
-/// A seeded exchange: three mutually exclusive legs whose YES bids sum to 1.05, plus a House leg.
+/// A seeded exchange: three mutually exclusive legs whose YES bids sum to 1.05, a House leg, and
+/// two near-certain governor legs (the Cup prices one at ~0.02 and the other at ~0.98).
 fn seed(mock: &MockPlatform) {
     mock.add_market(
         "m1",
@@ -49,11 +52,15 @@ fn seed(mock: &MockPlatform) {
         &[("1", "DEM"), ("2", "REP"), ("3", "IND")],
     );
     mock.add_market("m2", "House control", &[("4", "DEM")]);
+    mock.add_market("m3", "TX-GOV", &[("5", "DEM")]);
+    mock.add_market("m4", "CA-GOV", &[("6", "DEM")]);
     for (ex, bid, ask) in [
         ("1", 4000, 4500),
         ("2", 3500, 4000),
         ("3", 3000, 3500),
         ("4", 5000, 5500),
+        ("5", 100, 300),
+        ("6", 9700, 9900),
     ] {
         mock.seed_order("alice", ex, Side::Yes, Action::Buy, 100, px(bid));
         mock.seed_order("bob", ex, Side::Yes, Action::Sell, 100, px(ask));
@@ -99,6 +106,8 @@ fn write_market_map(home: &Path, cfg: &Config) {
             rule("2", "m1", "2026-SEN-OH", "REP", &["national", "state:OH"]),
             rule("3", "m1", "2026-SEN-OH", "IND", &["national", "state:OH"]),
             rule("4", "m2", "", "DEM", &["house"]),
+            rule("5", "m3", "2026-GOV-TX", "DEM", &["state:TX"]),
+            rule("6", "m4", "2026-GOV-CA", "DEM", &["state:CA"]),
         ],
     };
     let path = home.join(&cfg.paths.market_map);
@@ -168,6 +177,31 @@ async fn session_full(
     prepare: impl FnOnce(&Path, &ManualClock),
     realtime: Option<RealtimeFeed>,
 ) -> Session {
+    session_in(Mode::Paper, tweak, prepare, realtime).await
+}
+
+/// A live-mode session: orders reach the mock's matching engine under our caller name, so they
+/// survive the engine being rebuilt (what a paper broker, rebuilt with the engine, cannot show).
+async fn session_live(prepare: impl FnOnce(&Path, &ManualClock)) -> Session {
+    session_in(
+        Mode::Live,
+        |_| {},
+        |home, clock| {
+            std::fs::create_dir_all(home.join("ops")).expect("mkdir");
+            std::fs::write(home.join("ops/GO_LIVE"), "go live\n").expect("arm");
+            prepare(home, clock);
+        },
+        None,
+    )
+    .await
+}
+
+async fn session_in(
+    mode: Mode,
+    tweak: impl FnOnce(&mut Config),
+    prepare: impl FnOnce(&Path, &ManualClock),
+    realtime: Option<RealtimeFeed>,
+) -> Session {
     let home = tempfile::tempdir().expect("tmp");
     let mut cfg = config();
     tweak(&mut cfg);
@@ -186,10 +220,31 @@ async fn session_full(
     seed(&mock);
     write_market_map(home.path(), &cfg);
     prepare(home.path(), &clock);
-    let mut engine = build(BuildOpts {
+    let mut engine = boot(home.path(), cfg, &clock, &mock, mode, 1, realtime);
+    engine.bootstrap().await;
+    Session {
+        home,
+        clock,
+        mock,
+        engine,
+    }
+}
+
+/// Build an engine on `home` (no I/O until `bootstrap`). A second call with another pid is what a
+/// process restart looks like: nothing in memory, only the intents log and the platform.
+fn boot(
+    home: &Path,
+    cfg: Config,
+    clock: &ManualClock,
+    mock: &Arc<MockPlatform>,
+    mode: Mode,
+    pid: u32,
+    realtime: Option<RealtimeFeed>,
+) -> Engine {
+    build(BuildOpts {
         cfg,
-        home: home.path().to_owned(),
-        mode: Mode::Paper,
+        home: home.to_owned(),
+        mode,
         clock: Arc::new(clock.clone()),
         platform: mock.clone(),
         journal: Journal::discard(),
@@ -198,17 +253,10 @@ async fn session_full(
         realtime,
         needle: None,
         host: "test".into(),
-        pid: 1,
+        pid,
         kill: None,
     })
-    .expect("engine");
-    engine.bootstrap().await;
-    Session {
-        home,
-        clock,
-        mock,
-        engine,
-    }
+    .expect("engine")
 }
 
 impl Session {
@@ -239,15 +287,65 @@ impl Session {
     }
 
     fn intents(&self, strategy: &str) -> Vec<(String, OrderState)> {
-        self.engine
-            .gateway()
-            .oms()
-            .lock()
-            .all()
-            .filter(|t| t.intent.strategy == strategy)
-            .map(|t| (t.intent.intent_id.clone(), t.state))
-            .collect()
+        intents_of(&self.engine, strategy)
     }
+
+    /// Open orders on one exchange as the account reports them (the racer keeps its own orders
+    /// resting on exchanges 1-3, so far-quoter tests count per exchange).
+    async fn open_orders_on(&self, ex: &str) -> usize {
+        all_orders(
+            self.engine.account().as_ref(),
+            &TournamentId::new(TID),
+            OrderStatusFilter::Open,
+            Some(&ExchangeId::new(ex)),
+        )
+        .await
+        .expect("orders")
+        .len()
+    }
+
+    /// The far quoter's resting rungs on `ex`: `(side, price pips, quantity)`.
+    fn ladder(&self, ex: &str) -> Vec<(v1::Side, u32, i64)> {
+        ladder_of(&self.engine, ex)
+    }
+}
+
+fn intents_of(engine: &Engine, strategy: &str) -> Vec<(String, OrderState)> {
+    engine
+        .gateway()
+        .oms()
+        .lock()
+        .all()
+        .filter(|t| t.intent.strategy == strategy)
+        .map(|t| (t.intent.intent_id.clone(), t.state))
+        .collect()
+}
+
+fn ladder_of(engine: &Engine, ex: &str) -> Vec<(v1::Side, u32, i64)> {
+    let mut rungs: Vec<_> = engine
+        .gateway()
+        .oms()
+        .lock()
+        .live()
+        .filter(|t| t.intent.strategy == "farquote" && t.intent.exchange_id == ex)
+        .map(|t| {
+            (
+                v1::Side::try_from(t.intent.side).expect("side"),
+                t.intent.price_pips,
+                t.remaining,
+            )
+        })
+        .collect();
+    rungs.sort_unstable();
+    rungs
+}
+
+/// Cash a ladder ties up (SUSQies).
+fn reserved(rungs: &[(v1::Side, u32, i64)]) -> f64 {
+    rungs
+        .iter()
+        .map(|(_, price, qty)| f64::from(*price) / 10_000.0 * *qty as f64)
+        .sum()
 }
 
 #[tokio::test]
@@ -269,7 +367,7 @@ async fn racer_finds_and_trades_the_seeded_violation_on_paper() {
     assert_eq!(s.paper_position("3").await, q1);
     // Paper never reaches the platform, and the live liquidity is untouched.
     assert_eq!(s.mock.engine_orders_created(), 0);
-    assert_eq!(s.mock.open_orders_of("alice").len(), 4);
+    assert_eq!(s.mock.open_orders_of("alice").len(), 6);
 
     // The same decision in the same second is a duplicate intent, never a second order.
     s.engine.step().await;
@@ -576,6 +674,252 @@ async fn a_malformed_fair_file_is_refused_and_the_old_values_age_out() {
     s.tick(61).await;
     s.tick(1).await;
     assert_eq!(s.intents("sniper").len(), 2, "once they age out, nothing more");
+}
+
+// ───────────────────────────── far quoter ─────────────────────────────
+
+/// The far quoter's cadence from the shared config, in whole seconds for `tick`.
+fn farquote_interval_s() -> u64 {
+    config().strategies.farquote.interval_s
+}
+
+/// The NO ladder on the near-zero governor leg (Cup 0.01 / 0.03, fair 0.02): four rungs at the
+/// configured prices, within the reserve and the per-market cap, left alone by the next pass.
+#[tokio::test]
+async fn far_quoter_rests_a_no_ladder_on_a_near_zero_market_once() {
+    let mut s = session(|home, clock| write_fair(home, clock.now_ns(), &[("5", 0.02)])).await;
+    let cfg = config().strategies.farquote;
+    s.tick(1).await;
+    let rungs = s.ladder("5");
+    assert_eq!(rungs.len(), cfg.levels.len(), "{rungs:?}");
+    assert!(rungs.iter().all(|(side, _, _)| *side == v1::Side::No));
+    let prices: Vec<u32> = rungs.iter().map(|r| r.1).collect();
+    let want: Vec<u32> = cfg.levels.iter().map(|p| (p * 10_000.0).round() as u32).collect();
+    assert_eq!(prices, want);
+    assert!(
+        s.intents("farquote")
+            .iter()
+            .all(|(id, st)| id.starts_with("farquote:5:no:") && *st == OrderState::Acked),
+        "rest, far from the live book: {:?}",
+        s.intents("farquote")
+    );
+    assert_eq!(s.open_orders_on("5").await, 4);
+    assert_eq!(s.paper_position("5").await, 0);
+    let equity = s.engine.world.equity;
+    let cost = reserved(&rungs);
+    assert!(cost <= cfg.reserve_frac * equity + 1e-6);
+    assert!(cost <= cfg.max_market_frac * equity + 1e-6);
+    assert!(
+        cost > 0.99 * cfg.max_market_frac * equity,
+        "the per-market budget is used: {cost}"
+    );
+
+    // Not due again until the interval has passed, and then the ladder is recognised as resting.
+    s.tick(1).await;
+    assert_eq!(s.intents("farquote").len(), 4);
+    write_fair(
+        s.home.path(),
+        s.clock.now_ns() + farquote_interval_s() as i64 * S,
+        &[("5", 0.02)],
+    );
+    s.tick(farquote_interval_s()).await;
+    assert_eq!(s.intents("farquote").len(), 4, "a second pass adds nothing");
+    assert_eq!(s.open_orders_on("5").await, 4);
+}
+
+#[tokio::test]
+async fn far_quoter_rests_a_yes_ladder_on_a_near_one_market() {
+    let mut s = session(|home, clock| write_fair(home, clock.now_ns(), &[("6", 0.98)])).await;
+    s.tick(1).await;
+    let rungs = s.ladder("6");
+    assert_eq!(rungs.len(), 4, "{rungs:?}");
+    assert!(
+        rungs
+            .iter()
+            .all(|(side, price, _)| *side == v1::Side::Yes && *price <= 1000)
+    );
+    assert!(
+        s.intents("farquote")
+            .iter()
+            .all(|(_, st)| *st == OrderState::Acked)
+    );
+    assert!(s.ladder("5").is_empty(), "no fair for the other leg");
+}
+
+#[tokio::test]
+async fn far_quoter_pulls_the_ladder_when_fair_leaves_the_band() {
+    let mut s = session(|home, clock| write_fair(home, clock.now_ns(), &[("5", 0.02)])).await;
+    s.tick(1).await;
+    assert_eq!(s.ladder("5").len(), 4);
+    // Out of the band (but still consistent with the 0.02 Cup price, so not a mapping error).
+    write_fair(
+        s.home.path(),
+        s.clock.now_ns() + farquote_interval_s() as i64 * S,
+        &[("5", 0.10)],
+    );
+    s.tick(farquote_interval_s()).await;
+    assert!(s.ladder("5").is_empty(), "{:?}", s.intents("farquote"));
+    assert_eq!(s.open_orders_on("5").await, 0);
+    assert!(
+        s.intents("farquote")
+            .iter()
+            .all(|(_, st)| *st == OrderState::Cancelled),
+        "{:?}",
+        s.intents("farquote")
+    );
+}
+
+#[tokio::test]
+async fn far_quoter_leaves_ordinary_markets_alone() {
+    let mut s = session(|home, clock| write_fair(home, clock.now_ns(), &[("4", 0.525)])).await;
+    s.tick(1).await;
+    assert!(s.intents("farquote").is_empty());
+}
+
+#[tokio::test]
+async fn a_stale_fair_leaves_resting_ladders_alone() {
+    let mut s = session(|home, clock| write_fair(home, clock.now_ns(), &[("5", 0.02)])).await;
+    s.tick(1).await;
+    let before = s.ladder("5");
+    assert_eq!(before.len(), 4);
+    // The scheduler dies: the next pass finds a fair far older than stale_after_s.
+    s.tick(farquote_interval_s()).await;
+    assert_eq!(s.ladder("5"), before, "no verdict, so the ladder rests on");
+    assert!(
+        s.intents("farquote")
+            .iter()
+            .all(|(_, st)| *st == OrderState::Acked)
+    );
+}
+
+#[tokio::test]
+async fn far_quote_ladders_are_recognised_after_a_restart() {
+    let mut s = session_live(|home, clock| write_fair(home, clock.now_ns(), &[("5", 0.02)])).await;
+    s.tick(1).await;
+    let before = s.ladder("5");
+    assert_eq!(before.len(), 4, "{:?}", s.intents("farquote"));
+    let on_platform = |s: &Session| {
+        s.mock
+            .open_orders_of(CALLER)
+            .into_iter()
+            .filter(|o| o.exchange_id.as_str() == "5")
+            .count()
+    };
+    assert_eq!(on_platform(&s), 4, "resting on the platform");
+    // The process goes away without a shutdown (a crash): the lease lapses, the orders stay.
+    s.engine.settle().await;
+    s.engine.gateway().lease().release().expect("release");
+
+    // A fresh process: nothing in memory, only the intents log and the platform's open orders.
+    let mut fresh = boot(s.home.path(), config(), &s.clock, &s.mock, Mode::Live, 2, None);
+    fresh.bootstrap().await;
+    assert_eq!(
+        ladder_of(&fresh, "5"),
+        before,
+        "restored from the intents log and reconciled"
+    );
+    write_fair(s.home.path(), s.clock.now_ns() + S, &[("5", 0.02)]);
+    s.clock.advance(Duration::from_secs(1));
+    fresh.step().await;
+    fresh.settle().await;
+    assert_eq!(
+        ladder_of(&fresh, "5"),
+        before,
+        "the first pass of the new process adds nothing"
+    );
+    assert_eq!(on_platform(&s), 4, "no second ladder reached the platform");
+    assert_eq!(intents_of(&fresh, "farquote").len(), 4);
+}
+
+#[tokio::test]
+async fn duplicate_ladders_are_trimmed_to_one_per_level() {
+    let mut s = session(|home, clock| write_fair(home, clock.now_ns(), &[("5", 0.02)])).await;
+    s.tick(1).await;
+    let rungs = s.ladder("5");
+    assert_eq!(rungs.len(), 4);
+    // Simulate a ladder placed twice (what restarts without strategy attribution did).
+    for (_, price, qty) in &rungs {
+        let spec = susq_core::OrderSpec {
+            intent_id: format!("farquote:5:no:{price}:dup"),
+            strategy: "farquote".into(),
+            exchange_id: ExchangeId::new("5"),
+            market_id: None,
+            side: Side::No,
+            action: Action::Buy,
+            quantity: susq_core::Qty(*qty),
+            price: px(*price),
+            ttl: Duration::from_secs(3600),
+            needle_derived: false,
+            fair_yes: None,
+        };
+        s.engine
+            .place(&susq_core::OrderBundle::single(spec))
+            .expect("duplicate rung placed");
+    }
+    s.engine.settle().await;
+    assert_eq!(s.ladder("5").len(), 8);
+    assert_eq!(s.open_orders_on("5").await, 8);
+    write_fair(
+        s.home.path(),
+        s.clock.now_ns() + farquote_interval_s() as i64 * S,
+        &[("5", 0.02)],
+    );
+    s.tick(farquote_interval_s()).await;
+    assert_eq!(
+        s.ladder("5"),
+        rungs,
+        "one rung per level survives, at today's size"
+    );
+    assert_eq!(s.open_orders_on("5").await, 4);
+    let cancelled = s
+        .intents("farquote")
+        .iter()
+        .filter(|(_, st)| *st == OrderState::Cancelled)
+        .count();
+    assert_eq!(cancelled, 4);
+}
+
+/// With the lease held elsewhere the far quoter's pass is skipped outright, and once the lease is
+/// ours the next pass is not a burst of catch-up passes.
+#[tokio::test]
+async fn far_quoter_skips_the_pass_while_the_gate_is_closed() {
+    let peer_lease = Mutex::new(None);
+    let mut s = session(|home, clock| {
+        write_fair(home, clock.now_ns(), &[("5", 0.02)]);
+        let peer = Lease::new(
+            LeaseConfig {
+                path: home.join("ops/state/trader.paper.lease"),
+                ttl: Duration::from_secs(30),
+                holder: "paper-peer".into(),
+                host: "test".into(),
+                pid: 4242,
+            },
+            Arc::new(clock.clone()),
+        );
+        assert!(matches!(
+            peer.acquire().expect("peer lease"),
+            LeaseStatus::Held(_)
+        ));
+        *peer_lease.lock() = Some(peer);
+    })
+    .await;
+    s.tick(1).await;
+    assert!(s.intents("farquote").is_empty(), "no lease: not even an intent");
+    // The peer lets go; our next renewal takes the lease and the next due pass rests the ladder.
+    peer_lease
+        .lock()
+        .take()
+        .expect("peer")
+        .release()
+        .expect("release");
+    write_fair(
+        s.home.path(),
+        s.clock.now_ns() + farquote_interval_s() as i64 * S,
+        &[("5", 0.02)],
+    );
+    s.tick(farquote_interval_s()).await;
+    assert!(s.engine.gateway().lease().holds());
+    assert_eq!(s.ladder("5").len(), 4, "{:?}", s.intents("farquote"));
 }
 
 /// A versioned `books` item for one exchange, and a batch on that exchange's market channel.

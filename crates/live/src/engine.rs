@@ -4,9 +4,13 @@
 //! (cancel-all once, then do nothing) → refresh due inputs (reconcile, portfolio, constraints,
 //! targets, market map, books) → breakers → needle transitions → strategies → gateway.
 //! Every write goes through the gateway; the engine never talks to order endpoints directly.
+//!
+//! The racer, sniper, market maker, scenario and election-night executors decide every tick; the
+//! far quoter decides on its own cadence (`strategies.farquote.interval_s`), because one pass can
+//! place hundreds of resting orders under the account's write budget.
 
 use std::{
-    collections::{BTreeSet, HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     path::{Path, PathBuf},
     sync::Arc,
     time::Duration,
@@ -25,8 +29,9 @@ use susq_platform::{
 };
 use susq_risk::{BreakerConfig, Breakers, BundleCost, PreTrade, RiskContext, RiskLimits};
 use susq_strategies::{
-    ConstraintsRacer, EnExecutor, FairQuote, MarketMaker, NeedleView, ScenarioExecutor, Snapshot, Sniper,
-    Strategy,
+    ConstraintsRacer, Decision, EnExecutor, FairQuote, FarQuoter, IntentView, MarketMaker, NeedleView,
+    ScenarioExecutor, Snapshot, Sniper, Strategy,
+    farquote::{self, ScanSummary},
 };
 use susq_targets::{FairOutcome, FairReader, ReaderConfig, RefreshOutcome, TargetsReader};
 use tokio::{sync::watch, task::JoinHandle};
@@ -77,6 +82,8 @@ struct Due {
     market_map: i64,
     leaderboard: i64,
     realtime: i64,
+    /// Next far-quoter pass (`strategies.farquote.interval_s`).
+    farquote: i64,
 }
 
 /// The engine.
@@ -92,6 +99,7 @@ pub struct Engine {
     mm: MarketMaker,
     scenario: ScenarioExecutor,
     en: EnExecutor,
+    farquote: FarQuoter,
     sends: Vec<JoinHandle<SendOutcome>>,
     due: Due,
     kill_handled: bool,
@@ -105,6 +113,36 @@ pub struct Engine {
     collateral_sizing: bool,
     /// Latest realtime book version applied per exchange (older `books` items are stale).
     book_versions: HashMap<ExchangeId, u64>,
+}
+
+/// How the gateway received one decision's bundles.
+#[derive(Debug, Default)]
+struct Outcome {
+    accepted: usize,
+    /// Gate label → bundles it refused.
+    blocked: BTreeMap<&'static str, u32>,
+    /// Notional of the refused bundles (it never got reserved).
+    blocked_notional: f64,
+}
+
+/// A far-quoter scan summary counts what the strategy wanted to place; make it say what the
+/// gateway accepted, with the refusals under `blocked` and their cash taken out of `reserved`.
+fn amend_scan(body: &mut serde_json::Value, outcome: &Outcome) {
+    if outcome.blocked.is_empty() {
+        return;
+    }
+    body["placed"] = serde_json::json!(outcome.accepted);
+    if let Some(reserved) = body["reserved"].as_f64() {
+        body["reserved"] = serde_json::json!(((reserved - outcome.blocked_notional) * 100.0).round() / 100.0);
+    }
+    let blocked = &mut body["blocked"];
+    if !blocked.is_object() {
+        *blocked = serde_json::json!({});
+    }
+    for (label, n) in &outcome.blocked {
+        let prior = blocked[label].as_u64().unwrap_or(0);
+        blocked[label] = serde_json::json!(prior + u64::from(*n));
+    }
 }
 
 /// Collateral-aware bundle cost for risk's buying-power check.
@@ -151,6 +189,7 @@ impl Engine {
             mm: MarketMaker::new(cfg.strategies.mm.clone()),
             scenario: ScenarioExecutor::new(cfg.strategies.scenario.clone()),
             en: EnExecutor::new(cfg.strategies.en.clone()),
+            farquote: FarQuoter::new(cfg.strategies.farquote.clone()),
             sends: Vec::new(),
             due: Due::default(),
             kill_handled: false,
@@ -209,8 +248,9 @@ impl Engine {
         self.refresh_inputs(now).await;
         self.apply_breakers(now).await;
         self.handle_needle(now).await;
-        if self.d.gateway.write_gate().is_ok() {
-            self.decide_and_act(now).await;
+        match self.d.gateway.write_gate() {
+            Ok(()) => self.decide_and_act(now).await,
+            Err(blocked) => self.skip_farquote(now, &blocked),
         }
     }
 
@@ -752,7 +792,50 @@ impl Engine {
 
     // ───────────────────────────── decisions ─────────────────────────────
 
+    fn farquote_interval_ns(&self) -> i64 {
+        i64::try_from(self.d.cfg.strategies.farquote.interval_s)
+            .unwrap_or(600)
+            .saturating_mul(S)
+    }
+
+    /// Whether this tick is one of the far quoter's passes. Arming it here (rather than inside the
+    /// pass) means a gate that closes mid-interval costs one pass, never a burst of catch-up passes.
+    fn farquote_due(&mut self, now: i64) -> bool {
+        if !self.farquote.cfg.enabled || now < self.due.farquote {
+            return false;
+        }
+        self.due.farquote = now + self.farquote_interval_ns();
+        true
+    }
+
+    /// The gate is closed (no lease, killed, frozen, not armed): a far-quoter pass that fell due is
+    /// skipped and journaled as such, one note instead of hundreds of blocked orders.
+    fn skip_farquote(&mut self, now: i64, blocked: &Blocked) {
+        if !self.farquote_due(now) {
+            return;
+        }
+        let reserved: f64 = intent_views(&self.d.gateway.oms().lock())
+            .iter()
+            .filter(|i| i.strategy == farquote::NAME)
+            .map(IntentView::resting_notional)
+            .sum();
+        let equity = self.world.equity;
+        let summary = ScanSummary {
+            reserved: (reserved * 100.0).round() / 100.0,
+            budget: ((self.farquote.cfg.reserve_frac * equity) * 100.0).round() / 100.0,
+            equity: (equity * 100.0).round() / 100.0,
+            blocked: BTreeMap::from([(blocked.label().to_owned(), 1)]),
+            ..ScanSummary::default()
+        };
+        tracing::info!(reason = %blocked, "far quoter pass skipped: gate closed");
+        self.d.gateway.journal_event(
+            farquote::SCAN_EVENT,
+            serde_json::to_value(summary).unwrap_or_default(),
+        );
+    }
+
     async fn decide_and_act(&mut self, now: i64) {
+        let farquote_due = self.farquote_due(now);
         let decisions = {
             let oms = self.d.gateway.oms().lock();
             let intents = intent_views(&oms);
@@ -782,27 +865,49 @@ impl Engine {
                 violations: &violations,
                 cluster_utilization: &cluster_utilization,
             };
-            let strategies: [&dyn Strategy; 5] =
-                [&self.racer, &self.sniper, &self.mm, &self.scenario, &self.en];
+            let mut strategies: Vec<&dyn Strategy> =
+                vec![&self.racer, &self.sniper, &self.mm, &self.scenario, &self.en];
+            if farquote_due {
+                strategies.push(&self.farquote);
+            }
             susq_strategies::run_all(&strategies, &snap)
         };
         for (name, decision) in decisions {
-            for note in &decision.notes {
-                tracing::debug!(strategy = name, note = %note);
+            self.act(name, decision, now).await;
+        }
+    }
+
+    /// Carry out one strategy's decision: cancels, then bundles through the gateway, then its
+    /// journal events amended with what the gateway actually accepted.
+    async fn act(&mut self, name: &str, decision: Decision, now: i64) {
+        for note in &decision.notes {
+            tracing::debug!(strategy = name, note = %note);
+        }
+        if !decision.cancels.is_empty() {
+            let ids: HashSet<&str> = decision.cancels.iter().map(|c| c.intent_id.as_str()).collect();
+            let targets = self
+                .d
+                .gateway
+                .oms()
+                .lock()
+                .request_cancel(|t| ids.contains(t.intent.intent_id.as_str()));
+            self.d.gateway.cancel_orders(&targets).await;
+        }
+        let mut outcome = Outcome::default();
+        for bundle in &decision.bundles {
+            match self.submit(bundle, now) {
+                Ok(()) => outcome.accepted += 1,
+                Err(label) => {
+                    *outcome.blocked.entry(label).or_default() += 1;
+                    outcome.blocked_notional += bundle.legs.iter().map(|l| l.max_notional()).sum::<f64>();
+                }
             }
-            if !decision.cancels.is_empty() {
-                let ids: HashSet<&str> = decision.cancels.iter().map(|c| c.intent_id.as_str()).collect();
-                let targets = self
-                    .d
-                    .gateway
-                    .oms()
-                    .lock()
-                    .request_cancel(|t| ids.contains(t.intent.intent_id.as_str()));
-                self.d.gateway.cancel_orders(&targets).await;
+        }
+        for mut event in decision.events {
+            if event.kind == farquote::SCAN_EVENT {
+                amend_scan(&mut event.body, &outcome);
             }
-            for bundle in decision.bundles {
-                self.submit(&bundle, now);
-            }
+            self.d.gateway.journal_event(event.kind, event.body);
         }
     }
 
@@ -839,11 +944,15 @@ impl Engine {
         }
     }
 
-    fn submit(&mut self, bundle: &OrderBundle, now: i64) {
+    /// Submit a bundle; `Err` carries the gate's label (`risk`, `no_lease`, `duplicate`, ...).
+    fn submit(&mut self, bundle: &OrderBundle, now: i64) -> Result<(), &'static str> {
         match self.try_submit(bundle, now) {
-            Ok(()) | Err(Blocked::Prepare(susq_oms::PrepareError::Duplicate(_))) => {}
+            Ok(()) => Ok(()),
+            // Re-deciding the same thing in the same second is expected, not a problem.
+            Err(Blocked::Prepare(susq_oms::PrepareError::Duplicate(_))) => Err("duplicate"),
             Err(b) => {
-                tracing::info!(strategy = bundle.legs.first().map(|l| l.strategy.as_str()), reason = %b, "order blocked")
+                tracing::info!(strategy = bundle.legs.first().map(|l| l.strategy.as_str()), reason = %b, "order blocked");
+                Err(b.label())
             }
         }
     }
@@ -948,5 +1057,32 @@ impl Engine {
     /// Current breaker trips (for status).
     pub fn breaker_history(&self) -> &[susq_risk::Trip] {
         self.breakers.history()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn a_scan_summary_is_amended_with_what_the_gateway_refused() {
+        let mut body = json!({
+            "inBand": 2, "wanted": 8, "resting": 0, "placed": 8, "cancelled": 0,
+            "reserved": 4000.0, "budget": 15000.0, "equity": 100000.0, "blocked": {"stale": 1}
+        });
+        let untouched = body.clone();
+        amend_scan(&mut body, &Outcome::default());
+        assert_eq!(body, untouched, "nothing refused: nothing to amend");
+
+        let outcome = Outcome {
+            accepted: 5,
+            blocked: BTreeMap::from([("risk", 2), ("stale", 1)]),
+            blocked_notional: 1500.0,
+        };
+        amend_scan(&mut body, &outcome);
+        assert_eq!(body["placed"], 5);
+        assert_eq!(body["reserved"], 2500.0);
+        assert_eq!(body["blocked"], json!({"stale": 2, "risk": 2}));
     }
 }

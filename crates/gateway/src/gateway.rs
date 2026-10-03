@@ -169,6 +169,11 @@ impl Gateway {
         }
     }
 
+    /// Journal a strategy or engine event (`farquote_scan`, ...) under this producer.
+    pub fn journal_event(&self, kind: &str, body: serde_json::Value) {
+        self.event(kind, body, "");
+    }
+
     fn event(&self, kind: &str, body: serde_json::Value, key: &str) {
         let entry = JournalEntry {
             ts_ns: self.d.clock.now_ns(),
