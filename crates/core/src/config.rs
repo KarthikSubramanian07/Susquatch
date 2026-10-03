@@ -13,7 +13,7 @@ use std::{
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::calendar::Calendar;
+use crate::{calendar::Calendar, price::Pips};
 
 /// Paper (default) or live trading.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -201,6 +201,8 @@ pub struct StrategiesCfg {
     pub scenario: ScenarioCfg,
     #[serde(default)]
     pub en: EnCfg,
+    #[serde(default)]
+    pub farquote: FarQuoteCfg,
 }
 
 /// `[strategies.racer]`
@@ -344,6 +346,39 @@ impl Default for EnCfg {
             roll_within_pts: 2.0,
             max_order_frac: 0.02,
             order_ttl_s: 20,
+        }
+    }
+}
+
+/// `[strategies.farquote]`: passive far quotes on near-certain markets (same keys as the bridge's
+/// `FarQuoteConfig`, so one TOML section drives both traders).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct FarQuoteCfg {
+    pub enabled: bool,
+    /// Rest on markets with fair `<= max_fair` (buy NO) or `>= 1 - max_fair` (buy YES).
+    pub max_fair: f64,
+    /// Side-relative prices to rest at (the NO price on a ~0 market, the YES price on a ~1 one).
+    pub levels: Vec<f64>,
+    /// Cash tied up by every far quote together, as a fraction of equity...
+    pub reserve_frac: f64,
+    /// ...and per market.
+    pub max_market_frac: f64,
+    pub order_ttl_s: u64,
+    /// Top-up cadence: a full pass is hundreds of writes under a 30-writes-a-minute budget.
+    pub interval_s: u64,
+}
+
+impl Default for FarQuoteCfg {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            max_fair: 0.05,
+            levels: vec![0.01, 0.03, 0.05, 0.10],
+            reserve_frac: 0.15,
+            max_market_frac: 0.02,
+            order_ttl_s: 86_400,
+            interval_s: 600,
         }
     }
 }
@@ -522,6 +557,15 @@ impl Config {
                 "strategies.scenario.max_hourly_notional_frac",
                 self.strategies.scenario.max_hourly_notional_frac,
             ),
+            ("strategies.farquote.max_fair", self.strategies.farquote.max_fair),
+            (
+                "strategies.farquote.reserve_frac",
+                self.strategies.farquote.reserve_frac,
+            ),
+            (
+                "strategies.farquote.max_market_frac",
+                self.strategies.farquote.max_market_frac,
+            ),
         ];
         for (name, v) in fracs
             .into_iter()
@@ -546,6 +590,18 @@ impl Config {
         }
         if self.targets.max_age_h.is_nan() || self.targets.max_age_h <= 0.0 {
             return bad("targets.max_age_h must be > 0".into());
+        }
+        let fq = &self.strategies.farquote;
+        if fq.levels.is_empty() {
+            return bad("strategies.farquote.levels must list at least one price".into());
+        }
+        for level in &fq.levels {
+            if let Err(e) = Pips::from_f64(*level) {
+                return bad(format!("strategies.farquote.levels: {e}"));
+            }
+        }
+        if fq.order_ttl_s == 0 || fq.interval_s == 0 {
+            return bad("strategies.farquote.order_ttl_s and interval_s must be > 0".into());
         }
         Ok(())
     }
@@ -618,6 +674,14 @@ mod tests {
         assert_eq!(scenario.min_interval_s, 900);
         assert_eq!(scenario.max_hourly_notional_frac, 0.02);
         assert_eq!(scenario.tranche_frac, 0.25);
+        let fq = &cfg.strategies.farquote;
+        assert!(fq.enabled, "the far quoter ships on in the shared config");
+        assert_eq!(fq.max_fair, 0.05);
+        assert_eq!(fq.levels, vec![0.01, 0.03, 0.05, 0.10]);
+        assert_eq!(fq.reserve_frac, 0.15);
+        assert_eq!(fq.max_market_frac, 0.02);
+        assert_eq!(fq.order_ttl_s, 86_400);
+        assert_eq!(fq.interval_s, 600);
         assert_eq!(cfg.needle.resume_after_healthy, 5);
         // Rust-only sections fall back to defaults.
         assert_eq!(cfg.bus.nats_url, "nats://127.0.0.1:4222");
@@ -660,6 +724,25 @@ mod tests {
             Config::from_toml_str(&text),
             Err(ConfigError::Invalid(_))
         ));
+        // A far-quote level off the 0.005 tick could never be sent.
+        let text = shared_toml().replace("levels = [0.01, 0.03, 0.05, 0.10]", "levels = [0.012]");
+        assert!(matches!(
+            Config::from_toml_str(&text),
+            Err(ConfigError::Invalid(_))
+        ));
+    }
+
+    #[test]
+    fn farquote_defaults_match_the_bridge() {
+        let text = shared_toml()
+            .lines()
+            .filter(|l| !l.starts_with("max_fair") && !l.starts_with("levels"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let cfg = Config::from_toml_str(&text).expect("valid without the optional keys");
+        assert_eq!(cfg.strategies.farquote.max_fair, 0.05);
+        assert_eq!(cfg.strategies.farquote.levels, vec![0.01, 0.03, 0.05, 0.10]);
+        assert!(!FarQuoteCfg::default().enabled, "off unless the TOML says so");
     }
 
     #[test]
