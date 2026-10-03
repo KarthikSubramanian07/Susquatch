@@ -1,9 +1,13 @@
 //! Pre-trade checks: caps, glitch cap, locked legs, time gate, tournament, self-cross.
 //!
-//! Exposure is measured as money at risk: `|net shares| × price of the held side` (YES at the YES
-//! mark, NO at `1 − mark`), with every live order counted as if it filled at its limit. An order
-//! that does not increase an exchange's exposure is never blocked by a cap (reducing risk is always
-//! allowed, except on locked legs).
+//! Exposure is measured as money committed, the way the bridge measures it: a position is worth
+//! `|net shares| × price of the held side` (YES at the YES mark, NO at `1 − mark`); every live
+//! order counts the full notional of its unfilled remainder at its limit, as if it fills; a new
+//! order counts only the part that opens exposure, at its limit (shares that close a position pay
+//! out and add nothing). Valuing resting orders at their limit rather than at the mark is what
+//! lets a far quote (a NO bid at 0.01 on a market marked 0.02) cost 0.01 a share, not 0.98. An
+//! order that opens nothing is never blocked by a cap (reducing risk is always allowed, except on
+//! locked legs).
 //!
 //! **Buying power** (only when [`RiskContext::cash`] is known): a bundle must fit in cash minus what
 //! our live orders could consume (each at full notional). A bundle consumes the full notional of the
@@ -154,11 +158,11 @@ fn projected_positions(ctx: &RiskContext<'_>) -> HashMap<ExchangeId, i64> {
     out
 }
 
-/// Full notional of the shares a bundle opens (closing shares, which net against a position and
-/// pay out, are free), legs applied in order.
-pub fn opening_notional(positions: &HashMap<ExchangeId, i64>, legs: &[OrderSpec]) -> f64 {
+/// Full notional of the shares a bundle opens, per exchange (closing shares, which net against a
+/// position and pay out, are free), legs applied in order.
+fn opening_by_exchange(positions: &HashMap<ExchangeId, i64>, legs: &[OrderSpec]) -> HashMap<ExchangeId, f64> {
     let mut held = positions.clone();
-    let mut total = 0.0;
+    let mut out: HashMap<ExchangeId, f64> = HashMap::new();
     for leg in legs {
         let delta = leg.yes_delta();
         let pos = held.get(&leg.exchange_id).copied().unwrap_or(0);
@@ -172,16 +176,45 @@ pub fn opening_notional(positions: &HashMap<ExchangeId, i64>, legs: &[OrderSpec]
             BookSide::Bid => yes.prob(),
             BookSide::Ask => 1.0 - yes.prob(),
         };
-        total += (delta.abs() - closing) as f64 * open_px;
+        *out.entry(leg.exchange_id.clone()).or_default() += (delta.abs() - closing) as f64 * open_px;
         *held.entry(leg.exchange_id.clone()).or_default() += delta;
     }
-    total
+    out
+}
+
+/// Full notional of the shares a bundle opens (closing shares, which net against a position and
+/// pay out, are free), legs applied in order.
+pub fn opening_notional(positions: &HashMap<ExchangeId, i64>, legs: &[OrderSpec]) -> f64 {
+    opening_by_exchange(positions, legs).values().sum()
 }
 
 /// Money at risk of a signed position at a YES mark.
 fn exposure(net: i64, yes_mark: f64) -> f64 {
     let px = if net >= 0 { yes_mark } else { 1.0 - yes_mark };
     net.unsigned_abs() as f64 * px.clamp(0.0, 1.0)
+}
+
+/// Cash a live order consumes if it fills: the unfilled remainder at the limit, on the side it buys.
+fn order_notional(o: &LiveOrder) -> f64 {
+    let px = match o.book_side {
+        BookSide::Bid => o.yes_price.prob(),
+        BookSide::Ask => 1.0 - o.yes_price.prob(),
+    };
+    o.remaining.max(0) as f64 * px
+}
+
+/// Money committed per exchange before a bundle: positions at mark plus live orders at their limit.
+fn committed(ctx: &RiskContext<'_>, mark: &dyn Fn(&ExchangeId) -> f64) -> HashMap<ExchangeId, f64> {
+    let mut out: HashMap<ExchangeId, f64> = HashMap::new();
+    for (ex, net) in ctx.positions {
+        if *net != 0 {
+            out.insert(ex.clone(), exposure(*net, mark(ex)));
+        }
+    }
+    for o in ctx.live_orders {
+        *out.entry(o.exchange_id.clone()).or_default() += order_notional(o);
+    }
+    out
 }
 
 /// The pre-trade checker.
@@ -242,21 +275,22 @@ impl PreTrade {
                 return Err(Rejection::LockedLeg((*ex).clone()));
             }
         }
+        let opening = opening_by_exchange(ctx.positions, &bundle.legs);
         let increases: Vec<&ExchangeId> = touched
             .iter()
             .copied()
-            .filter(|ex| {
-                let m = mark(ex);
-                exposure(after.get(*ex).copied().unwrap_or(0), m)
-                    > exposure(before.get(*ex).copied().unwrap_or(0), m) + 1e-9
-            })
+            .filter(|ex| opening.get(*ex).is_some_and(|add| *add > 1e-9))
             .collect();
         self.check_buying_power(ctx, bundle)?;
         if increases.is_empty() {
             return Ok(());
         }
         self.check_glitch(ctx, &bundle.legs)?;
-        self.check_caps(ctx, &after, &increases, &mark)
+        let mut exposure_after = committed(ctx, &mark);
+        for (ex, add) in opening {
+            *exposure_after.entry(ex).or_default() += add;
+        }
+        self.check_caps(ctx, &exposure_after, &increases)
     }
 
     fn check_self_cross(&self, ctx: &RiskContext<'_>, legs: &[OrderSpec]) -> Result<(), Rejection> {
@@ -289,17 +323,7 @@ impl PreTrade {
         let Some(cash) = ctx.cash else {
             return Ok(());
         };
-        let reserved: f64 = ctx
-            .live_orders
-            .iter()
-            .map(|o| {
-                let px = match o.book_side {
-                    BookSide::Bid => o.yes_price.prob(),
-                    BookSide::Ask => 1.0 - o.yes_price.prob(),
-                };
-                o.remaining.max(0) as f64 * px
-            })
-            .sum();
+        let reserved: f64 = ctx.live_orders.iter().map(order_notional).sum();
         let need = match ctx.bundle_cost {
             Some(model) => model.cash_needed(ctx.positions, bundle),
             None => opening_notional(ctx.positions, &bundle.legs),
@@ -340,17 +364,17 @@ impl PreTrade {
         through >= self.limits.glitch_through_fair - 1e-9
     }
 
+    /// `after` is the money committed per exchange once the bundle fills.
     fn check_caps(
         &self,
         ctx: &RiskContext<'_>,
-        after: &HashMap<ExchangeId, i64>,
+        after: &HashMap<ExchangeId, f64>,
         increases: &[&ExchangeId],
-        mark: &dyn Fn(&ExchangeId) -> f64,
     ) -> Result<(), Rejection> {
         let eq = ctx.equity;
-        let exp = |ex: &ExchangeId| exposure(after.get(ex).copied().unwrap_or(0), mark(ex));
+        let exp = |ex: &ExchangeId| after.get(ex).copied().unwrap_or(0.0);
 
-        let gross: f64 = after.keys().map(exp).sum();
+        let gross: f64 = after.values().sum();
         let cap = self.limits.total_gross_frac * eq;
         if gross > cap + 1e-9 {
             return Err(Rejection::GrossCap { after: gross, cap });
@@ -399,7 +423,6 @@ impl PreTrade {
     /// The exposure picture a refusal of `bundle` should be read against. Marks fall back to the
     /// bundle's own prices and then 0.5, exactly as [`PreTrade::check_bundle`] values them.
     pub fn detail(&self, ctx: &RiskContext<'_>, bundle: &OrderBundle) -> RiskDetail {
-        let now = projected_positions(ctx);
         let mut order_marks: HashMap<&ExchangeId, f64> = HashMap::new();
         for leg in &bundle.legs {
             order_marks
@@ -420,10 +443,9 @@ impl PreTrade {
         };
         let touched: HashSet<String> = bundle.legs.iter().map(|l| market_key(&l.exchange_id)).collect();
         let (mut total, mut market) = (0.0, 0.0);
-        for (ex, net) in &now {
-            let e = exposure(*net, mark(ex));
+        for (ex, e) in committed(ctx, &mark) {
             total += e;
-            if touched.contains(&market_key(ex)) {
+            if touched.contains(&market_key(&ex)) {
                 market += e;
             }
         }
@@ -439,12 +461,11 @@ impl PreTrade {
 
     /// Current cluster utilisation (exposure / cap) for every cluster in use, for MM skew and status.
     pub fn cluster_utilization(&self, ctx: &RiskContext<'_>) -> HashMap<String, f64> {
-        let now = projected_positions(ctx);
         let mark = |ex: &ExchangeId| ctx.marks.get(ex).copied().unwrap_or(0.5);
         let mut totals: HashMap<String, f64> = HashMap::new();
-        for (ex, q) in &now {
-            for c in ctx.markets.clusters(ex) {
-                *totals.entry(c.clone()).or_default() += exposure(*q, mark(ex));
+        for (ex, e) in committed(ctx, &mark) {
+            for c in ctx.markets.clusters(&ex) {
+                *totals.entry(c.clone()).or_default() += e;
             }
         }
         totals
@@ -764,9 +785,9 @@ mod tests {
         let bundle = OrderBundle::single(spec("1", Side::Yes, Action::Buy, 201, 5000));
         let d = pt.detail(&w.ctx(10_000.0), &bundle);
         assert_eq!(d.equity, 10_000.0);
-        // 400 (ex 2) + 70 (ex 3 at 1 - 0.3) + 5 (ex 1: unmarked, so at the leg's 0.50).
-        assert_eq!(d.total, 475.0);
-        assert_eq!(d.market, 405.0, "m1 only: exchanges 1 and 2");
+        // 400 (ex 2) + 70 (ex 3 at 1 - 0.3) + 4 (ex 1: the resting bid at its 0.40 limit).
+        assert_eq!(d.total, 474.0);
+        assert_eq!(d.market, 404.0, "m1 only: exchanges 1 and 2");
         assert_eq!((d.positions, d.resting), (2, 1));
         assert!(
             matches!(
@@ -776,8 +797,35 @@ mod tests {
             "the detail explains a market-cap refusal"
         );
         let json = serde_json::to_value(&d).expect("json");
-        assert_eq!(json["market"], 405.0);
+        assert_eq!(json["market"], 404.0);
         assert_eq!(json["resting"], 1);
+    }
+
+    /// A far quote is money committed at its limit, not the share it might win marked at 0.98.
+    #[test]
+    fn resting_and_new_orders_count_at_their_limit_not_at_the_mark() {
+        let mut w = World::new();
+        w.marks.insert(ExchangeId::new("3"), 0.02);
+        // 2 % of 10 000 = 200 per order: 20 000 NO at 0.01. At the mark that "position" would be
+        // 19 600 of exposure; committed it is 200, inside the 500 market cap.
+        let rung = |q| vec![spec("3", Side::No, Action::Buy, q, 100)];
+        assert_eq!(check(&w, 10_000.0, rung(20_000)), Ok(()));
+        // Two rungs already resting (200 + 180) leave 120: a third of 200 is over, one of 100 fits.
+        for (yes_price, remaining) in [(9900, 20_000), (9700, 6_000)] {
+            w.live.push(LiveOrder {
+                exchange_id: ExchangeId::new("3"),
+                book_side: BookSide::Ask,
+                yes_price: Pips::new(yes_price).expect("valid"),
+                remaining,
+            });
+        }
+        assert!(matches!(
+            check(&w, 10_000.0, rung(20_000)),
+            Err(Rejection::MarketCap { after, cap, .. }) if (after - 580.0).abs() < 1e-9 && cap == 500.0
+        ));
+        assert_eq!(check(&w, 10_000.0, rung(10_000)), Ok(()));
+        let util = PreTrade { limits: limits() }.cluster_utilization(&w.ctx(10_000.0));
+        assert!((util["state:ME"] - 0.38).abs() < 1e-9, "{util:?}");
     }
 
     #[test]
