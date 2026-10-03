@@ -205,16 +205,25 @@ pub struct CancelRequest {
     pub reason: String,
 }
 
-/// A strategy's output for one tick: new orders, cancels, and human-readable notes.
+/// A structured summary a strategy wants in the journal (strategies do no I/O; the engine writes it).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Event {
+    /// Journal method, e.g. `farquote_scan`.
+    pub kind: &'static str,
+    pub body: serde_json::Value,
+}
+
+/// A strategy's output for one tick: new orders, cancels, journal events and human-readable notes.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Decision {
     pub bundles: Vec<OrderBundle>,
     pub cancels: Vec<CancelRequest>,
+    pub events: Vec<Event>,
     pub notes: Vec<String>,
 }
 
 impl Decision {
-    /// True when the decision asks for nothing (notes do not count).
+    /// True when the decision asks for nothing (notes and events do not count).
     pub fn is_empty(&self) -> bool {
         self.bundles.is_empty() && self.cancels.is_empty()
     }
@@ -222,6 +231,11 @@ impl Decision {
     /// Record a note.
     pub(crate) fn note(&mut self, text: impl Into<String>) {
         self.notes.push(text.into());
+    }
+
+    /// Queue a journal event.
+    pub(crate) fn event(&mut self, kind: &'static str, body: serde_json::Value) {
+        self.events.push(Event { kind, body });
     }
 
     /// Cancel an intent unless a cancel for it is already queued.
