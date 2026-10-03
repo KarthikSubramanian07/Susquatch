@@ -67,7 +67,13 @@ export async function run(env: Env, now: Date, fetchImpl: Fetch = fetch): Promis
 
 export default {
   async scheduled(controller, env, ctx) {
-    ctx.waitUntil(run(env, new Date(controller.scheduledTime)));
+    ctx.waitUntil(
+      run(env, new Date(controller.scheduledTime)).catch((err: unknown) => {
+        // Surface the failure in the Worker's logs instead of a silent dropped cron.
+        console.error("daily summary failed", err);
+        throw err;
+      }),
+    );
   },
   // No routes are bound (workers_dev = false); anything that does reach it gets nothing.
   async fetch() {

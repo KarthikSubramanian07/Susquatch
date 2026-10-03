@@ -21,10 +21,13 @@ export class GitHub {
   private readonly token: string;
   private readonly fetchImpl: Fetch;
 
-  constructor(repo: string, token: string, fetchImpl: Fetch = fetch) {
+  constructor(repo: string, token: string, fetchImpl?: Fetch) {
     this.repo = repo;
     this.token = token;
-    this.fetchImpl = fetchImpl;
+    // Never store the global `fetch` as a bare field: calling it as `this.fetchImpl(...)` binds `this` to the
+    // GitHub instance and workerd throws "Illegal invocation" (that silently killed every cron run from
+    // Oct 1 to Oct 2). The wrapper keeps the global receiver.
+    this.fetchImpl = fetchImpl ?? ((input, init) => fetch(input, init));
   }
 
   private async req<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -67,9 +70,8 @@ export class GitHub {
       const md = items.filter((i) => i.type === "file" && i.name.endsWith(".md")).sort((a, b) => a.name.localeCompare(b.name));
       const last = md.at(-1);
       return last ? { title: last.name.replace(/\.md$/, ""), url: last.html_url } : null;
-    } catch (err) {
-      if (err instanceof GitHubError) return null;
-      throw err;
+    } catch {
+      return null; // the weekly link is decoration; no GitHub problem may stop the summary
     }
   }
 }

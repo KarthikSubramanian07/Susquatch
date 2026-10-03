@@ -584,7 +584,7 @@ mod tests {
             cfg.calendar.last_order_utc.to_rfc3339(),
             "2026-11-04T16:55:00+00:00"
         );
-        assert_eq!(cfg.risk.clusters.get("state"), Some(&0.10));
+        assert_eq!(cfg.risk.clusters.get("state"), Some(&0.20));
         assert_eq!(
             cfg.risk.use_collateral_buying_power,
             CollateralSizing::Auto(AutoTag::Auto),

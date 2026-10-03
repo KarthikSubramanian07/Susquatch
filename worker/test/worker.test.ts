@@ -104,6 +104,35 @@ describe("scheduled run", () => {
     assert.ok(kv.json<Summary>(KEYS.summaryLatest));
   });
 
+  it("a fetch that throws (not an HTTP error) on the weekly lookup does not kill the run", async () => {
+    const kv = seeded();
+    const gh = fakeGitHub({ existingIssue: 3 });
+    const impl: typeof fetch = async (input, init) => {
+      if (String(input).includes("/contents/weekly")) throw new TypeError("Illegal invocation");
+      return gh.impl(input, init);
+    };
+    const s = await run(env(kv), NOW, impl);
+    assert.ok(s.posted?.url, "the comment is still posted");
+    assert.ok(kv.json<Summary>(KEYS.summaryLatest));
+  });
+
+  it("the default fetch keeps its global receiver (workerd rejects a re-bound fetch)", async () => {
+    const original = globalThis.fetch;
+    const seen: string[] = [];
+    globalThis.fetch = async function (this: unknown, input: RequestInfo | URL) {
+      if (this !== undefined && this !== globalThis) throw new TypeError("Illegal invocation");
+      seen.push(String(input));
+      return new Response("[]", { status: 200 });
+    } as typeof fetch;
+    try {
+      const { GitHub } = await import("../src/github.ts");
+      assert.equal(await new GitHub("o/r", "t").latestWeekly(), null);
+      assert.equal(seen.length, 1);
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
   it("missing token with push on is reported", async () => {
     const s = await run(env(seeded(), { GITHUB_TOKEN: undefined }), NOW, fakeGitHub().impl);
     assert.match(s.actionNeeded.at(-1) ?? "", /GITHUB_TOKEN/);

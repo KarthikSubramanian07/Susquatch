@@ -13,7 +13,7 @@ def test_config_loads_the_repo_defaults(home: Path) -> None:
     assert cfg.platform.base_url == "https://www.thesuper.market/api/v1"
     assert cfg.calendar.last_order_utc.isoformat() == "2026-11-04T16:55:00+00:00"
     assert cfg.mode_default == "paper"
-    assert cfg.risk.clusters["state"] == 0.10
+    assert cfg.risk.clusters["state"] == 0.20
     assert cfg.fair_path == home / "state" / "fair_live.json"
     assert not cfg.has_api_key
     assert "api_key" not in repr(cfg)
