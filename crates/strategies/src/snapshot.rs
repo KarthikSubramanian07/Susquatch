@@ -7,7 +7,9 @@ use std::collections::HashMap;
 
 use susq_book::{BookStore, L2Book};
 use susq_contracts::v1::{RacePosterior, TargetFile, TargetPosition};
-use susq_core::{Action, ExchangeId, MarketIndex, OrderBundle, Pips, Side, config::FairCfg};
+use susq_core::{
+    Action, BookSide, ExchangeId, MarketIndex, OrderBundle, Pips, Side, config::FairCfg, side::yes_space,
+};
 use susq_platform::{ConstraintEval, Relationship};
 
 /// Nanoseconds per second.
@@ -51,6 +53,27 @@ pub struct IntentView {
     pub needle_derived: bool,
 }
 
+impl IntentView {
+    /// What one share of the order costs on the side it buys (a sell is priced as buying the
+    /// complement), in SUSQies.
+    pub fn cost_per_share(&self) -> f64 {
+        match self.action {
+            Action::Buy => self.price.prob(),
+            Action::Sell => self.price.complement().prob(),
+        }
+    }
+
+    /// Cash the unfilled remainder would consume if it filled at the limit.
+    pub fn resting_notional(&self) -> f64 {
+        self.remaining.max(0) as f64 * self.cost_per_share()
+    }
+
+    /// The YES-space level the order rests at.
+    pub fn yes_level(&self) -> (BookSide, Pips) {
+        yes_space(self.side, self.action, self.price)
+    }
+}
+
 /// The needle's latest race posteriors plus the watchdog verdict.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct NeedleView {
@@ -72,6 +95,8 @@ pub struct Snapshot<'a> {
     pub book_max_age_ns: i64,
     /// Signed positions: +YES / -NO shares.
     pub positions: &'a HashMap<ExchangeId, i64>,
+    /// YES marks per exchange (the account's valuation where we hold, else the book mid).
+    pub marks: &'a HashMap<ExchangeId, f64>,
     pub intents: &'a [IntentView],
     pub markets: &'a MarketIndex,
     pub fair: &'a HashMap<ExchangeId, FairQuote>,
@@ -102,6 +127,29 @@ impl<'a> Snapshot<'a> {
     /// Signed position (0 when flat or unknown).
     pub fn position(&self, exchange: &ExchangeId) -> i64 {
         self.positions.get(exchange).copied().unwrap_or(0)
+    }
+
+    /// Money at risk on one position: `|qty|` times the mark of the held side (YES at `m`, NO at
+    /// `1 - m`); an unmarked position is valued at the full 1.0 payout, the conservative choice.
+    pub fn position_value(&self, exchange: &ExchangeId) -> f64 {
+        let qty = self.position(exchange);
+        if qty == 0 {
+            return 0.0;
+        }
+        let px = match self.marks.get(exchange) {
+            Some(m) if qty > 0 => *m,
+            Some(m) => 1.0 - *m,
+            None => 1.0,
+        };
+        qty.unsigned_abs() as f64 * px.clamp(0.0, 1.0)
+    }
+
+    /// Positions at mark plus every live order at its full opening notional, across every
+    /// market: what the account has committed, as the bridge's `total_exposure_pips` counts it.
+    pub fn total_exposure(&self) -> f64 {
+        let positions: f64 = self.positions.keys().map(|ex| self.position_value(ex)).sum();
+        let resting: f64 = self.intents.iter().map(IntentView::resting_notional).sum();
+        positions + resting
     }
 
     /// Whether a fair quote is young enough to trade on and holds a usable probability.
@@ -184,5 +232,36 @@ impl Decision {
                 reason: reason.into(),
             });
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::testkit::{World, intent};
+
+    #[test]
+    fn exposure_counts_positions_at_mark_and_orders_at_their_limit() {
+        let mut w = World::new(1_000.0);
+        w.position("1", 100); // YES at a 0.30 mark: 30
+        w.mark("1", 0.30);
+        w.position("2", -40); // NO at a 0.75 mark: 40 × 0.25 = 10
+        w.mark("2", 0.75);
+        w.position("3", -5); // unmarked: the full payout, 5
+        w.intents
+            .push(intent("mm:1:1", "mm", "1", Side::Yes, Action::Buy, 2000)); // 10 × 0.20 = 2
+        w.intents
+            .push(intent("mm:2:1", "mm", "2", Side::No, Action::Sell, 2000)); // 10 × 0.80 = 8
+        let snap = w.snap();
+        assert_eq!(snap.position_value(&ExchangeId::new("1")), 30.0);
+        assert_eq!(snap.position_value(&ExchangeId::new("2")), 10.0);
+        assert_eq!(snap.position_value(&ExchangeId::new("3")), 5.0);
+        assert_eq!(snap.position_value(&ExchangeId::new("9")), 0.0);
+        assert_eq!(snap.intents[1].cost_per_share(), 0.8);
+        assert_eq!(
+            snap.intents[1].yes_level(),
+            (BookSide::Bid, Pips::new(8000).expect("valid"))
+        );
+        assert_eq!(snap.total_exposure(), 55.0);
     }
 }

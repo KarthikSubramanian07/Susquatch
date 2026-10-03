@@ -33,16 +33,25 @@ impl Sniper {
         Self { cfg }
     }
 
+    /// Cancel this exchange's resting snipes when the fair they were built on went stale.
+    /// Returns true when the fair is stale (nothing new may be built on it).
+    fn tend(&self, snap: &Snapshot<'_>, ex: &ExchangeId, fair: &FairQuote, d: &mut Decision) -> bool {
+        if snap.is_fair_fresh(fair) {
+            return false;
+        }
+        let mut cancelled = false;
+        for i in snap.live_intents(NAME).filter(|i| &i.exchange_id == ex) {
+            d.cancel(&i.intent_id, "stale fair");
+            cancelled = true;
+        }
+        if cancelled {
+            d.note(format!("sniper {ex}: stale fair, cancelling resting orders"));
+        }
+        true
+    }
+
     fn snipe(&self, snap: &Snapshot<'_>, ex: &ExchangeId, fair: &FairQuote, d: &mut Decision) {
-        if !snap.is_fair_fresh(fair) {
-            let mut cancelled = false;
-            for i in snap.live_intents(NAME).filter(|i| &i.exchange_id == ex) {
-                d.cancel(&i.intent_id, "stale fair");
-                cancelled = true;
-            }
-            if cancelled {
-                d.note(format!("sniper {ex}: stale fair, cancelling resting orders"));
-            }
+        if self.tend(snap, ex, fair, d) {
             return;
         }
         if !snap.markets.is_verified(ex) || snap.has_live_intent(NAME, ex) {
@@ -114,8 +123,25 @@ impl Strategy for Sniper {
         if !self.cfg.enabled {
             return d;
         }
+        // The sniper's edge is a few points on near-certain outcomes held to settlement; it never
+        // sells. Left alone it fills every cap and starves the strategies that can actually win
+        // (far quotes, the scenario book), so once the book is this full it only tends what it
+        // has (stale-fair cancels) and adds nothing.
+        let total = snap.total_exposure();
+        let budget = self.cfg.max_total_gross_frac * snap.equity;
+        let full = total >= budget;
+        if full {
+            d.note(format!(
+                "sniper: gross budget full ({total:.2} >= {budget:.2} of {:.2} equity), not adding",
+                snap.equity
+            ));
+        }
         for (ex, fair) in snap.fair_sorted() {
-            self.snipe(snap, ex, fair, &mut d);
+            if full {
+                self.tend(snap, ex, fair, &mut d);
+            } else {
+                self.snipe(snap, ex, fair, &mut d);
+            }
         }
         d
     }
@@ -191,6 +217,44 @@ mod tests {
             (d.cancels[0].intent_id.as_str(), d.cancels[0].reason.as_str()),
             ("sniper:1:yes:1", "stale fair")
         );
+    }
+
+    /// The bridge's `test_stops_adding_once_the_book_is_full`: a plain snipe is on offer, but the
+    /// account is already at the sniper's share of equity, so nothing is added and nothing sold.
+    #[test]
+    fn stops_adding_once_the_book_is_full() {
+        let mut w = world();
+        w.rule("2", "m2", "", "", true);
+        w.fair("1", 0.60, None);
+        w.book("1", &[(5000, 10)], &[(5500, 20)]);
+        // 100 000 equity, 35 % budget = 35 000. Held: 40 000 YES at a 0.5 mark on exchange 2
+        // (20 000) plus a resting NO buy of 1 000 at 0.40 (400) and 15 000 unmarked NO shares
+        // valued at the full payout: comfortably over.
+        w.position("2", 40_000);
+        w.mark("2", 0.5);
+        w.position("3", -15_000);
+        let mut resting = intent("mm:2:ask:1", "mm", "2", Side::No, Action::Buy, 4000);
+        resting.remaining = 1_000;
+        w.intents.push(resting);
+        let snap = w.snap();
+        assert_eq!(snap.total_exposure(), 35_400.0);
+        let d = sniper().decide(&snap);
+        assert!(d.bundles.is_empty(), "{:?}", d.notes);
+        assert!(d.cancels.is_empty(), "never sells or pulls what it holds");
+        assert!(d.notes.iter().any(|n| n.contains("gross budget full")));
+
+        // The cap is a share of equity: more equity reopens the book.
+        w.equity = 200_000.0;
+        assert_eq!(sniper().decide(&w.snap()).bundles.len(), 1);
+
+        // A full book still cancels snipes whose fair went stale.
+        w.equity = 100_000.0;
+        w.fair_at("1", 0.60, None, w.now_ns - 61 * 1_000_000_000);
+        w.intents
+            .push(intent("sniper:1:yes:1", NAME, "1", Side::Yes, Action::Buy, 5650));
+        let d = sniper().decide(&w.snap());
+        assert!(d.bundles.is_empty());
+        assert_eq!(d.cancels.len(), 1);
     }
 
     #[test]

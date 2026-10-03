@@ -243,6 +243,10 @@ pub struct SniperCfg {
     pub min_edge_pts: f64,
     pub max_mistake_frac: f64,
     pub order_ttl_s: u64,
+    /// The sniper stops adding once positions at mark plus resting orders reach this share of
+    /// equity (it never sells, so left alone it would fill every cap and starve the far quoter
+    /// and the scenario book).
+    pub max_total_gross_frac: f64,
 }
 
 impl Default for SniperCfg {
@@ -252,6 +256,7 @@ impl Default for SniperCfg {
             min_edge_pts: 3.5,
             max_mistake_frac: 0.01,
             order_ttl_s: 30,
+            max_total_gross_frac: 0.35,
         }
     }
 }
@@ -557,6 +562,10 @@ impl Config {
                 "strategies.scenario.max_hourly_notional_frac",
                 self.strategies.scenario.max_hourly_notional_frac,
             ),
+            (
+                "strategies.sniper.max_total_gross_frac",
+                self.strategies.sniper.max_total_gross_frac,
+            ),
             ("strategies.farquote.max_fair", self.strategies.farquote.max_fair),
             (
                 "strategies.farquote.reserve_frac",
@@ -674,6 +683,7 @@ mod tests {
         assert_eq!(scenario.min_interval_s, 900);
         assert_eq!(scenario.max_hourly_notional_frac, 0.02);
         assert_eq!(scenario.tranche_frac, 0.25);
+        assert_eq!(cfg.strategies.sniper.max_total_gross_frac, 0.35);
         let fq = &cfg.strategies.farquote;
         assert!(fq.enabled, "the far quoter ships on in the shared config");
         assert_eq!(fq.max_fair, 0.05);

@@ -26,6 +26,7 @@ pub struct World {
     pub books: BookStore,
     pub book_max_age_ns: i64,
     pub positions: HashMap<ExchangeId, i64>,
+    pub marks: HashMap<ExchangeId, f64>,
     pub intents: Vec<IntentView>,
     rules: Vec<MarketRule>,
     markets: MarketIndex,
@@ -48,6 +49,7 @@ impl World {
             books: BookStore::new(),
             book_max_age_ns: 10 * NS_PER_S,
             positions: HashMap::new(),
+            marks: HashMap::new(),
             intents: Vec::new(),
             rules: Vec::new(),
             markets: MarketIndex::default(),
@@ -75,6 +77,7 @@ impl World {
             books: &self.books,
             book_max_age_ns: self.book_max_age_ns,
             positions: &self.positions,
+            marks: &self.marks,
             intents: &self.intents,
             markets: &self.markets,
             fair: &self.fair,
@@ -159,6 +162,11 @@ impl World {
     /// Set a signed position.
     pub fn position(&mut self, ex: &str, qty: i64) {
         self.positions.insert(ExchangeId::new(ex), qty);
+    }
+
+    /// Set a YES mark.
+    pub fn mark(&mut self, ex: &str, yes_mark: f64) {
+        self.marks.insert(ExchangeId::new(ex), yes_mark);
     }
 
     /// Register a relationship.
