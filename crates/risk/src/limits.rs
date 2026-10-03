@@ -17,6 +17,7 @@ use std::{
 };
 
 use chrono::{DateTime, Utc};
+use serde::Serialize;
 use susq_core::{
     BookSide, Calendar, ExchangeId, MarketIndex, OrderBundle, OrderSpec, Pips, TournamentId, config::RiskCfg,
     market_map::cluster_kind,
@@ -127,6 +128,21 @@ pub struct RiskContext<'a> {
     pub cash: Option<f64>,
     /// Collateral-aware bundle cost; `None` = full opening notional (the default, conservative).
     pub bundle_cost: Option<&'a dyn BundleCost>,
+}
+
+/// What the caps saw when they judged a bundle (SUSQies), for the journal and the log: the same
+/// fields the bridge's `Decision.detail` carries, so one reader explains both traders' refusals.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct RiskDetail {
+    pub equity: f64,
+    /// Gross exposure before the bundle: positions at mark plus every live order at its limit.
+    pub total: f64,
+    /// The part of `total` already on the markets the bundle touches.
+    pub market: f64,
+    /// Exchanges with a non-zero position.
+    pub positions: usize,
+    /// Live orders counted against the caps.
+    pub resting: usize,
 }
 
 /// Signed position after every live order fills, per exchange.
@@ -378,6 +394,47 @@ impl PreTrade {
             }
         }
         Ok(())
+    }
+
+    /// The exposure picture a refusal of `bundle` should be read against. Marks fall back to the
+    /// bundle's own prices and then 0.5, exactly as [`PreTrade::check_bundle`] values them.
+    pub fn detail(&self, ctx: &RiskContext<'_>, bundle: &OrderBundle) -> RiskDetail {
+        let now = projected_positions(ctx);
+        let mut order_marks: HashMap<&ExchangeId, f64> = HashMap::new();
+        for leg in &bundle.legs {
+            order_marks
+                .entry(&leg.exchange_id)
+                .or_insert(leg.yes_space().1.prob());
+        }
+        let mark = |ex: &ExchangeId| {
+            ctx.marks
+                .get(ex)
+                .copied()
+                .or_else(|| order_marks.get(ex).copied())
+                .unwrap_or(0.5)
+        };
+        let market_key = |ex: &ExchangeId| {
+            ctx.markets
+                .market_of(ex)
+                .map_or_else(|| format!("exchange:{ex}"), |m| format!("market:{m}"))
+        };
+        let touched: HashSet<String> = bundle.legs.iter().map(|l| market_key(&l.exchange_id)).collect();
+        let (mut total, mut market) = (0.0, 0.0);
+        for (ex, net) in &now {
+            let e = exposure(*net, mark(ex));
+            total += e;
+            if touched.contains(&market_key(ex)) {
+                market += e;
+            }
+        }
+        let cents = |x: f64| (x * 100.0).round() / 100.0;
+        RiskDetail {
+            equity: cents(ctx.equity),
+            total: cents(total),
+            market: cents(market),
+            positions: ctx.positions.values().filter(|q| **q != 0).count(),
+            resting: ctx.live_orders.len(),
+        }
     }
 
     /// Current cluster utilisation (exposure / cap) for every cluster in use, for MM skew and status.
@@ -686,6 +743,41 @@ mod tests {
             check(&w, 10_000.0, vec![spec("1", Side::Yes, Action::Buy, 1, 4950)]),
             Ok(())
         );
+    }
+
+    #[test]
+    fn detail_reports_what_the_caps_saw() {
+        let mut w = World::new();
+        // 800 YES at 0.5 on exchange 2 (market m1) and 100 NO at a 0.3 mark on exchange 3 (m3).
+        w.positions.insert(ExchangeId::new("2"), 800);
+        w.marks.insert(ExchangeId::new("2"), 0.5);
+        w.positions.insert(ExchangeId::new("3"), -100);
+        w.marks.insert(ExchangeId::new("3"), 0.3);
+        // A resting YES bid of 10 at 0.40 on exchange 1 (m1) counts as if it fills.
+        w.live.push(LiveOrder {
+            exchange_id: ExchangeId::new("1"),
+            book_side: BookSide::Bid,
+            yes_price: Pips::new(4000).expect("valid"),
+            remaining: 10,
+        });
+        let pt = PreTrade { limits: limits() };
+        let bundle = OrderBundle::single(spec("1", Side::Yes, Action::Buy, 201, 5000));
+        let d = pt.detail(&w.ctx(10_000.0), &bundle);
+        assert_eq!(d.equity, 10_000.0);
+        // 400 (ex 2) + 70 (ex 3 at 1 - 0.3) + 5 (ex 1: unmarked, so at the leg's 0.50).
+        assert_eq!(d.total, 475.0);
+        assert_eq!(d.market, 405.0, "m1 only: exchanges 1 and 2");
+        assert_eq!((d.positions, d.resting), (2, 1));
+        assert!(
+            matches!(
+                check(&w, 10_000.0, bundle.legs.clone()),
+                Err(Rejection::MarketCap { .. })
+            ),
+            "the detail explains a market-cap refusal"
+        );
+        let json = serde_json::to_value(&d).expect("json");
+        assert_eq!(json["market"], 405.0);
+        assert_eq!(json["resting"], 1);
     }
 
     #[test]
