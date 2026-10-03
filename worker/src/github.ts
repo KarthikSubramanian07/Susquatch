@@ -27,7 +27,9 @@ export class GitHub {
     // Never store the global `fetch` as a bare field: calling it as `this.fetchImpl(...)` binds `this` to the
     // GitHub instance and workerd throws "Illegal invocation" (that silently killed every cron run from
     // Oct 1 to Oct 2). The wrapper keeps the global receiver.
-    this.fetchImpl = fetchImpl ?? ((input, init) => fetch(input, init));
+    // `run()` passes the bare global through as well, so wrap whatever we were given, not just the default.
+    const impl = fetchImpl ?? fetch;
+    this.fetchImpl = impl === fetch ? (input, init) => fetch(input, init) : impl;
   }
 
   private async req<T>(method: string, path: string, body?: unknown): Promise<T> {

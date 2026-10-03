@@ -127,7 +127,9 @@ describe("scheduled run", () => {
     try {
       const { GitHub } = await import("../src/github.ts");
       assert.equal(await new GitHub("o/r", "t").latestWeekly(), null);
-      assert.equal(seen.length, 1);
+      // run() hands the global through explicitly, which is how the Oct 3 re-run still failed.
+      assert.equal(await new GitHub("o/r", "t", globalThis.fetch).latestWeekly(), null);
+      assert.equal(seen.length, 2);
     } finally {
       globalThis.fetch = original;
     }
