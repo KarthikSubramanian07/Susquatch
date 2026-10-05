@@ -74,8 +74,13 @@ done
 mkdir -p "$STAGING"
 ARCHIVE="$STAGING/$NAME"
 log "archiving:$DIRS"
-# shellcheck disable=SC2086  # word-splitting DIRS is intended
-tar -C "$SUSQ_HOME" -cf - $DIRS | zstd -q -T0 -12 -o "$ARCHIVE" -f
+# The bridge appends to today's journal while we read it; GNU tar reports that as exit 1 ("file changed as we
+# read it"), which under pipefail failed every nightly run from Oct 2. A partially-written last line is fine for a
+# backup. Exit 1 is accepted; exit 2 (a real error) still fails the run.
+TAR_FLAGS=""
+if tar --version 2>/dev/null | grep -q GNU; then TAR_FLAGS="--warning=no-file-changed"; fi  # BSD tar: no such flag, no such exit code
+# shellcheck disable=SC2086  # word-splitting DIRS and TAR_FLAGS is intended
+{ tar -C "$SUSQ_HOME" $TAR_FLAGS -cf - $DIRS || [ "$?" -eq 1 ]; } | zstd -q -T0 -12 -o "$ARCHIVE" -f
 SUM="$(sha256_of "$ARCHIVE")"
 printf '%s  %s\n' "$SUM" "$NAME" > "$ARCHIVE.sha256"
 BYTES="$(file_bytes "$ARCHIVE")"
