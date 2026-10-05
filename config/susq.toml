@@ -114,7 +114,7 @@ order_ttl_s = 30
 enabled = true
 max_fair = 0.05
 levels = [0.01, 0.03, 0.05, 0.10]
-reserve_frac = 0.15
+reserve_frac = 0.08                # EXP-002: 0.15 left ~13.5k free cash against a 31k early scenario book
 max_market_frac = 0.02
 order_ttl_s = 86400               # capped at last_order_utc by the gateway
 interval_s = 600                  # top-up cadence: 30 writes/min is the whole account's budget
@@ -140,7 +140,7 @@ max_age_h = 36                     # tightened in the final days
 [optimizer]
 # Scenario book (SPEC §3 Phase 2): the daily targets run spends this share of equity on the book.
 book_frac = 0.60                   # full size: 50-70% of capital in the scenario book
-early_book_frac = 0.30             # smaller size while the book is bought gradually (from Oct 7)
+early_book_frac = 0.20             # EXP-002: sized to free cash (was 0.30); bought gradually from Oct 7
 early_until_utc = "2026-10-21T16:00:00Z"   # full size from here (Oct 21 12:00 EDT)
 max_legs = 12                      # most legs in one scenario book
 max_leg_frac = 0.12                # most equity in any single leg
