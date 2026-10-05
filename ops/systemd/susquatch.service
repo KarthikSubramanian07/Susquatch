@@ -13,11 +13,12 @@ RemainAfterExit=yes
 User=@SUSQ_USER@
 WorkingDirectory=@SUSQ_HOME@
 Environment=SUSQ_HOME=@SUSQ_HOME@
-ExecStart=/usr/bin/docker compose --project-directory @SUSQ_HOME@ -f @SUSQ_HOME@/ops/compose.yaml up -d --build --remove-orphans
+ExecStart=/usr/bin/docker compose --project-directory @SUSQ_HOME@ -f @SUSQ_HOME@/ops/compose.yaml up -d --no-build --remove-orphans
 ExecStartPost=+@SUSQ_HOME@/ops/priority.sh auto
 ExecStop=/usr/bin/docker compose --project-directory @SUSQ_HOME@ -f @SUSQ_HOME@/ops/compose.yaml down
-# First boot builds every image natively on 2 vCPU.
-TimeoutStartSec=45min
+# Never build here: a native image build on 4 GB starved the live trader on 2026-10-05 (available memory fell to
+# ~50 MB, sshd and the Azure agent stopped answering). ops/install.sh builds explicitly before enabling the unit.
+TimeoutStartSec=10min
 TimeoutStopSec=2min
 
 [Install]
