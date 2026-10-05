@@ -10,7 +10,7 @@ import polars as pl
 import pytest
 from susq.contracts import ops_pb2
 from susq.telemetry import crowd, leaderboard
-from susq.telemetry.cupdata import latest_cup_mids, read_leaderboard, read_prices, with_cup_mid
+from susq.telemetry.cupdata import latest_cup_mids, read_leaderboard, read_prices, read_tree, with_cup_mid
 from susq.telemetry.job import run_telemetry, tournament_members
 
 T0 = datetime(2026, 10, 2, tzinfo=UTC)
@@ -200,3 +200,20 @@ def test_telemetry_job_uses_member_count_from_status(home) -> None:
     home.status.write_text(json.dumps({"fieldSize": 0}))
     assert tournament_members(home.status) is None
     assert tournament_members(home.status.parent / "missing.json") is None
+
+
+def test_read_tree_skips_partitions_before_since(tmp_path) -> None:
+    """Only `date=` partitions on or after the lookback are opened, so the read cost tracks the lookback."""
+    root = tmp_path / "prices"
+    for day in ("2026-09-20", "2026-10-01", "2026-10-04"):
+        part = root / f"date={day}"
+        part.mkdir(parents=True)
+        pl.DataFrame({"ts": [datetime.fromisoformat(day).replace(tzinfo=UTC)], "x": [day]}).write_parquet(
+            part / "part.parquet"
+        )
+    since = datetime(2026, 10, 1, tzinfo=UTC)
+    got = read_tree(root, since=since)
+    assert sorted(got["x"].to_list()) == ["2026-10-01", "2026-10-04"]
+    assert read_tree(root)["x"].len() == 3
+    assert read_tree(root, since=since, columns=["x"]).columns == ["x"]
+    assert read_tree(root, since=since, columns=["x", "missing"]).columns == ["x"]

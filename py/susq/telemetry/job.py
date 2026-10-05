@@ -14,6 +14,8 @@ from susq.telemetry import crowd, leaderboard
 from susq.telemetry.cupdata import read_leaderboard, read_prices
 
 CROWD_LOOKBACK = timedelta(days=14)
+# What crowd.infer_drift needs from a reference snapshot; everything else is skipped at read time.
+REFERENCE_COLUMNS = ("ts", "venue", "race_id", "party", "mid")
 
 
 def tournament_members(status_path: Path) -> int | None:
@@ -37,7 +39,9 @@ def run_telemetry(paths: Paths, cfg: ResearchConfig, *, now_ns: int) -> dict[str
     mm = load_best_map(paths)
     crowd_summary = (
         crowd.infer_drift(
-            read_prices(cup, since=since), read_snapshots(paths.data / "reference", since=since.date()), mm
+            read_prices(cup, since=since),
+            read_snapshots(paths.data / "reference", since=since.date(), columns=REFERENCE_COLUMNS),
+            mm,
         )
         if mm is not None
         else crowd.CrowdSummary()
