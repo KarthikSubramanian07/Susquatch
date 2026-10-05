@@ -69,7 +69,7 @@ def test_end_to_end_targets_offline(home, quotes) -> None:
     engine = json.loads((home.research_state / "calibration.json").read_text())["engine"]
     assert engine in {"numpy", "susq_models"}
     assert "field-model(" in tf.notes
-    assert "early book frac 0.30 until 2026-10-21T16:00Z" in tf.notes  # NOW_NS is Sept 29
+    assert "early book frac 0.20 until 2026-10-21T16:00Z" in tf.notes  # NOW_NS is Sept 29
     assert (home.research_state / "sim_probs.json").exists()
     late = run_targets(
         home, home.load_config(), quotes, now_ns=NOW_NS + 30 * 86_400 * 10**9, n_draws=20_000, seed=3
@@ -102,7 +102,7 @@ def test_research_context_fair_and_change_detection(home, quotes) -> None:
 def test_optimizer_section_is_read_from_toml(home, tmp_path) -> None:
     cfg = home.load_config()  # the repo's config/susq.toml
     opt = cfg.optimizer
-    assert (opt.book_frac, opt.early_book_frac, opt.max_legs, opt.max_leg_frac) == (0.60, 0.30, 12, 0.12)
+    assert (opt.book_frac, opt.early_book_frac, opt.max_legs, opt.max_leg_frac) == (0.60, 0.20, 12, 0.12)
     assert opt.early_until_utc == datetime(2026, 10, 21, 16, tzinfo=UTC)
     custom = tmp_path / "custom.toml"
     custom.write_text(

@@ -688,7 +688,7 @@ mod tests {
         assert!(fq.enabled, "the far quoter ships on in the shared config");
         assert_eq!(fq.max_fair, 0.05);
         assert_eq!(fq.levels, vec![0.01, 0.03, 0.05, 0.10]);
-        assert_eq!(fq.reserve_frac, 0.15);
+        assert_eq!(fq.reserve_frac, 0.08);
         assert_eq!(fq.max_market_frac, 0.02);
         assert_eq!(fq.order_ttl_s, 86_400);
         assert_eq!(fq.interval_s, 600);
