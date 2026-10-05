@@ -174,7 +174,7 @@ services:
       start_period: 300s
     cpu_shares: 256
     cpus: 1.5
-    mem_limit: 4g
+    mem_limit: 2g                 # the host has 4 GB; a runaway job must OOM here, not starve the bridge (2026-10-05)
     pids_limit: 512
     oom_score_adj: 500
 
