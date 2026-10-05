@@ -165,11 +165,13 @@ services:
       nats: { condition: service_healthy }
     # The `fair` job runs every 15 s and every run rewrites state/research/scheduler.json: a stale file = hung.
     healthcheck:
-      test: ["CMD", "python", "-c", "import os,sys,time; sys.exit(time.time()-os.path.getmtime('/susq/state/research/scheduler.json')>180)"]
+      # Jobs run one at a time and the heartbeat is written between them, so the window must cover the slowest
+      # job (the daily targets run) or the watchdog kills it mid-way and the scheduler never gets past it.
+      test: ["CMD", "python", "-c", "import os,sys,time; sys.exit(time.time()-os.path.getmtime('/susq/state/research/scheduler.json')>600)"]
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 180s
+      start_period: 300s
     cpu_shares: 256
     cpus: 1.5
     mem_limit: 4g

@@ -12,7 +12,8 @@ The directory layout under each root is the recorder's choice, so we read `**/*.
 
 from __future__ import annotations
 
-from datetime import datetime
+from collections.abc import Sequence
+from datetime import date, datetime
 from pathlib import Path
 
 import polars as pl
@@ -26,20 +27,46 @@ LEADERBOARD_COLUMNS = (
 )  # fmt: skip
 
 
-def read_tree(root: Path, *, since: datetime | None = None, newest_files: int | None = None) -> pl.DataFrame:
+def _partition_day(part: Path) -> date | None:
+    try:
+        return date.fromisoformat(part.name.removeprefix("date="))
+    except ValueError:
+        return None
+
+
+def read_tree(
+    root: Path,
+    *,
+    since: datetime | None = None,
+    newest_files: int | None = None,
+    columns: Sequence[str] | None = None,
+) -> pl.DataFrame:
     """Parquet files under `root` concatenated (empty frame if none), optionally ts >= since.
 
-    `newest_files` limits the read to the most recently modified files (cheap "latest" lookups).
+    The tree is partitioned as `date=YYYY-MM-DD/*.parquet`; with `since` only partitions on or after that day
+    are opened at all, so the cost stays proportional to the lookback and not to the age of the data set.
+    `newest_files` limits the read to the most recently modified files (cheap "latest" lookups); `columns`
+    projects before reading, which is what keeps a 14-day scan of per-minute snapshots in seconds.
     """
-    files = sorted(root.rglob("*.parquet")) if root.exists() else []
+    if not root.exists():
+        return pl.DataFrame()
+    files: list[Path] = sorted(root.glob("*.parquet"))  # unpartitioned files (tests, ad-hoc dumps)
+    for part in sorted(p for p in root.iterdir() if p.is_dir()):
+        day = _partition_day(part)
+        if since is not None and day is not None and day < since.date():
+            continue
+        files.extend(sorted(part.rglob("*.parquet")))
     if newest_files is not None:
         files = sorted(files, key=lambda f: f.stat().st_mtime)[-newest_files:]
     if not files:
         return pl.DataFrame()
-    df = pl.concat([pl.read_parquet(f) for f in files], how="diagonal_relaxed")
-    if since is not None and "ts" in df.columns:
-        df = df.filter(pl.col("ts") >= since)
-    return df
+    lazy = pl.concat([pl.scan_parquet(f) for f in files], how="diagonal_relaxed")
+    schema = lazy.collect_schema()
+    if since is not None and "ts" in schema:
+        lazy = lazy.filter(pl.col("ts") >= since)  # before the projection so `columns` need not keep ts
+    if columns is not None:
+        lazy = lazy.select([c for c in columns if c in schema])
+    return lazy.collect()
 
 
 def read_prices(

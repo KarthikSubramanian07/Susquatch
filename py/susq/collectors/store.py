@@ -52,12 +52,27 @@ def partition_files(root: Path, *, since: date | None = None, until: date | None
     return files
 
 
-def read_snapshots(root: Path, *, since: date | None = None, until: date | None = None) -> pl.DataFrame:
-    """Concatenate every snapshot in range (schema drift tolerated); empty frame if none."""
+def read_snapshots(
+    root: Path,
+    *,
+    since: date | None = None,
+    until: date | None = None,
+    columns: Sequence[str] | None = None,
+) -> pl.DataFrame:
+    """Concatenate every snapshot in range (schema drift tolerated); empty frame if none.
+
+    Reads lazily so polars can parallelise across files and, with `columns`, skip the rest of each file: the
+    reference tree gains about 1,500 files a day, so the telemetry job's 14-day read must not touch every
+    column.
+    """
     files = partition_files(root, since=since, until=until)
     if not files:
         return pl.DataFrame()
-    return pl.concat([pl.read_parquet(f) for f in files], how="diagonal_relaxed")
+    lazy = pl.concat([pl.scan_parquet(f) for f in files], how="diagonal_relaxed")
+    if columns is not None:
+        schema = lazy.collect_schema()
+        lazy = lazy.select([c for c in columns if c in schema])
+    return lazy.collect()
 
 
 def read_latest(root: Path) -> pl.DataFrame:
