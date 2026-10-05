@@ -133,6 +133,9 @@ systemctl daemon-reload
 systemctl enable susquatch.service susq-backup.timer susq-selfcheck.timer susq-priority-on.timer susq-priority-off.timer susq-enr-capture.timer
 systemctl start susq-backup.timer susq-selfcheck.timer susq-priority-on.timer susq-priority-off.timer susq-enr-capture.timer
 
+step "build the images (the unit never builds: a boot-time build starved the live trader on 4 GB)"
+sudo -u "$SUSQ_USER" docker compose --project-directory "$SUSQ_HOME" -f "$SUSQ_HOME/ops/compose.yaml" build
+
 step "start the stack (paper mode; live needs SUSQ_MODE=live AND ops/GO_LIVE)"
 if [ "${SUSQ_NO_START:-0}" = 1 ]; then
   echo "SUSQ_NO_START=1: not starting. Later: sudo systemctl start susquatch"
