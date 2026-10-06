@@ -575,6 +575,7 @@ impl Config {
                 "strategies.farquote.max_market_frac",
                 self.strategies.farquote.max_market_frac,
             ),
+            ("strategies.en.max_order_frac", self.strategies.en.max_order_frac),
         ];
         for (name, v) in fracs
             .into_iter()
@@ -611,6 +612,19 @@ impl Config {
         }
         if fq.order_ttl_s == 0 || fq.interval_s == 0 {
             return bad("strategies.farquote.order_ttl_s and interval_s must be > 0".into());
+        }
+        let en = &self.strategies.en;
+        for (name, v) in [
+            ("strategies.en.min_edge_pts", en.min_edge_pts),
+            ("strategies.en.se_mult", en.se_mult),
+            ("strategies.en.roll_within_pts", en.roll_within_pts),
+        ] {
+            if !(v.is_finite() && v >= 0.0) {
+                return bad(format!("{name} = {v} must be a finite non-negative number"));
+            }
+        }
+        if en.order_ttl_s == 0 {
+            return bad("strategies.en.order_ttl_s must be > 0".into());
         }
         Ok(())
     }
@@ -740,6 +754,54 @@ mod tests {
             Config::from_toml_str(&text),
             Err(ConfigError::Invalid(_))
         ));
+    }
+
+    /// The shipped file carries an explicit `[strategies.en]` (election-night executor) that is
+    /// off, with every knob spelled out so the Nov 3 pre-flight flips exactly one line.
+    #[test]
+    fn election_night_executor_ships_off_with_every_knob_explicit() {
+        let text = shared_toml();
+        assert!(
+            text.contains("[strategies.en]"),
+            "the section must be present, not defaulted"
+        );
+        let cfg = Config::from_toml_str(&text).expect("valid shared config");
+        let en = &cfg.strategies.en;
+        assert!(!en.enabled, "off until the Nov 3 pre-flight (docs/RUNBOOK.md §2)");
+        assert_eq!(en.min_edge_pts, 8.0);
+        assert_eq!(en.se_mult, 3.0);
+        assert_eq!(en.roll_within_pts, 2.0);
+        assert!(en.require_corroboration);
+        assert_eq!(en.max_order_frac, 0.02);
+        assert_eq!(en.order_ttl_s, 20);
+        assert_eq!(*en, EnCfg::default(), "the file documents the Rust defaults");
+        // The one line the runbook flips.
+        let armed = text.replacen("enabled = false\nmin_edge_pts", "enabled = true\nmin_edge_pts", 1);
+        assert_ne!(
+            armed, text,
+            "the `enabled = false` line sits right above min_edge_pts"
+        );
+        assert!(
+            Config::from_toml_str(&armed)
+                .expect("valid")
+                .strategies
+                .en
+                .enabled
+        );
+        // Values that would make the executor unsafe are refused.
+        for (from, to) in [
+            ("max_order_frac = 0.02", "max_order_frac = 1.5"),
+            ("min_edge_pts = 8.0", "min_edge_pts = -1.0"),
+            ("se_mult = 3.0", "se_mult = nan"),
+            ("order_ttl_s = 20 ", "order_ttl_s = 0 "),
+        ] {
+            let bad = text.replacen(from, to, 1);
+            assert_ne!(bad, text, "{from} not found");
+            assert!(
+                matches!(Config::from_toml_str(&bad), Err(ConfigError::Invalid(_))),
+                "{to} should be rejected"
+            );
+        }
     }
 
     #[test]

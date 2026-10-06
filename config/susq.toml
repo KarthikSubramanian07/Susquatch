@@ -129,6 +129,21 @@ start_utc = "2026-10-07T16:00:00Z" # no scenario tranche before this (book is bo
 min_interval_s = 900               # at least 15 min between tranches on the same exchange
 max_hourly_notional_frac = 0.02    # stop once the trailing hour's tranches exceed 2% of equity
 
+[strategies.en]
+# Election-night executor (rust-live only; the Python bridge has no election-night code). It trades race
+# markets on the needle's posteriors: buys a side when the posterior beats the ask by the threshold below,
+# and "rolls" (sells) a held side once its bid is within roll_within_pts of the posterior. It acts only while
+# the needle watchdog is healthy; a silent or invalid needle cancels every needle-derived order
+# (docs/ELECTION_NIGHT.md, docs/RUNBOOK.md §2). The values here equal the Rust defaults (EnCfg) on purpose.
+# OFF until the night: at the Nov 3 17:00 ET pre-flight flip the next line to `enabled = true` (nothing else).
+enabled = false
+min_edge_pts = 8.0                 # buy only when posterior − ask ≥ this many points ...
+se_mult = 3.0                      # ... and ≥ this many model standard errors (sqrt(q(1−q)/(1+n_batches)))
+roll_within_pts = 2.0              # sell a held side once its bid is within this many points of the posterior
+require_corroboration = true       # a buy needs ≥ 2 county batches or a same-direction real-money fair move
+max_order_frac = 0.02              # notional per order as a share of equity (also bounded by [risk])
+order_ttl_s = 20                   # buys and rolls are re-decided every tick; nothing rests for long
+
 [telemetry]
 leaderboard_interval_s = 3600
 price_snapshot_interval_s = 60
