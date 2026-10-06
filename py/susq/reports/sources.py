@@ -15,8 +15,9 @@ from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from typing import Any
+from typing import IO, Any
 
+import zstandard
 from google.protobuf.json_format import ParseError
 
 from susq.contracts import from_json, ops_pb2
@@ -43,20 +44,39 @@ class Fill:
 
 
 def _jsonl(path: Path) -> Iterator[str]:
-    with path.open() as fh:
+    """Lines of a plain or zstd-compressed (`.zst`, see susq-journal-compact.timer) JSONL file."""
+    fh: IO[str] = zstandard.open(path, "rt") if path.suffix == ".zst" else path.open()
+    with fh:
         for line in fh:
             if line.strip():
                 yield line
 
 
+# Price polls are ~95% of the bridge journal's bytes (a 15 KB response every few seconds) and the
+# reports never read them. Skipping them before protobuf parsing keeps a 1.2 GB day inside the
+# scheduler's 2 GB memory cap. The match is on the compact top-level `path` field only.
+_PRICE_POLL = tuple(
+    f'"path":{sp}"{prefix}/exchanges/' for sp in ("", " ") for prefix in ("/api/v1", "")
+)  # compact (bridge, rust) and json.dumps-spaced encodings of the top-level path field
+_API_PREFIX = "/api/v1"
+
+
 def load_journal(journal_dir: Path, day: date) -> list[ops_pb2.JournalEntry]:
+    """The day's entries, oldest first, without price polls; `/api/v1/...` paths are normalized."""
     out: list[ops_pb2.JournalEntry] = []
-    for path in sorted((journal_dir / day.isoformat()).glob("*.journal.jsonl")):
+    day_dir = journal_dir / day.isoformat()
+    for path in sorted([*day_dir.glob("*.journal.jsonl"), *day_dir.glob("*.journal.jsonl.zst")]):
         for line in _jsonl(path):
+            if any(mark in line for mark in _PRICE_POLL) and '"direction":"event"' not in line:
+                continue
             try:
-                out.append(from_json(ops_pb2.JournalEntry, line))
+                entry = from_json(ops_pb2.JournalEntry, line)
             except ParseError:
                 log.warning("skipping malformed journal line in %s", path)
+                continue
+            if entry.path.startswith(_API_PREFIX + "/"):
+                entry.path = entry.path[len(_API_PREFIX) :]
+            out.append(entry)
     out.sort(key=lambda e: e.ts_ns)
     return out
 

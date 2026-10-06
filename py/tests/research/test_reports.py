@@ -222,3 +222,37 @@ def test_leaking_packet_is_refused_and_removed(home) -> None:
     assert not (home.reports / "packets" / DAY.isoformat()).exists()
     assert not list((home.reports / "packets").glob(".*"))
     assert write_packet(home.reports, DailyMetrics(DAY, mode="paper")).exists()
+
+
+def test_journal_loader_reads_bridge_paths_skips_price_polls_and_zst(home) -> None:
+    """The bridge journals `/api/v1/...` paths (the Oct 1-6 reports counted 0 fills because of the
+    prefix), price polls dominate the bytes, and days older than yesterday are zstd-compressed."""
+    import zstandard
+    from susq.reports.sources import extract_fills, load_journal
+
+    req = {"exchangeId": "1201", "side": "yes", "action": "buy", "quantity": 10, "price": 0.55}
+    resp = {"orderId": 1, "quantityTraded": 10, "fillPrice": 0.55}
+    common = {
+        "method": "POST",
+        "path": "/api/v1/orders",
+        "idempotency_key": SNIPER_IDEM,
+        "correlation_id": "c9",
+    }
+    poll = _line(
+        ts_ns=T_NS + 5, direction="response", method="GET", status=200,
+        path="/api/v1/exchanges/prices?ids=1,2", body_json='{"prices":[{"exchangeId":"1"}]}',
+    )  # fmt: skip
+    text = (
+        _line(ts_ns=T_NS, direction="request", body_json=json.dumps(req), **common)
+        + _line(ts_ns=T_NS + 1, direction="response", status=200, body_json=json.dumps(resp), **common)
+        + poll
+        + _line(ts_ns=T_NS + 6, direction="event", path="risk/breaker", body_json='{"why":"x"}')
+    )
+    jdir = home.journal / DAY.isoformat()
+    jdir.mkdir(parents=True)
+    (jdir / "bridge.journal.jsonl.zst").write_bytes(zstandard.compress(text.encode()))
+    entries = load_journal(home.journal, DAY)
+    assert [e.path for e in entries] == ["/orders", "/orders", "risk/breaker"]
+    fills = extract_fills(entries, {})
+    assert len(fills) == 1
+    assert (fills[0].exchange_id, fills[0].quantity) == ("1201", 10)
