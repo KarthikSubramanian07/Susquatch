@@ -1,8 +1,8 @@
 # EXP-002: Fund the early scenario book from the far-quote reserve, not the sniper book
 
 - **Proposed:** 2026-10-05 by weekly-strategy
-- **Approved:** (pending) by Karthik
-- **Status:** proposed
+- **Approved:** 2026-10-05 by Karthik
+- **Status:** shipped (PR #55)
 
 ## Hypothesis
 With `early_book_frac = 0.20` and `farquote reserve_frac = 0.08`, the scenario executor buys the full early book from
