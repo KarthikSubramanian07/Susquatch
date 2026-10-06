@@ -1,7 +1,7 @@
 # EXP-001: Damp the winning-multiple threshold fit
 
 - **Proposed:** 2026-10-05 by weekly-strategy
-- **Approved:** 2026-10-06 by Karthik (via Claude session)
+- **Approved:** 2026-10-06 by Karthik
 - **Status:** shipped
 
 ## Hypothesis
