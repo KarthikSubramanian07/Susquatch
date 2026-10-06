@@ -211,11 +211,17 @@ log space:
 
 ```
 log T₅₀ = (1 − w)·log prior₅₀(N) + w·log max(top₁, top₁·e^{g·days_to_lock}),   w = min(1, days observed / 14)
+T₅₀ = min(T₅₀, prior₉₀(N))
 ```
 
-g is the 7-day least-squares growth rate of the top multiple, and the p90/p50 spread comes from
-the SPEC prior (N ≈ 500 → 8–15×, 2,000 → 15–30×, 10,000 → 25–100×, read as p50–p90). The
-optimizer uses the fitted T when telemetry exists and the field model otherwise.
+g is the 7-day least-squares growth rate of the **third-highest** multiple, not the top one, and
+T₅₀ is capped at the prior's p90 for the observed N (EXP-001). The Cup's final rank is the balance
+after every market resolves, but the leaderboard shows marks: the day-one leaders bought
+near-certain-to-lose contracts at 0.95 in thin books, so their 10× marks are an artifact of the
+mark and will resolve to 0. Fitting g on the top-1 and extrapolating it to lock put T₅₀ at about
+93× and made every scenario score P(M > T | S) = 0. The p90/p50 spread still comes from the SPEC
+prior (N ≈ 500 → 8–15×, 2,000 → 15–30×, 10,000 → 25–100×, read as p50–p90). The optimizer uses
+the fitted T when telemetry exists and the field model otherwise.
 
 ## Crowd-position inference (ITERATION §2.3)
 

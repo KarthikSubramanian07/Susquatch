@@ -83,13 +83,67 @@ def test_threshold_fit_moves_from_prior_to_evidence() -> None:
     assert prior.method == "prior"
     assert prior.p50 == pytest.approx(15.0)
     full = leaderboard.fit_threshold(
-        2000, top1_now=40.0, growth_per_day=0.0, days_observed=20, days_to_lock=30
+        2000, top1_now=25.0, growth_per_day=0.0, days_observed=20, days_to_lock=30
     )
-    assert full.p50 == pytest.approx(40.0)
+    assert full.p50 == pytest.approx(25.0)  # w = 1 after 14 days, under the 30x cap at N=2000
     grow = leaderboard.fit_threshold(
         2000, top1_now=2.0, growth_per_day=0.05, days_observed=14, days_to_lock=20
     )
-    assert grow.p50 == pytest.approx(2.0 * math.exp(0.05 * 20), rel=1e-9)  # w = 1 after 14 days
+    assert grow.p50 == pytest.approx(2.0 * math.exp(0.05 * 20), rel=1e-9)
+
+
+def test_threshold_fit_stays_in_prior_band_when_top1_is_an_artifact() -> None:
+    """EXP-001 (a): a flat 10x top-1 over a 2x top-3 cannot push T50 past the prior band for N."""
+    n = 4262
+    prior = leaderboard.prior_threshold(n)
+    fit = leaderboard.fit_threshold(n, top1_now=10.0, growth_per_day=0.0, days_observed=5, days_to_lock=29)
+    assert 1.0 <= fit.p50 <= prior.p90
+    assert fit.p50 < 20.0  # the pre-EXP-001 fit gave about 93x here
+    assert fit.p90 / fit.p50 == pytest.approx(prior.p90 / prior.p50)
+    assert "+cap" not in fit.method
+    # Even a fully weighted, badly inflated top-1 cannot exceed the prior's p90.
+    capped = leaderboard.fit_threshold(n, top1_now=90.0, growth_per_day=0.0, days_observed=30, days_to_lock=2)
+    assert capped.p50 == pytest.approx(prior.p90)
+    assert capped.p90 == pytest.approx(prior.p90 * prior.p90 / prior.p50)
+    assert capped.method.endswith("+cap")
+
+
+def test_threshold_fit_rises_to_the_cap_when_the_field_runs_away() -> None:
+    """EXP-001 (b): growth in the third-highest multiple still raises T50, but only up to the cap."""
+    n = 4262
+    prior = leaderboard.prior_threshold(n)
+    flat = leaderboard.fit_threshold(n, top1_now=8.0, growth_per_day=0.0, days_observed=7, days_to_lock=28)
+    modest = leaderboard.fit_threshold(n, top1_now=8.0, growth_per_day=0.03, days_observed=7, days_to_lock=28)
+    runaway = leaderboard.fit_threshold(n, top1_now=8.0, growth_per_day=0.3, days_observed=7, days_to_lock=28)
+    assert flat.p50 < modest.p50 < runaway.p50
+    assert modest.p50 < prior.p90
+    assert runaway.p50 == pytest.approx(prior.p90)
+    assert runaway.method.endswith("+cap")
+
+
+def test_summary_growth_is_fitted_on_the_third_highest_multiple() -> None:
+    """EXP-001: a top-1 that jumps to 10x and sits there flat contributes nothing to g."""
+    df = _leaderboard(10)
+    # Rank 1 jumps to 10x at the first snapshot and never moves; ranks 2+ keep the base ~2%/snapshot drift.
+    spiked = df.with_columns(
+        pl.when(pl.col("rank") == 1).then(900_000.0).otherwise(pl.col("pnl")).alias("pnl")
+    )
+    s = leaderboard.summarize(spiked, lock_ns=LOCK_NS)
+    assert s is not None
+    assert s.top1_multiple == pytest.approx(10.0)
+    base = leaderboard.summarize(df, lock_ns=LOCK_NS)
+    assert base is not None
+    # Ranks 3+ are identical in both frames, so g is identical: the spike at rank 1 is invisible to it.
+    assert s.growth_per_day == pytest.approx(base.growth_per_day)
+    assert s.growth_per_day > 0
+    # Freezing ranks 1-3 while the rest keeps drifting zeroes g, even though the top-1 is at 10x.
+    top3_flat = pl.when(pl.col("rank") <= 3).then(900_000.0 - 1_000.0 * pl.col("rank"))
+    frozen = df.with_columns(top3_flat.otherwise(pl.col("pnl")).alias("pnl"))
+    f = leaderboard.summarize(frozen, lock_ns=LOCK_NS)
+    assert f is not None
+    assert f.growth_per_day == 0.0
+    assert f.threshold is not None
+    assert f.threshold.p50 <= leaderboard.prior_threshold(f.field_size).p90
 
 
 def _map() -> ops_pb2.MarketMap:

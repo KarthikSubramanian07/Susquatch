@@ -10,11 +10,15 @@ Fitting T (the winning multiple at resolution) from marks is only half-possible:
 are not resolved payoffs. So the fit is a documented blend in log space:
 
     log T50 = (1−w)·log prior50(N) + w·log max(top1_now, top1_now·e^{g·days_to_lock})
+    T50 = min(T50, prior90(N))
 
-where g is the least-squares growth rate of log(top-1 multiple) over the last 7 days (floored at
-0) and w = min(1, days observed / 14) grows as evidence accumulates. The spread (p90/p50) comes
-from the SPEC prior for the observed N. Everything here is aggregate: no usernames or profile
-ids leave this module.
+where g is the least-squares growth rate of log(third-highest multiple) over the last 7 days
+(floored at 0) and w = min(1, days observed / 14) grows as evidence accumulates. The growth term
+reads the third-highest balance rather than the top-1 because day-one leaders bought
+near-certain-to-lose contracts at 0.95 in thin books: their 10x marks are an artifact of the mark,
+resolve to 0, and extrapolating them to lock put T50 at 93x (EXP-001). T50 is capped at the SPEC
+prior's p90 for the observed N for the same reason; the spread (p90/p50) still comes from that
+prior. Everything here is aggregate: no usernames or profile ids leave this module.
 """
 
 from __future__ import annotations
@@ -50,7 +54,7 @@ class LeaderboardSummary:
     top1_multiple: float
     top_k_multiples: list[float]
     dispersion_log_iqr: float  # IQR of log multiples within the visible top ranks
-    growth_per_day: float  # of log(top-1 multiple), last 7 days
+    growth_per_day: float  # of log(third-highest multiple), last 7 days (EXP-001)
     jumps: list[JumpEvent]
     field_size_series: list[tuple[int, int]] = field(default_factory=list)
     ranked: int = 0  # players on the leaderboard (only those who traded)
@@ -63,12 +67,13 @@ class LeaderboardSummary:
         return out
 
 
-def _growth(ts_ns: np.ndarray, top1: np.ndarray, window_days: float = 7.0) -> float:
+def _growth(ts_ns: np.ndarray, series: np.ndarray, window_days: float = 7.0) -> float:
+    """Least-squares growth rate per day of log(series) over the trailing window, floored at 0."""
     days = (ts_ns - ts_ns.max()) / NS_PER_DAY
     keep = days >= -window_days
     if keep.sum() < 3 or np.ptp(days[keep]) < 0.5:
         return 0.0
-    slope = np.polyfit(days[keep], np.log(np.maximum(top1[keep], 1e-9)), 1)[0]
+    slope = np.polyfit(days[keep], np.log(np.maximum(series[keep], 1e-9)), 1)[0]
     return max(0.0, float(slope))
 
 
@@ -94,6 +99,14 @@ def detect_jumps(df: pl.DataFrame, *, ratio: float = 1.5, min_multiple: float = 
 def fit_threshold(
     field_size: int, top1_now: float, growth_per_day: float, days_observed: float, days_to_lock: float
 ) -> ThresholdFit:
+    """Blend the SPEC prior with the observed top-1 mark extrapolated to lock, capped at the prior's p90.
+
+    `growth_per_day` is the growth of log(third-highest multiple), not the top-1 (EXP-001): the
+    top-1 mark is dominated by illiquid near-certain-to-lose positions that will resolve to 0,
+    so its growth says nothing about where the winning balance ends up. The cap keeps a single
+    inflated mark from pushing T50 past the upper band of the prior for the observed field size.
+    The p90/p50 spread is the prior's, unchanged.
+    """
     prior = prior_threshold(field_size)
     w = min(1.0, max(0.0, days_observed / 14.0))
     if w == 0.0:
@@ -101,7 +114,10 @@ def fit_threshold(
     observed = max(top1_now, top1_now * math.exp(growth_per_day * max(0.0, days_to_lock)))
     log50 = (1 - w) * math.log(prior.p50) + w * math.log(max(observed, 1.0))
     p50 = math.exp(log50)
-    return ThresholdFit(p50, p50 * (prior.p90 / prior.p50), field_size, f"leaderboard+prior(w={w:.2f})")
+    method = f"leaderboard+prior(w={w:.2f})"
+    if p50 > prior.p90:
+        p50, method = prior.p90, method + "+cap"
+    return ThresholdFit(p50, p50 * (prior.p90 / prior.p50), field_size, method)
 
 
 def summarize(
@@ -122,6 +138,9 @@ def summarize(
         .agg(
             pl.col("total").max().alias("total"),
             pl.col("multiple").max().alias("top1"),
+            # Third-highest multiple (the lowest available when fewer than three are ranked);
+            # the growth term is fitted on this, not the top-1 (EXP-001).
+            pl.col("multiple").top_k(3).min().alias("top3"),
             pl.col("my_rank").drop_nulls().first().alias("my_rank"),
         )
         .sort("ts")
@@ -135,7 +154,7 @@ def summarize(
     ranked = int(per_ts["total"][-1] or len(latest))
     field_size = max(ranked, int(members or 0))
     days_observed = float((ts_ns[-1] - ts_ns[0]) / NS_PER_DAY)
-    growth = _growth(ts_ns, per_ts["top1"].to_numpy())
+    growth = _growth(ts_ns, per_ts["top3"].to_numpy())
     as_of = int(ts_ns[-1])
     my_rank = per_ts["my_rank"][-1]
     summary = LeaderboardSummary(
