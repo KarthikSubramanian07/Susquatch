@@ -43,6 +43,18 @@ from susq.research_env import atomic_write_text
 log = logging.getLogger(__name__)
 
 UNPRICED_SAFE_P = 0.97
+# Refuse to publish a calibration when this share of the priced universe has no fresh real-money
+# quote. On 2026-10-06 the reference collector had been dead for 35 h, every race was "unpriced",
+# every Senate seat defaulted to 0.03/0.97, and the fair service blended that garbage at 20% for 10 h.
+MAX_UNPRICED_FRAC = 0.25
+# Sim probabilities older than this are not blended into fair values (fresh real money wins alone).
+SIM_MAX_AGE_S = 36 * 3600
+
+
+class StaleQuotesError(RuntimeError):
+    """Too few fresh real-money quotes to calibrate: the collector is probably down."""
+
+
 GAP_OK_PTS = 4.0
 IND_RACE_SD = 4.0  # SPEC §5: larger ε with independents
 
@@ -146,6 +158,19 @@ def run_calibration(
 ) -> CalibrationResult:
     params = params or SimParams()
     cons = consensus(quotes, now_ns=now_ns, max_age_s=max_quote_age_s)
+    mapped = sorted(
+        {
+            r.race_id
+            for r in (market_map.markets if market_map else [])
+            if r.kind == "race_party" and r.race_id
+        }
+    )
+    missing = [rid for rid in mapped if left_target(rid, cons) is None]
+    if mapped and len(missing) / len(mapped) > MAX_UNPRICED_FRAC:
+        raise StaleQuotesError(
+            f"{len(missing)} of {len(mapped)} mapped races have no fresh real-money quote "
+            f"(max {MAX_UNPRICED_FRAC:.0%}); refusing to calibrate on defaults"
+        )
     specs, targets, unpriced = race_universe(market_map, cons)
     shocks = engine.simulate(specs, params, n_draws, seed)
     mu = calibrate(shocks, targets)
@@ -205,6 +230,19 @@ def write_outputs(
         summary_path, json.dumps({"produced_at_ns": produced_at_ns, **result.summary()}, indent=1)
     )
     return probs_path, summary_path
+
+
+def fresh_sim_probs(
+    research_state: Path, *, now_ns: int, max_age_s: float = SIM_MAX_AGE_S
+) -> dict[str, dict[str, float]]:
+    """`load_sim_probs` for the fair service: empty when the calibration is older than `max_age_s`."""
+    probs, produced = load_sim_probs(research_state)
+    if produced and now_ns - produced > max_age_s * 1e9:
+        log.warning(
+            "sim_probs.json is %.0f h old: fair values use real money only", (now_ns - produced) / 3.6e12
+        )
+        return {}
+    return probs
 
 
 def load_sim_probs(research_state: Path) -> tuple[dict[str, dict[str, float]], int]:
