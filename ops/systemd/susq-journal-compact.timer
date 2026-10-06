@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily journal compaction (08:30 UTC, after the backup has shipped the day)
+
+[Timer]
+OnCalendar=*-*-* 08:30:00 UTC
+RandomizedDelaySec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
