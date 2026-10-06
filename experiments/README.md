@@ -11,3 +11,4 @@ Copy `TEMPLATE.md` to `EXP-NNN-short-name.md`, fill in the hypothesis and metric
 | EXP-004 | Fit the winning-multiple threshold to the trade tape | proposed | |
 | EXP-005 | Regional polling-miss scenarios and the 2022-prior detector | proposed | |
 | EXP-006 | Pre-registered count-order playbook for election night | proposed | |
+| EXP-007 | Hold the scenario book until the threshold is fitted to the tape | shipped | |
