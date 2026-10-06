@@ -86,6 +86,20 @@ class PushConfig:
         return self.interval_s
 
 
+OVERDUE_AFTER_S = 30 * 60  # a research job this far past its due time counts as not running
+
+
+def _overdue_s(now: datetime, next_run_utc: object) -> float:
+    """Seconds past the job's recorded due time; 0 when unknown or not yet due."""
+    if not next_run_utc:
+        return 0.0
+    try:
+        due = parse_utc(str(next_run_utc))
+    except ValueError:
+        return 0.0
+    return max(0.0, (now - due).total_seconds())
+
+
 def _age_text(seconds: float) -> str:
     seconds = max(0, int(seconds))
     if seconds < 120:
@@ -279,12 +293,16 @@ class StatusPusher:
             )
         jobs = doc.get("jobs") or {}
         failing = sorted(k for k, v in jobs.items() if int((v or {}).get("consecutive_failures", 0)) >= 3)
-        if failing:
+        # A job whose due time passed long ago never ran: the process keeps dying before it finishes
+        # (the heartbeat stays fresh because the other jobs still run between deaths).
+        overdue = sorted(
+            k for k, v in jobs.items() if _overdue_s(now, (v or {}).get("next_run_utc")) > OVERDUE_AFTER_S
+        )
+        if failing or overdue:
+            parts = ["failing: " + ", ".join(failing)] if failing else []
+            parts += ["overdue: " + ", ".join(overdue)] if overdue else []
             return ops_pb2.HealthItem(
-                name="research",
-                state="degraded",
-                detail="failing: " + ", ".join(failing),
-                last_ok_ns=written_ns,
+                name="research", state="degraded", detail="; ".join(parts), last_ok_ns=written_ns
             )
         return ops_pb2.HealthItem(
             name="research", state="ok", detail=f"{len(jobs)} jobs ok", last_ok_ns=written_ns

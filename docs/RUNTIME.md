@@ -7,7 +7,7 @@ Everything below lives under `$SUSQ_HOME` (the repo checkout on the server). Pat
 |---|---|---|---|---|
 | `config/susq.toml` | humans (via PR) | everyone | TOML | non-secret defaults |
 | `.env` | human | everyone | dotenv | secrets: `SUSQ_API_KEY`, Cloudflare, … |
-| `journal/YYYY-MM-DD/<producer>.journal.jsonl` **CD** | bridge, rust-live | reports | one `susq.v1.JournalEntry` (compact proto3 JSON) per line | every platform request/response; API key never written |
+| `journal/YYYY-MM-DD/<producer>.journal.jsonl` **CD** | bridge, rust-live | reports | one `susq.v1.JournalEntry` (compact proto3 JSON) per line | every platform request/response; API key never written; days older than yesterday are compressed to `.jsonl.zst` by `susq-journal-compact.timer` (08:30 UTC), `zstd -d` restores one |
 | `state/<producer>/intents.jsonl` **CD** | bridge, rust-live | same process on restart | `susq.v1.OrderIntent` per line, last line per `intent_id` wins | written **before** send |
 | `state/market_map.json` **CD** | `/parse-rules` + human (`susq research verify`) | strategies | `susq.v1.MarketMap` JSON | strategies trade only `verified: true` rows |
 | `state/status.json` **CD** | current lease holder | status pusher → KV | `susq.v1.StatusSnapshot` JSON | aggregates only |

@@ -130,8 +130,8 @@ for unit in "$SUSQ_HOME"/ops/systemd/*.service "$SUSQ_HOME"/ops/systemd/*.timer;
   sed -e "s|@SUSQ_HOME@|$SUSQ_HOME|g" -e "s|@SUSQ_USER@|$SUSQ_USER|g" "$unit" > "/etc/systemd/system/$(basename "$unit")"
 done
 systemctl daemon-reload
-systemctl enable susquatch.service susq-backup.timer susq-selfcheck.timer susq-priority-on.timer susq-priority-off.timer susq-enr-capture.timer
-systemctl start susq-backup.timer susq-selfcheck.timer susq-priority-on.timer susq-priority-off.timer susq-enr-capture.timer
+systemctl enable susquatch.service susq-backup.timer susq-selfcheck.timer susq-priority-on.timer susq-priority-off.timer susq-enr-capture.timer susq-journal-compact.timer
+systemctl start susq-backup.timer susq-selfcheck.timer susq-priority-on.timer susq-priority-off.timer susq-enr-capture.timer susq-journal-compact.timer
 
 step "build the images (the unit never builds: a boot-time build starved the live trader on 4 GB)"
 sudo -u "$SUSQ_USER" docker compose --project-directory "$SUSQ_HOME" -f "$SUSQ_HOME/ops/compose.yaml" build

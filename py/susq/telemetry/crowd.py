@@ -60,7 +60,8 @@ class CrowdSummary:
         return asdict(self)
 
 
-def _reference_hourly(ref: pl.DataFrame) -> pl.DataFrame:
+def reference_hourly(ref: pl.DataFrame) -> pl.DataFrame:
+    """Hourly mean reference mid per race and party: `hour, race_id, party, ref_mid`."""
     return (
         ref.with_columns(pl.col("ts").dt.truncate("1h").alias("hour"))
         .group_by("hour", "race_id", "party")
@@ -69,9 +70,18 @@ def _reference_hourly(ref: pl.DataFrame) -> pl.DataFrame:
 
 
 def infer_drift(prices: pl.DataFrame, reference: pl.DataFrame, market_map: ops_pb2.MarketMap) -> CrowdSummary:
-    """Per-market and per-cluster drift of Cup mids versus real money."""
+    """Per-market and per-cluster drift of Cup mids versus real money (raw reference snapshots)."""
+    if reference.is_empty():
+        return CrowdSummary()
+    return infer_drift_hourly(prices, reference_hourly(reference), market_map)
+
+
+def infer_drift_hourly(
+    prices: pl.DataFrame, hourly: pl.DataFrame, market_map: ops_pb2.MarketMap
+) -> CrowdSummary:
+    """Like `infer_drift`, from a reference already aggregated by `reference_hourly` (see telemetry.job)."""
     rules = {r.exchange_id: r for r in market_map.markets if r.race_id and r.party}
-    if prices.is_empty() or reference.is_empty() or not rules:
+    if prices.is_empty() or hourly.is_empty() or not rules:
         return CrowdSummary()
     link = pl.DataFrame(
         {
@@ -88,7 +98,7 @@ def infer_drift(prices: pl.DataFrame, reference: pl.DataFrame, market_map: ops_p
         .group_by("hour", "exchange_id")
         .agg(pl.col("cup_mid").mean())
         .join(link, on="exchange_id")
-        .join(_reference_hourly(reference), on=["hour", "race_id", "party"])
+        .join(hourly, on=["hour", "race_id", "party"])
         .with_columns(((pl.col("cup_mid") - pl.col("ref_mid")) * 100 * pl.col("sign")).alias("drift"))
     )
     summary = CrowdSummary()
