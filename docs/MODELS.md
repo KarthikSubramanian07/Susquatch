@@ -370,7 +370,10 @@ susq-needle --prior PRIOR.json --replay BATCHES.jsonl [--out OUT.jsonl]
 - Every output carries a `Header`: `schema_version`, `produced_at_ns`, and producer `needle` plus the git
   SHA resolved at CMake configure time. `seq` is strictly increasing **per subject**. It starts at
   wall-clock microseconds, so it keeps increasing across restarts; the downstream watchdog sees a restart
-  as a gap and re-qualifies needle after N healthy messages (`config/susq.toml [needle]`).
+  as a gap and re-qualifies needle after N healthy messages (`config/susq.toml [needle]`). Posteriors are
+  published only after an accepted batch, so rust-live keeps acting on the last one for
+  `[needle] posterior_max_age_s` (600 s) while heartbeats keep the needle healthy; a silent needle still
+  clears every posterior after `heartbeat_timeout_s` (10 s) and cancels every needle-derived order.
 - Inputs without a header or with a foreign `schema_version` are dropped (`bad_header`), as are
   undecodable payloads (`malformed`). For 10 s after a drop the heartbeat says
   `degraded:rejected_inputs`. While the bus is down it says `degraded:bus_disconnected`. Otherwise `ok`.

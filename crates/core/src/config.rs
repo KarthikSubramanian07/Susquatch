@@ -417,6 +417,16 @@ pub struct TargetsCfg {
 pub struct NeedleCfg {
     pub heartbeat_timeout_s: u64,
     pub resume_after_healthy: u32,
+    /// How long a published race posterior stays tradeable while the needle keeps heartbeating.
+    /// The needle publishes posteriors only after an accepted county batch (minutes apart between
+    /// SoS refreshes), so this is deliberately much longer than the heartbeat timeout; a silent
+    /// needle still clears every posterior through the watchdog.
+    #[serde(default = "default_posterior_max_age_s")]
+    pub posterior_max_age_s: u64,
+}
+
+fn default_posterior_max_age_s() -> u64 {
+    600
 }
 
 /// `[paths]`
@@ -598,6 +608,9 @@ impl Config {
         if self.needle.heartbeat_timeout_s == 0 || self.needle.resume_after_healthy == 0 {
             return bad("needle timeouts must be > 0".into());
         }
+        if self.needle.posterior_max_age_s < self.needle.heartbeat_timeout_s {
+            return bad("needle.posterior_max_age_s must be at least needle.heartbeat_timeout_s".into());
+        }
         if self.targets.max_age_h.is_nan() || self.targets.max_age_h <= 0.0 {
             return bad("targets.max_age_h must be > 0".into());
         }
@@ -707,6 +720,8 @@ mod tests {
         assert_eq!(fq.order_ttl_s, 86_400);
         assert_eq!(fq.interval_s, 600);
         assert_eq!(cfg.needle.resume_after_healthy, 5);
+        assert_eq!(cfg.needle.heartbeat_timeout_s, 10);
+        assert_eq!(cfg.needle.posterior_max_age_s, 600);
         // Rust-only sections fall back to defaults.
         assert_eq!(cfg.bus.nats_url, "nats://127.0.0.1:4222");
         assert_eq!(cfg.paths.fair_live, PathBuf::from("state/fair_live.json"));
@@ -744,6 +759,12 @@ mod tests {
             Err(ConfigError::Invalid(_))
         ));
         let text = shared_toml().replace("renew_s = 5", "renew_s = 25");
+        assert!(matches!(
+            Config::from_toml_str(&text),
+            Err(ConfigError::Invalid(_))
+        ));
+        // A posterior that may be traded on for less time than the heartbeat timeout is a typo.
+        let text = shared_toml().replace("posterior_max_age_s = 600", "posterior_max_age_s = 5");
         assert!(matches!(
             Config::from_toml_str(&text),
             Err(ConfigError::Invalid(_))
@@ -815,6 +836,17 @@ mod tests {
         assert_eq!(cfg.strategies.farquote.max_fair, 0.05);
         assert_eq!(cfg.strategies.farquote.levels, vec![0.01, 0.03, 0.05, 0.10]);
         assert!(!FarQuoteCfg::default().enabled, "off unless the TOML says so");
+    }
+
+    #[test]
+    fn posterior_max_age_defaults_when_absent() {
+        let text = shared_toml()
+            .lines()
+            .filter(|l| !l.starts_with("posterior_max_age_s"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let cfg = Config::from_toml_str(&text).expect("valid without the key");
+        assert_eq!(cfg.needle.posterior_max_age_s, 600);
     }
 
     #[test]

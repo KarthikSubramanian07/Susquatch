@@ -3,6 +3,14 @@
 //!
 //! The logic lives in the pure [`NeedleState`]; [`NeedleMonitor`] only drives it from a message
 //! stream, a periodic tick and a cancellation token.
+//!
+//! Two clocks govern what the executor may act on. **Liveness** is the watchdog's
+//! `heartbeat_timeout` (`[needle] heartbeat_timeout_s`): no healthy message for that long trips
+//! the needle, bumps the epoch and clears every stored number. **Posterior age** is the separate
+//! `posterior_ttl` (`[needle] posterior_max_age_s`): the needle publishes race posteriors only
+//! after an accepted county batch, minutes apart between SoS refreshes, so while heartbeats keep
+//! it healthy a posterior stays actionable until it is that old. A silent needle never keeps a
+//! posterior alive: the watchdog clears it first.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -12,6 +20,7 @@ use futures::{Stream, StreamExt};
 use susq_contracts::v1;
 use susq_core::Clock;
 use susq_core::clock::duration_ns;
+use susq_core::config::NeedleCfg;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
@@ -53,18 +62,19 @@ pub struct NeedleSnapshot {
     /// When this snapshot was taken.
     pub taken_at_ns: i64,
     timeout_ns: i64,
+    posterior_ttl_ns: i64,
     posteriors: HashMap<String, Stamped<v1::RacePosterior>>,
     shift: Option<Stamped<v1::NationalShift>>,
 }
 
 impl NeedleSnapshot {
     /// All race posteriors that may be acted on at `now_ns`, or `None` when the needle is not
-    /// trusted. Individual races older than the timeout are left out.
+    /// trusted. Individual races older than the posterior TTL are left out.
     pub fn actionable_posteriors(&self, now_ns: i64) -> Option<HashMap<&str, &Stamped<v1::RacePosterior>>> {
         self.trusted(now_ns).then(|| {
             self.posteriors
                 .iter()
-                .filter(|(_, p)| self.fresh(p.produced_at_ns, now_ns))
+                .filter(|(_, p)| self.posterior_fresh(p.produced_at_ns, now_ns))
                 .map(|(race, p)| (race.as_str(), p))
                 .collect()
         })
@@ -77,7 +87,7 @@ impl NeedleSnapshot {
         }
         self.posteriors
             .get(race_id)
-            .filter(|p| self.fresh(p.produced_at_ns, now_ns))
+            .filter(|p| self.posterior_fresh(p.produced_at_ns, now_ns))
     }
 
     /// The national shift if it may be acted on at `now_ns`.
@@ -87,7 +97,12 @@ impl NeedleSnapshot {
         }
         self.shift
             .as_ref()
-            .filter(|s| self.fresh(s.produced_at_ns, now_ns))
+            .filter(|s| self.posterior_fresh(s.produced_at_ns, now_ns))
+    }
+
+    /// How long a posterior stays actionable after it was produced, while the needle is healthy.
+    pub fn posterior_ttl_ns(&self) -> i64 {
+        self.posterior_ttl_ns
     }
 
     /// Healthy, and the snapshot itself is recent (a stalled or dead monitor task cannot leave a
@@ -96,8 +111,14 @@ impl NeedleSnapshot {
         self.healthy && self.fresh(self.taken_at_ns, now_ns)
     }
 
+    /// Liveness freshness (the heartbeat timeout).
     fn fresh(&self, at_ns: i64, now_ns: i64) -> bool {
         now_ns.saturating_sub(at_ns) <= self.timeout_ns
+    }
+
+    /// Number freshness (the posterior TTL, never shorter than the heartbeat timeout).
+    fn posterior_fresh(&self, at_ns: i64, now_ns: i64) -> bool {
+        now_ns.saturating_sub(at_ns) <= self.posterior_ttl_ns
     }
 }
 
@@ -108,21 +129,31 @@ pub struct NeedleState {
     errors: ErrorRate,
     known_races: HashSet<String>,
     timeout_ns: i64,
+    posterior_ttl_ns: i64,
     posteriors: HashMap<String, Stamped<v1::RacePosterior>>,
     shift: Option<Stamped<v1::NationalShift>>,
 }
 
 impl NeedleState {
-    /// Nothing received yet (unhealthy).
+    /// Nothing received yet (unhealthy). Posteriors age out with the heartbeat timeout until
+    /// [`NeedleState::with_posterior_ttl`] says otherwise.
     pub fn new(cfg: WatchdogCfg, known_races: HashSet<String>) -> Self {
         Self {
             timeout_ns: duration_ns(cfg.timeout),
+            posterior_ttl_ns: duration_ns(cfg.timeout),
             watchdog: Watchdog::new(cfg),
             errors: ErrorRate::default(),
             known_races,
             posteriors: HashMap::new(),
             shift: None,
         }
+    }
+
+    /// Let posteriors stay actionable for `ttl` after they were produced while the needle keeps
+    /// heartbeating (clamped to at least the heartbeat timeout, so it can only ever extend).
+    pub fn with_posterior_ttl(mut self, ttl: Duration) -> Self {
+        self.posterior_ttl_ns = duration_ns(ttl).max(self.timeout_ns);
+        self
     }
 
     /// Replace the known race ids; stored posteriors for races no longer known are dropped.
@@ -169,6 +200,7 @@ impl NeedleState {
             health: self.watchdog.health_item(now_ns),
             taken_at_ns: now_ns,
             timeout_ns: self.timeout_ns,
+            posterior_ttl_ns: self.posterior_ttl_ns,
             posteriors: self.posteriors.clone(),
             shift: self.shift.clone(),
         }
@@ -249,13 +281,30 @@ pub struct MonitorCfg {
     pub watchdog: WatchdogCfg,
     /// Silence-check period.
     pub tick: Duration,
+    /// How long a posterior stays actionable while the needle is healthy (`[needle]
+    /// posterior_max_age_s`); never shorter than the heartbeat timeout.
+    pub posterior_ttl: Duration,
 }
 
 impl MonitorCfg {
-    /// Tick at a tenth of the timeout, clamped to [10 ms, 1 s].
+    /// Tick at a tenth of the timeout, clamped to [10 ms, 1 s]; posteriors age out with the
+    /// heartbeat timeout.
     pub fn new(watchdog: WatchdogCfg) -> Self {
         let tick = (watchdog.timeout / 10).clamp(Duration::from_millis(10), Duration::from_secs(1));
-        Self { watchdog, tick }
+        let posterior_ttl = watchdog.timeout;
+        Self {
+            watchdog,
+            tick,
+            posterior_ttl,
+        }
+    }
+
+    /// From the `[needle]` config section (watchdog rules plus the posterior TTL).
+    pub fn from_config(cfg: &NeedleCfg) -> Self {
+        Self {
+            posterior_ttl: Duration::from_secs(cfg.posterior_max_age_s),
+            ..Self::new(WatchdogCfg::from_config(cfg))
+        }
     }
 }
 
@@ -280,7 +329,7 @@ impl NeedleMonitor {
     where
         S: Stream<Item = NeedleMessage> + Send + Unpin + 'static,
     {
-        let state = NeedleState::new(cfg.watchdog, known_races.clone());
+        let state = NeedleState::new(cfg.watchdog, known_races.clone()).with_posterior_ttl(cfg.posterior_ttl);
         let (snap_tx, snapshots) = watch::channel(state.snapshot(clock.now_ns()));
         let (known_tx, known_rx) = watch::channel(known_races);
         let task = tokio::spawn(run(state, messages, known_rx, snap_tx, cfg.tick, clock, cancel));
@@ -542,6 +591,88 @@ mod tests {
         // A snapshot nobody refreshed stops being actionable after the timeout.
         let snap = s.snapshot(T0);
         assert!(snap.actionable_posteriors(T0 + 1_001 * MS).is_none());
+    }
+
+    /// Gap 5 of the readiness audit: the needle publishes posteriors only per county batch, so a
+    /// posterior must outlive the 10 s heartbeat timeout while heartbeats keep the needle healthy.
+    #[test]
+    fn posteriors_outlive_the_heartbeat_timeout_while_heartbeats_continue() {
+        let mut s = healthy_state().with_posterior_ttl(Duration::from_secs(60));
+        s.on_message(
+            NeedleMessage::Shift(v1::NationalShift {
+                header: header(1, T0),
+                mean: 0.5,
+                sd: 0.5,
+                n_races_informing: 1,
+            }),
+            T0,
+        );
+        assert_eq!(s.snapshot(T0).posterior_ttl_ns(), 60 * 1_000 * MS);
+        // Heartbeats every 900 ms (the 1 s watchdog never trips): the posterior from T0 stays
+        // actionable for the whole 60 s TTL and not a tick longer, with the needle healthy throughout.
+        let mut seq = 2;
+        let mut t = T0;
+        let mut aged_out_at = None;
+        while t < T0 + 65_000 * MS {
+            t += 900 * MS;
+            s.on_message(hb(seq, t), t);
+            seq += 1;
+            let snap = s.snapshot(t);
+            assert!(snap.healthy, "unhealthy after {} ms", (t - T0) / MS);
+            let live = snap.actionable_posterior(OH, t).is_some();
+            assert_eq!(live, snap.actionable_shift(t).is_some());
+            assert_eq!(
+                live,
+                t - T0 <= 60_000 * MS,
+                "posterior liveness wrong after {} ms",
+                (t - T0) / MS
+            );
+            if !live && aged_out_at.is_none() {
+                aged_out_at = Some(t);
+                assert_eq!(snap.actionable_posteriors(t).map(|m| m.len()), Some(0));
+            }
+        }
+        assert!(aged_out_at.is_some(), "the posterior must age out past the TTL");
+        // A fresh batch (seq 2 on the posteriors stream) makes the race actionable again.
+        s.on_message(post(2, t, vec![race(OH, 0.6)]), t);
+        assert!(s.snapshot(t).actionable_posterior(OH, t).is_some());
+    }
+
+    #[test]
+    fn a_silent_needle_clears_posteriors_before_the_ttl() {
+        let mut s = healthy_state().with_posterior_ttl(Duration::from_secs(60));
+        // 1.001 s of silence trips the 1 s watchdog; the 60 s TTL does not keep the number alive.
+        let t = T0 + 1_001 * MS;
+        s.on_tick(t);
+        let snap = s.snapshot(t);
+        assert!(!snap.healthy);
+        assert_eq!(snap.epoch, 1);
+        assert!(snap.actionable_posteriors(t).is_none());
+        // Recovery (2 healthy messages) starts a new epoch with no carried-over numbers.
+        s.on_message(hb(2, t), t);
+        s.on_message(hb(3, t), t);
+        let snap = s.snapshot(t);
+        assert!(snap.healthy);
+        assert_eq!(snap.actionable_posteriors(t).map(|m| m.len()), Some(0));
+    }
+
+    #[test]
+    fn posterior_ttl_never_undercuts_the_heartbeat_timeout() {
+        let s = state().with_posterior_ttl(Duration::from_millis(10));
+        assert_eq!(s.snapshot(T0).posterior_ttl_ns(), 1_000 * MS);
+        let c = MonitorCfg::from_config(&NeedleCfg {
+            heartbeat_timeout_s: 10,
+            resume_after_healthy: 5,
+            posterior_max_age_s: 600,
+        });
+        assert_eq!(c.watchdog.timeout, Duration::from_secs(10));
+        assert_eq!(c.posterior_ttl, Duration::from_secs(600));
+        assert_eq!(c.tick, Duration::from_secs(1));
+        assert_eq!(
+            MonitorCfg::new(WatchdogCfg::new(Duration::from_secs(10), 5)).posterior_ttl,
+            Duration::from_secs(10),
+            "without a config the old behaviour holds"
+        );
     }
 
     #[test]

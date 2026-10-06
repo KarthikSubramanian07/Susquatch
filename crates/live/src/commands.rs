@@ -10,7 +10,6 @@ use serde_json::json;
 use susq_bus::{
     Bus,
     monitor::{MonitorCfg, NeedleMonitor, NeedleSnapshot},
-    watchdog::WatchdogCfg,
 };
 use susq_contracts::v1::MarketMap;
 use susq_core::{
@@ -143,7 +142,7 @@ async fn start_bus(
     let monitor = NeedleMonitor::spawn(
         messages,
         known_races(rt),
-        MonitorCfg::new(WatchdogCfg::from_config(&rt.cfg.needle)),
+        MonitorCfg::from_config(&rt.cfg.needle),
         rt.clock.clone(),
         shutdown.clone(),
     );

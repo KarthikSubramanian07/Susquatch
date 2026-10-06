@@ -161,8 +161,15 @@ max_legs = 12                      # most legs in one scenario book
 max_leg_frac = 0.12                # most equity in any single leg
 
 [needle]
+# Liveness: no healthy needle message (heartbeat or posterior) for this long = unhealthy. The watchdog then
+# cancels every needle-derived order and clears the posteriors; it trusts the needle again after this many
+# healthy messages in a row.
 heartbeat_timeout_s = 10
 resume_after_healthy = 5
+# Posteriors are published only after an accepted county batch (CA regenerates about every 5 min, GA caches
+# 60 s), so a posterior stays tradeable for this long while the heartbeat keeps the needle healthy. Must be
+# at least heartbeat_timeout_s; a silent needle still clears everything at heartbeat_timeout_s.
+posterior_max_age_s = 600
 
 [paths]
 journal = "journal"

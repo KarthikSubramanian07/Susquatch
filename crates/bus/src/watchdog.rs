@@ -736,6 +736,7 @@ mod tests {
         let c = WatchdogCfg::from_config(&NeedleCfg {
             heartbeat_timeout_s: 10,
             resume_after_healthy: 5,
+            posterior_max_age_s: 600,
         });
         assert_eq!(c.timeout, Duration::from_secs(10));
         assert_eq!(c.resume_after_healthy, 5);
