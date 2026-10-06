@@ -125,7 +125,7 @@ enabled = false                    # decided by the decision table after measure
 [strategies.scenario]
 enabled = true
 tranche_frac = 0.25                # fraction of the remaining gap to target worked per tranche
-start_utc = "2026-10-07T16:00:00Z" # no scenario tranche before this (book is bought from week two)
+start_utc = "2026-10-11T16:00:00Z" # EXP-007: held until the tape-fitted threshold (was Oct 7); book bought gradually after
 min_interval_s = 900               # at least 15 min between tranches on the same exchange
 max_hourly_notional_frac = 0.02    # stop once the trailing hour's tranches exceed 2% of equity
 
