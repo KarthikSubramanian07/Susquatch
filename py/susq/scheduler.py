@@ -258,7 +258,9 @@ def default_jobs(ctx: ResearchContext) -> list[Job]:
     return [
         Job("collect", ctx.collect, interval_s=cfg.price_snapshot_interval_s),
         Job("fair", ctx.fair, interval_s=15.0),
-        Job("telemetry", ctx.telemetry, interval_s=cfg.leaderboard_interval_s),
+        # Not at start: a telemetry run that dies (it was OOM-killed at boot for 35 h on Oct 5-6) must not
+        # take the collect and fair jobs down with it every restart.
+        Job("telemetry", ctx.telemetry, interval_s=cfg.leaderboard_interval_s, run_at_start=False),
         Job("targets", ctx.targets, daily_at=dtime(6, 30), run_at_start=False),
         Job("targets-if-changed", ctx.targets_if_changed, interval_s=3600.0, run_at_start=False),
         Job("report", ctx.report, daily_at=dtime(7, 0), run_at_start=False),
