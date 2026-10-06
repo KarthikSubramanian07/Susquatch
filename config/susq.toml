@@ -132,6 +132,13 @@ max_hourly_notional_frac = 0.02    # stop once the trailing hour's tranches exce
 [telemetry]
 leaderboard_interval_s = 3600
 price_snapshot_interval_s = 60
+# Trade tape (data/cup/tape): the field's actual fills per market. Budget math against the shared
+# 100 reads/min: a pass walks each exchange newest-first and stops at the first trade already on
+# disk, so steady state is one read per exchange (about 240) every 30 min, ~8 reads/min. The cap
+# bounds a backlog (the first pass pages history since Oct 1): 600 requests per 1800 s pass is at
+# most 20 reads/min, a fifth of the budget, and the limiter paces them at max_rps anyway. 0 disables.
+tape_interval_s = 1800
+tape_max_requests_per_pass = 600
 
 [targets]
 dir = "targets"

@@ -11,7 +11,15 @@ import pytest
 from susq.collectors.store import read_snapshots, write_snapshot
 from susq.contracts import ops_pb2
 from susq.telemetry import crowd, leaderboard
-from susq.telemetry.cupdata import latest_cup_mids, read_leaderboard, read_prices, read_tree, with_cup_mid
+from susq.telemetry.cupdata import (
+    TAPE_COLUMNS,
+    latest_cup_mids,
+    read_leaderboard,
+    read_prices,
+    read_tape,
+    read_tree,
+    with_cup_mid,
+)
 from susq.telemetry.job import read_reference_hourly, run_telemetry, tournament_members
 
 T0 = datetime(2026, 10, 2, tzinfo=UTC)
@@ -295,3 +303,35 @@ def test_reference_hourly_is_folded_one_day_at_a_time(tmp_path) -> None:
     assert set(folded.columns) == {"hour", "race_id", "party", "ref_mid"}
     assert crowd.infer_drift_hourly(pl.DataFrame(), folded, ops_pb2.MarketMap()).markets == []
     assert read_reference_hourly(tmp_path / "missing", since=since).is_empty()
+
+
+def test_read_tape_is_oldest_first_and_unique_by_trade_id(tmp_path) -> None:
+    """The tape is partitioned by trade day; a repeated pass may write a trade twice, the reader drops it."""
+    root = tmp_path / "tape"
+    assert read_tape(tmp_path).is_empty()
+
+    def row(trade_id: str, at: datetime, side: str = "YES") -> dict:
+        return {
+            "ts": at, "exchange_id": "1301", "market_id": "301", "trade_id": trade_id, "side": side,
+            "price": 0.42, "size": 3, "volume": None, "recorded_at": at + timedelta(hours=1),
+        }  # fmt: skip
+
+    schema = {"ts": pl.Datetime("us", "UTC"), "recorded_at": pl.Datetime("us", "UTC"), "volume": pl.Float64}
+    oct1, oct3 = datetime(2026, 10, 1, 5, tzinfo=UTC), datetime(2026, 10, 3, 7, tzinfo=UTC)
+    days = (
+        ("2026-10-01", [row("t2", oct1 + timedelta(minutes=1)), row("t1", oct1)]),
+        ("2026-10-03", [row("t3", oct3, "NO")]),
+    )
+    for day, rows in days:
+        part = root / f"date={day}"
+        part.mkdir(parents=True)
+        pl.DataFrame(rows, schema_overrides=schema).write_parquet(part / "part-a.parquet")
+    repeat = pl.DataFrame([row("t3", oct3, "NO")], schema_overrides=schema)
+    repeat.write_parquet(root / "date=2026-10-03" / "part-b.parquet")
+
+    df = read_tape(tmp_path)
+    assert df["trade_id"].to_list() == ["t1", "t2", "t3"]
+    assert set(TAPE_COLUMNS) <= set(df.columns)
+    assert df.schema["ts"] == pl.Datetime("us", "UTC")
+    assert df["side"].to_list() == ["YES", "YES", "NO"]
+    assert read_tape(tmp_path, since=datetime(2026, 10, 2, tzinfo=UTC))["trade_id"].to_list() == ["t3"]

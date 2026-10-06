@@ -144,6 +144,8 @@ class BridgeConfig:
     fair_path: Path
     leaderboard_interval_s: float
     price_snapshot_interval_s: float
+    tape_interval_s: float
+    tape_max_requests_per_pass: int
     env: Mapping[str, str] = field(repr=False)
     api_key: str = field(default="", repr=False)
 
@@ -269,6 +271,8 @@ def load_config(home: Path | None = None, env: Mapping[str, str] | None = None) 
         fair_path=state_dir / "fair_live.json",
         leaderboard_interval_s=float(raw.get("telemetry", {}).get("leaderboard_interval_s", 3600)),
         price_snapshot_interval_s=float(raw.get("telemetry", {}).get("price_snapshot_interval_s", 60)),
+        tape_interval_s=float(raw.get("telemetry", {}).get("tape_interval_s", 1800)),
+        tape_max_requests_per_pass=int(raw.get("telemetry", {}).get("tape_max_requests_per_pass", 600)),
         env=merged,
         api_key=merged.get("SUSQ_API_KEY", "").strip(),
     )
