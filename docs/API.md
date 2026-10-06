@@ -87,7 +87,7 @@ Every call below passes that `id` as `tournamentId`, or uses the `/tournaments/{
 | Resolution tree | `GET /markets/{id}/nodes?tournamentId=` | Contract nodes (`contractType`, `contractDetails`, `settlementOptions`, `settlementDate`). This is the only machine-readable part of the rules. The Info-tab prose is **not** in the API. |
 | Bulk top-of-book | `GET /exchanges/prices?ids=…(≤100)&tournamentId=` | `latestPrice/bestBid/bestAsk/spread` plus `missingIds`. Preserves request order. |
 | Book | `GET /exchanges/{id}/orderbook?depth=≤200&tournamentId=` | Bids descending, asks ascending. |
-| Tape | `GET /exchanges/{id}/trades?tournamentId=&limit≤200&cursor=` | `side ∈ {YES,NO}` says which space filled. |
+| Tape | `GET /exchanges/{id}/trades?tournamentId=&limit≤200&cursor=&from=&to=` | `side ∈ {YES,NO}` says which space filled. Pages newest-first. The bridge recorder walks it every 30 min into `data/cup/tape` (one read per exchange in steady state, `tape_max_requests_per_pass` at most). |
 | Candles | `GET /exchanges/{id}/price-history?resolution=1m…1w&tournamentId=` | Sparse OHLCV plus VWAP. |
 | Place | `POST /orders` | Body `{exchangeId, side, action, quantity(int), price, expirationDate?, tournamentId, idempotencyKey}` (**key required**). Response: `orderId, open, remainingQuantity, quantityTraded, totalCost, fillPrice, terminalReasonCode, all{…collateral economics}`. |
 | Batch | `POST /orders/batch` | ≤50 orders under one key, best-effort, returns 207 with per-item results. On 503, retry with the same key to resume. |
