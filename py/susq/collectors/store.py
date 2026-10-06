@@ -39,17 +39,24 @@ def write_snapshot(root: Path, rows: Sequence[dict[str, Any]], ts_ns: int) -> Pa
     return out
 
 
-def partition_files(root: Path, *, since: date | None = None, until: date | None = None) -> list[Path]:
-    """Snapshot files under `root`, oldest first, optionally limited to a date range (inclusive)."""
+def partition_days(
+    root: Path, *, since: date | None = None, until: date | None = None
+) -> list[tuple[date, list[Path]]]:
+    """`(day, files)` per `date=` partition under `root`, oldest first, optionally limited (inclusive)."""
     if not root.exists():
         return []
-    files: list[Path] = []
+    days: list[tuple[date, list[Path]]] = []
     for part in sorted(root.glob("date=*")):
         day = date.fromisoformat(part.name.removeprefix("date="))
         if (since and day < since) or (until and day > until):
             continue
-        files.extend(sorted(part.glob("*.parquet")))
-    return files
+        days.append((day, sorted(part.glob("*.parquet"))))
+    return days
+
+
+def partition_files(root: Path, *, since: date | None = None, until: date | None = None) -> list[Path]:
+    """Snapshot files under `root`, oldest first, optionally limited to a date range (inclusive)."""
+    return [f for _, files in partition_days(root, since=since, until=until) for f in files]
 
 
 def read_snapshots(
@@ -61,18 +68,22 @@ def read_snapshots(
 ) -> pl.DataFrame:
     """Concatenate every snapshot in range (schema drift tolerated); empty frame if none.
 
-    Reads lazily so polars can parallelise across files and, with `columns`, skip the rest of each file: the
-    reference tree gains about 1,500 files a day, so the telemetry job's 14-day read must not touch every
-    column.
+    With `columns`, each file is projected *before* the concat: a projection applied after a
+    `diagonal_relaxed` concat is not pushed down into the scans, so polars decoded every column of
+    every file. Over the reference tree (1,500 files a day) that is what took the scheduler past its
+    2 GB cap. Callers that need many days should still fold one `partition_days` entry at a time.
     """
     files = partition_files(root, since=since, until=until)
     if not files:
         return pl.DataFrame()
-    lazy = pl.concat([pl.scan_parquet(f) for f in files], how="diagonal_relaxed")
-    if columns is not None:
-        schema = lazy.collect_schema()
-        lazy = lazy.select([c for c in columns if c in schema])
-    return lazy.collect()
+    if columns is None:
+        scans = [pl.scan_parquet(f) for f in files]
+    else:
+        scans = []
+        for f in files:
+            keep = [c for c in columns if c in pl.read_parquet_schema(f)]
+            scans.append(pl.scan_parquet(f).select(keep))
+    return pl.concat(scans, how="diagonal_relaxed").collect()
 
 
 def read_latest(root: Path) -> pl.DataFrame:

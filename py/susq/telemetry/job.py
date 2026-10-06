@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from susq.collectors.store import read_snapshots
+import polars as pl
+
+from susq.collectors.store import partition_days, read_snapshots
 from susq.mapping.io import load_best_map
 from susq.research_env import Paths, ResearchConfig, atomic_write_text
 from susq.telemetry import crowd, leaderboard
@@ -28,6 +30,21 @@ def tournament_members(status_path: Path) -> int | None:
     return members if members > 0 else None
 
 
+def read_reference_hourly(root: Path, *, since: date) -> pl.DataFrame:
+    """Hourly mean reference mid per race and party, folded one `date=` partition at a time.
+
+    The 14-day raw read is ~12 M rows; collecting it in one go took the scheduler past its 2 GB cap
+    and the kernel killed it every 22 s from Oct 5 noon to Oct 6 night. A day collapses to a few
+    thousand hourly rows, so peak memory is one day of snapshots.
+    """
+    hourly = []
+    for day, _ in partition_days(root, since=since):
+        frame = read_snapshots(root, since=day, until=day, columns=REFERENCE_COLUMNS)
+        if not frame.is_empty():
+            hourly.append(crowd.reference_hourly(frame))
+    return pl.concat(hourly) if hourly else pl.DataFrame()
+
+
 def run_telemetry(paths: Paths, cfg: ResearchConfig, *, now_ns: int) -> dict[str, Any]:
     cup = paths.data / "cup"
     lb = leaderboard.summarize(
@@ -38,9 +55,9 @@ def run_telemetry(paths: Paths, cfg: ResearchConfig, *, now_ns: int) -> dict[str
     since = datetime.fromtimestamp(now_ns / 1e9, tz=UTC) - CROWD_LOOKBACK
     mm = load_best_map(paths)
     crowd_summary = (
-        crowd.infer_drift(
+        crowd.infer_drift_hourly(
             read_prices(cup, since=since),
-            read_snapshots(paths.data / "reference", since=since.date(), columns=REFERENCE_COLUMNS),
+            read_reference_hourly(paths.data / "reference", since=since.date()),
             mm,
         )
         if mm is not None

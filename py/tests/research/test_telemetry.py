@@ -8,10 +8,11 @@ from datetime import UTC, datetime, timedelta
 
 import polars as pl
 import pytest
+from susq.collectors.store import read_snapshots, write_snapshot
 from susq.contracts import ops_pb2
 from susq.telemetry import crowd, leaderboard
 from susq.telemetry.cupdata import latest_cup_mids, read_leaderboard, read_prices, read_tree, with_cup_mid
-from susq.telemetry.job import run_telemetry, tournament_members
+from susq.telemetry.job import read_reference_hourly, run_telemetry, tournament_members
 
 T0 = datetime(2026, 10, 2, tzinfo=UTC)
 LOCK_NS = int(datetime(2026, 11, 4, 17, tzinfo=UTC).timestamp() * 1e9)
@@ -217,3 +218,26 @@ def test_read_tree_skips_partitions_before_since(tmp_path) -> None:
     assert read_tree(root)["x"].len() == 3
     assert read_tree(root, since=since, columns=["x"]).columns == ["x"]
     assert read_tree(root, since=since, columns=["x", "missing"]).columns == ["x"]
+
+
+def test_reference_hourly_is_folded_one_day_at_a_time(tmp_path) -> None:
+    """Folding per `date=` partition gives the same hourly table as one read of the whole tree.
+
+    The whole-tree read is what the kernel OOM-killed every 22 s on Oct 5-6; per-day folding bounds
+    peak memory to one day of snapshots.
+    """
+    _, ref = _prices_and_reference(60)  # two and a half days of hourly rows
+    root = tmp_path / "reference"
+    for row in ref.with_columns(pl.col("ts").dt.epoch("ns").alias("ts_ns")).drop("ts").to_dicts():
+        write_snapshot(root, [row | {"title": "extra column, never read"}], row["ts_ns"])
+    assert len(list(root.glob("date=*"))) == 3
+    since = (T0 + timedelta(days=1)).date()
+    folded = read_reference_hourly(root, since=since).sort("hour", "race_id", "party")
+    whole = crowd.reference_hourly(
+        read_snapshots(root, since=since, columns=("ts", "race_id", "party", "mid"))
+    )
+    assert folded.equals(whole.sort("hour", "race_id", "party"))
+    assert folded["hour"].min() >= datetime.combine(since, datetime.min.time(), tzinfo=UTC)
+    assert set(folded.columns) == {"hour", "race_id", "party", "ref_mid"}
+    assert crowd.infer_drift_hourly(pl.DataFrame(), folded, ops_pb2.MarketMap()).markets == []
+    assert read_reference_hourly(tmp_path / "missing", since=since).is_empty()
