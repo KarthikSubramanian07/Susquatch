@@ -215,6 +215,27 @@ def test_research_scheduler_health(paths, clock, api) -> None:
     assert next(h for h in pushed(route).health if h.name == "research").state == "down"
 
 
+def test_overdue_job_degrades_research_even_with_a_fresh_heartbeat(paths, clock, api) -> None:
+    """Oct 5-6: telemetry was OOM-killed at every boot for 35 h while fair kept the heartbeat fresh."""
+    route = api.post("/api/push").respond(200)
+    p = make(paths, clock)
+    paths.scheduler_health.parent.mkdir(parents=True, exist_ok=True)
+    due = (clock() - timedelta(hours=35)).isoformat()
+    doc = {
+        "written_utc": clock().isoformat(),
+        "jobs": {
+            "fair": {"consecutive_failures": 0, "next_run_utc": clock().isoformat()},
+            "telemetry": {"consecutive_failures": 0, "next_run_utc": due},
+            "collect": {"consecutive_failures": 0, "next_run_utc": "garbage"},
+        },
+    }
+    paths.scheduler_health.write_text(json.dumps(doc))
+    p.tick()
+    research = next(h for h in pushed(route).health if h.name == "research")
+    assert research.state == "degraded"
+    assert research.detail == "overdue: telemetry"
+
+
 def test_sliding_window_events_are_pushed_once(paths, clock, api) -> None:
     """The bridge keeps its last 20 events in every snapshot; each must reach the dashboard once."""
     route = api.post("/api/push").respond(200)
