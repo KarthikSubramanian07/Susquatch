@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from dataclasses import replace
 from datetime import UTC, datetime, time, timedelta
 
 import polars as pl
@@ -71,9 +72,9 @@ def test_end_to_end_targets_offline(home, quotes) -> None:
     assert "field-model(" in tf.notes
     assert "early book frac 0.20 until 2026-10-21T16:00Z" in tf.notes  # NOW_NS is Sept 29
     assert (home.research_state / "sim_probs.json").exists()
-    late = run_targets(
-        home, home.load_config(), quotes, now_ns=NOW_NS + 30 * 86_400 * 10**9, n_draws=20_000, seed=3
-    )
+    shift = 30 * 86_400 * 10**9
+    fresh = [replace(q, ts_ns=q.ts_ns + shift) for q in quotes]  # stale quotes now refuse to calibrate
+    late = run_targets(home, home.load_config(), fresh, now_ns=NOW_NS + shift, n_draws=20_000, seed=3)
     assert "full book frac 0.60" in late.notes
 
 

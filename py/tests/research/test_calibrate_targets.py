@@ -6,7 +6,14 @@ import json
 
 import pytest
 from susq.calibrate.consensus import consensus, left_party, left_target
-from susq.calibrate.job import GAP_OK_PTS, load_sim_probs, run_calibration, write_outputs
+from susq.calibrate.job import (
+    GAP_OK_PTS,
+    StaleQuotesError,
+    fresh_sim_probs,
+    load_sim_probs,
+    run_calibration,
+    write_outputs,
+)
 from susq.calibrate.targets import (
     POINTER,
     InputRef,
@@ -172,3 +179,19 @@ def test_pointer_hash_mismatch_is_detected(tmp_path) -> None:
     with pytest.raises(TargetValidationError):
         read_current(tmp_path)
     assert read_current(tmp_path / "empty") is None
+
+
+def test_stale_quotes_refuse_to_calibrate(quotes, cup_markets) -> None:
+    """2026-10-06: a dead collector left every race unpriced and the defaults (0.03/0.97) got published."""
+    mm = build_market_map(cup_markets, quotes, seq=1, now_ns=NOW_NS)
+    with pytest.raises(StaleQuotesError, match="no fresh real-money quote"):
+        run_calibration(
+            quotes, NumpySimEngine(), market_map=mm, n_draws=2_000, seed=1, now_ns=NOW_NS + 10**9 * 86_400
+        )
+
+
+def test_old_sim_probs_are_not_blended(calib, tmp_path) -> None:
+    write_outputs(calib, tmp_path, produced_at_ns=NOW_NS)
+    assert fresh_sim_probs(tmp_path, now_ns=NOW_NS + 10**9 * 3600) == calib.sim_probs
+    assert fresh_sim_probs(tmp_path, now_ns=NOW_NS + 10**9 * 48 * 3600) == {}
+    assert fresh_sim_probs(tmp_path / "missing", now_ns=NOW_NS) == {}

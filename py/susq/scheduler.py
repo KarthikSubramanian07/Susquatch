@@ -33,7 +33,7 @@ from zoneinfo import ZoneInfo
 import typer
 
 from susq.calibrate.consensus import consensus
-from susq.calibrate.job import load_sim_probs, run_calibration, write_outputs
+from susq.calibrate.job import fresh_sim_probs, run_calibration, write_outputs
 from susq.calibrate.pipeline import run_targets
 from susq.collectors.quotes import RefQuote
 from susq.collectors.run import ReferenceCollector, load_latest_quotes
@@ -90,7 +90,7 @@ class ResearchContext:
             cfg=self.cfg.fair,
             load_rules=lambda: list(mm.markets) if (mm := load_best_map(self.paths)) else [],
             load_quotes=self.quotes,
-            load_sim=lambda: load_sim_probs(self.paths.research_state)[0],
+            load_sim=lambda: fresh_sim_probs(self.paths.research_state, now_ns=self.clock_ns()),
             load_cup_mids=lambda: latest_cup_mids(self.paths.data / "cup"),
             clock_ns=self.clock_ns,
         )
@@ -393,3 +393,7 @@ def run() -> None:
         asyncio.run(main())
     finally:
         ctx.close()
+
+
+if __name__ == "__main__":  # `python -m susq.scheduler targets` inside the container
+    cli_app()
