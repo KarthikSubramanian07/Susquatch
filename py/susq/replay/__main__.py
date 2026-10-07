@@ -10,8 +10,10 @@ Examples (from the repo root)::
     uv run python -m susq.replay download 2022 GA NH ME --out data/replay/county_results_2022.csv
     uv run python -m susq.replay download 2024 --market-map state/market_map.json \
         --out data/replay/county_results_2024.csv
+    uv run python -m susq.replay download 2022 CA --house-only --out data/replay/house_results_2022.csv
     uv run python -m susq.replay spec2026 --market-map state/market_map.json --fair state/fair_live.json \
         --history data/replay/county_results_2022.csv --history data/replay/county_results_2024.csv \
+        --history data/replay/house_results_2022.csv --history data/replay/house_results_2024.csv \
         --out py/susq/replay/specs/general_2026.toml
 """
 
@@ -205,12 +207,15 @@ def spec2026(
     poll_closing: Annotated[Path, typer.Option(help="poll closing table")] = CLOSING_PATH,
     out: OutPath = Path("py/susq/replay/specs/general_2026.toml"),
 ) -> None:
-    """Write the 2026 needle spec: every Cup Senate and Governor race, margins from the fair file."""
+    """Write the 2026 needle spec: every Cup Senate and Governor race and California House seat,
+    margins from the fair file."""
     from susq.replay.spec2026 import build_spec, render_toml
 
     paths = history or [
         Path("data/replay/county_results_2022.csv"),
         Path("data/replay/county_results_2024.csv"),
+        # California House history (`download <year> CA --house-only`), when it has been fetched.
+        *(p for y in (2022, 2024) if (p := Path(f"data/replay/house_results_{y}.csv")).exists()),
     ]
     missing = [p for p in paths if not p.exists()]
     if missing:
