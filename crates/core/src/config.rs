@@ -360,6 +360,34 @@ pub struct EnCfg {
     /// Enforced by risk, not by the strategy: a buy that would push the executor past it is
     /// refused like any other cap.
     pub night_budget_frac: f64,
+    // ── Count-order playbook, lock-time rule, contender switch (EXP-006) ──────────────────
+    /// Gate buys on the pre-registered count-order table (`count_order_path`): a buy that agrees
+    /// with the registered direction of the count still to come needs the normal threshold; one
+    /// against it, or in a race with no registered direction, needs the threshold plus the band
+    /// converted to probability through the posterior's margin and sd. Rolls are never gated.
+    pub count_order_enabled: bool,
+    /// The count-order table, relative to `$SUSQ_HOME`.
+    pub count_order_path: PathBuf,
+    /// Lock-time rule: from `lock_window_start`, a race counted below `lock_max_reported_frac`
+    /// whose registered lock drift is at least `lock_min_drift_pts` with a band smaller than the
+    /// drift may be bought on the side the remaining count favours (normal threshold) on the last
+    /// posterior the needle sent, even after the needle has been quiet on it for longer than
+    /// `[needle] posterior_max_age_s`, while the needle as a whole is healthy and that posterior is
+    /// no older than `lock_posterior_max_age_s`.
+    pub lock_rule_enabled: bool,
+    pub lock_window_start: DateTime<Utc>,
+    pub lock_max_reported_frac: f64,
+    pub lock_min_drift_pts: f64,
+    pub lock_posterior_max_age_s: u64,
+    /// Leader/contender switch: once equity / 100,000 is at least this multiple the executor opens
+    /// no new positions and only rolls. `0` = off, the default: the field maximum on the night is
+    /// not observed, so there is no honest multiple to switch at.
+    pub contender_hedge_multiple: f64,
+}
+
+/// 2026-11-04T14:00:00Z: three hours before the 16:55Z last-order gate, rounded to the hour.
+fn default_lock_window_start() -> DateTime<Utc> {
+    DateTime::from_timestamp(1_793_800_800, 0).unwrap_or_default()
 }
 
 impl Default for EnCfg {
@@ -376,6 +404,14 @@ impl Default for EnCfg {
             feed_stale_s: 180,
             se_margin_err_pts: 1.0,
             night_budget_frac: 0.25,
+            count_order_enabled: true,
+            count_order_path: PathBuf::from("config/count_order.toml"),
+            lock_rule_enabled: true,
+            lock_window_start: default_lock_window_start(),
+            lock_max_reported_frac: 0.85,
+            lock_min_drift_pts: 1.5,
+            lock_posterior_max_age_s: 10_800,
+            contender_hedge_multiple: 0.0,
         }
     }
 }
@@ -615,6 +651,10 @@ impl Config {
                 "strategies.en.night_budget_frac",
                 self.strategies.en.night_budget_frac,
             ),
+            (
+                "strategies.en.lock_max_reported_frac",
+                self.strategies.en.lock_max_reported_frac,
+            ),
         ];
         for (name, v) in fracs
             .into_iter()
@@ -661,6 +701,11 @@ impl Config {
             ("strategies.en.se_mult", en.se_mult),
             ("strategies.en.roll_within_pts", en.roll_within_pts),
             ("strategies.en.se_margin_err_pts", en.se_margin_err_pts),
+            ("strategies.en.lock_min_drift_pts", en.lock_min_drift_pts),
+            (
+                "strategies.en.contender_hedge_multiple",
+                en.contender_hedge_multiple,
+            ),
         ] {
             if !(v.is_finite() && v >= 0.0) {
                 return bad(format!("{name} = {v} must be a finite non-negative number"));
@@ -674,6 +719,17 @@ impl Config {
         }
         if en.order_ttl_s == 0 || en.feed_stale_s == 0 {
             return bad("strategies.en.order_ttl_s and feed_stale_s must be > 0".into());
+        }
+        if en.lock_posterior_max_age_s < self.needle.posterior_max_age_s {
+            return bad(
+                "strategies.en.lock_posterior_max_age_s must be at least needle.posterior_max_age_s".into(),
+            );
+        }
+        if en.lock_window_start > self.calendar.last_order_utc {
+            return bad("strategies.en.lock_window_start must be before calendar.last_order_utc".into());
+        }
+        if en.count_order_path.as_os_str().is_empty() {
+            return bad("strategies.en.count_order_path must name the count-order table".into());
         }
         Ok(())
     }
@@ -835,6 +891,14 @@ mod tests {
         assert_eq!(en.feed_stale_s, 180);
         assert_eq!(en.se_margin_err_pts, 1.0);
         assert_eq!(en.night_budget_frac, 0.25);
+        assert!(en.count_order_enabled);
+        assert_eq!(en.count_order_path, PathBuf::from("config/count_order.toml"));
+        assert!(en.lock_rule_enabled);
+        assert_eq!(en.lock_window_start.to_rfc3339(), "2026-11-04T14:00:00+00:00");
+        assert_eq!(en.lock_max_reported_frac, 0.85);
+        assert_eq!(en.lock_min_drift_pts, 1.5);
+        assert_eq!(en.lock_posterior_max_age_s, 10_800);
+        assert_eq!(en.contender_hedge_multiple, 0.0, "the contender switch ships off");
         assert_eq!(*en, EnCfg::default(), "the file documents the Rust defaults");
         // The one line the runbook flips.
         let armed = text.replacen("enabled = false\nmin_edge_pts", "enabled = true\nmin_edge_pts", 1);
@@ -858,6 +922,24 @@ mod tests {
             ("en_glitch_pts = 40.0", "en_glitch_pts = 0.0"),
             ("en_glitch_pts = 40.0", "en_glitch_pts = 150.0"),
             ("feed_stale_s = 180", "feed_stale_s = 0"),
+            ("lock_max_reported_frac = 0.85", "lock_max_reported_frac = 1.5"),
+            ("lock_min_drift_pts = 1.5", "lock_min_drift_pts = -1.0"),
+            (
+                "lock_posterior_max_age_s = 10800",
+                "lock_posterior_max_age_s = 60",
+            ),
+            (
+                "lock_window_start = \"2026-11-04T14:00:00Z\"",
+                "lock_window_start = \"2026-11-05T14:00:00Z\"",
+            ),
+            (
+                "contender_hedge_multiple = 0.0",
+                "contender_hedge_multiple = -2.0",
+            ),
+            (
+                "count_order_path = \"config/count_order.toml\"",
+                "count_order_path = \"\"",
+            ),
         ] {
             let bad = text.replacen(from, to, 1);
             assert_ne!(bad, text, "{from} not found");

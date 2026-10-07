@@ -165,6 +165,26 @@ se_margin_err_pts = 1.0
 # push past it is refused like any other cap. Cash for it has to be free at 19:00 ET (EXP-003 or a manual
 # Nov 2 trim decides how; this knob only makes the budget explicit).
 night_budget_frac = 0.25
+# ── Count-order playbook (EXP-006, config/count_order.toml, docs/ELECTION_NIGHT.md §7) ─────────────────────
+# The needle's margin already projects the uncounted vote, so the table is NOT subtracted from it: it is a
+# direction check and a band. A buy that agrees with the registered direction of the count still to come
+# needs the threshold above; a buy against it (or in a race with no registered direction) needs the threshold
+# plus the band converted to probability through the posterior's margin and sd. Rolls are never gated.
+count_order_enabled = true
+count_order_path = "config/count_order.toml"
+# Lock-time rule: the contest pays on the final count, not the lock. From lock_window_start, a race counted
+# below lock_max_reported_frac whose registered lock drift is at least lock_min_drift_pts (band smaller than
+# the drift: CA, CA House seats, NV, PA) may be bought on the side the remaining count favours, at the normal
+# threshold, on the needle's last posterior for it even after posterior_max_age_s, while the needle is healthy
+# and that posterior is no older than lock_posterior_max_age_s. Sized like any other buy (night budget, caps).
+lock_rule_enabled = true
+lock_window_start = "2026-11-04T14:00:00Z"
+lock_max_reported_frac = 0.85
+lock_min_drift_pts = 1.5
+lock_posterior_max_age_s = 10800
+# Leader/contender switch: at equity / 100,000 >= this multiple, open no new positions and only roll.
+# 0 = off: the field maximum on the night is not observed, so there is no honest multiple to switch at.
+contender_hedge_multiple = 0.0
 
 [telemetry]
 leaderboard_interval_s = 3600
