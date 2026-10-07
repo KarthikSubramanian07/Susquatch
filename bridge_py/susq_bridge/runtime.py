@@ -169,7 +169,7 @@ class Bridge:
             recorder=Recorder(config.data_dir, clock=clock),
             status=StatusWriter(config.status_path, clock=clock),
             racer=Racer(gateway, market, config.racer, clock=clock),
-            sniper=Sniper(gateway, market, config.sniper, clock=clock),
+            sniper=Sniper(gateway, market, config.sniper, clock=clock, targets_dir=config.targets_dir),
             farquote=FarQuoter(gateway, market, config.farquote, clock=clock),
             clock=clock,
         )

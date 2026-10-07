@@ -8,11 +8,12 @@ directory, i.e. the repo checkout on the server).
 
 from __future__ import annotations
 
+import math
 import os
 import tomllib
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -98,6 +99,10 @@ class RacerConfig:
     max_relationship_notional_frac: float = 0.03
 
 
+#: EXP-003: the sniper stops buying and unwinds its book from here (Oct 24 12:00 EDT).
+UNWIND_FROM_UTC = datetime(2026, 10, 24, 16, 0, tzinfo=UTC)
+
+
 @dataclass(frozen=True)
 class SniperConfig:
     enabled: bool
@@ -105,6 +110,14 @@ class SniperConfig:
     max_mistake_frac: float
     order_ttl_s: float
     max_total_gross_frac: float  # the sniper stops adding once total exposure reaches this share of equity
+    #: EXP-003 unwind: from this instant no sniper buys, only covered sells of the unwind set (None = never).
+    unwind_from_utc: datetime | None = UNWIND_FROM_UTC
+    #: Sell at max(bid, fair - this many points), never below that floor.
+    unwind_max_haircut_pts: float = 2.0
+    #: Stop unwinding once cash is at least this share of equity.
+    unwind_target_cash_frac: float = 0.60
+    #: Proceeds of unwind sells sent in any trailing hour stay under this share of equity.
+    unwind_max_hourly_frac: float = 0.10
 
 
 @dataclass(frozen=True)
@@ -142,6 +155,7 @@ class BridgeConfig:
     status_path: Path
     market_map_path: Path
     fair_path: Path
+    targets_dir: Path
     leaderboard_interval_s: float
     price_snapshot_interval_s: float
     tape_interval_s: float
@@ -206,6 +220,7 @@ def load_config(home: Path | None = None, env: Mapping[str, str] | None = None) 
         raise ValueError(
             f'[risk] use_collateral_buying_power must be true, false or "auto", not {collateral!r}'
         )
+    sniper_cfg = _sniper(sniper)
     return BridgeConfig(
         home=root,
         platform=platform,
@@ -240,13 +255,7 @@ def load_config(home: Path | None = None, env: Mapping[str, str] | None = None) 
             refire_cooldown_s=float(racer.get("refire_cooldown_s", 30)),
             max_relationship_notional_frac=float(racer.get("max_relationship_notional_frac", 0.03)),
         ),
-        sniper=SniperConfig(
-            enabled=bool(sniper.get("enabled", True)),
-            min_edge_pts=float(sniper.get("min_edge_pts", 3.5)),
-            max_mistake_frac=float(sniper.get("max_mistake_frac", 0.01)),
-            order_ttl_s=float(sniper.get("order_ttl_s", 30)),
-            max_total_gross_frac=float(sniper.get("max_total_gross_frac", 0.35)),
-        ),
+        sniper=sniper_cfg,
         farquote=FarQuoteConfig(
             enabled=bool(farquote.get("enabled", False)),
             max_fair=float(farquote.get("max_fair", 0.05)),
@@ -269,6 +278,7 @@ def load_config(home: Path | None = None, env: Mapping[str, str] | None = None) 
         status_path=path(paths["status"]),
         market_map_path=path(paths["market_map"]),
         fair_path=state_dir / "fair_live.json",
+        targets_dir=path(str(raw.get("targets", {}).get("dir", "targets"))),
         leaderboard_interval_s=float(raw.get("telemetry", {}).get("leaderboard_interval_s", 3600)),
         price_snapshot_interval_s=float(raw.get("telemetry", {}).get("price_snapshot_interval_s", 60)),
         tape_interval_s=float(raw.get("telemetry", {}).get("tape_interval_s", 1800)),
@@ -276,3 +286,27 @@ def load_config(home: Path | None = None, env: Mapping[str, str] | None = None) 
         env=merged,
         api_key=merged.get("SUSQ_API_KEY", "").strip(),
     )
+
+
+def _sniper(raw: Mapping[str, Any]) -> SniperConfig:
+    """``[strategies.sniper]``; missing keys take the defaults Rust's ``SniperCfg`` also uses."""
+    start = raw.get("unwind_from_utc", UNWIND_FROM_UTC)
+    cfg = SniperConfig(
+        enabled=bool(raw.get("enabled", True)),
+        min_edge_pts=float(raw.get("min_edge_pts", 3.5)),
+        max_mistake_frac=float(raw.get("max_mistake_frac", 0.01)),
+        order_ttl_s=float(raw.get("order_ttl_s", 30)),
+        max_total_gross_frac=float(raw.get("max_total_gross_frac", 0.35)),
+        unwind_from_utc=_utc(start) if isinstance(start, str) else start,
+        unwind_max_haircut_pts=float(raw.get("unwind_max_haircut_pts", 2.0)),
+        unwind_target_cash_frac=float(raw.get("unwind_target_cash_frac", 0.60)),
+        unwind_max_hourly_frac=float(raw.get("unwind_max_hourly_frac", 0.10)),
+    )
+    for name in ("max_total_gross_frac", "unwind_target_cash_frac", "unwind_max_hourly_frac"):
+        v = getattr(cfg, name)
+        if not (math.isfinite(v) and 0.0 <= v <= 1.0):
+            raise ValueError(f"[strategies.sniper] {name} = {v} must be a fraction in [0, 1]")
+    h = cfg.unwind_max_haircut_pts
+    if not (math.isfinite(h) and 0.0 <= h <= 100.0):
+        raise ValueError(f"[strategies.sniper] unwind_max_haircut_pts = {h} must be in [0, 100]")
+    return cfg

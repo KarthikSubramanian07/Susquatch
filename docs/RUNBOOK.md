@@ -37,6 +37,21 @@ open by itself (`make logs S=bridge` shows `sleeping … until 2026-10-01T16:00:
 deliberate act: say **"go live"** in a Claude Code session (the `/go-live` pre-flight), which ends with
 `echo 'go live' > ops/GO_LIVE` and `SUSQ_MODE=live`. Watch the first qualifying trade appear under *recent trades*.
 
+### Oct 24 12:00 ET (16:00Z) to Nov 2: the sniper unwind (EXP-003)
+
+From the start time the sniper stops buying and sells its near-certain holdings, at most 2 pts under fair, until cash
+is 60% of equity. Neither trader needs a restart for it; both read the start from `[strategies.sniper] unwind_from_utc`.
+The rules are in [EXP-003](../experiments/EXP-003-late-october-sniper-unwind.md). After the Nov 2 cutover (§2a)
+rust-live carries on with the same rule; on the night it leaves the races the needle covers to the executor.
+
+- **Normal:** *recent trades* shows sniper **sells** at 0.90 or above. Cash on the dashboard climbs a few percent of
+  equity an hour at most (10% of equity per hour is the cap) and then levels off at about 60%.
+- **Look:** `grep sniper_unwind journal/$(date -u +%F)/bridge.journal.jsonl | tail`. Each line shows the limit, the
+  floor and `haircutPips`, which should never exceed 200. A `sniper_unwind_state` line names why it paused:
+  `cash_target` means done; `targets_unreadable` means the targets file is broken, so fix that first.
+- **Act:** if it sells a scenario leg, or anything at a price below fair minus 2 pts, `touch ops/KILL`. To pause only
+  the unwind, set `unwind_from_utc` to a later time in `config/susq.toml` and `make up` (or restart the trader).
+
 ## 2. Election night: Nov 3 17:00 ET → Nov 4 11:55 ET
 
 DST ended Nov 1, so **ET = UTC−5** all night. The lock is **12:00 ET (17:00Z)**; the last order is **11:55 ET (16:55Z)**,

@@ -244,10 +244,22 @@ pub struct SniperCfg {
     pub max_mistake_frac: f64,
     pub order_ttl_s: u64,
     /// The sniper stops adding once positions at mark plus resting orders reach this share of
-    /// equity (it never sells, so left alone it would fill every cap and starve the far quoter
-    /// and the scenario book).
+    /// equity (before the unwind it never sells, so left alone it would fill every cap and starve
+    /// the far quoter and the scenario book).
     pub max_total_gross_frac: f64,
+    /// EXP-003: from this instant (RFC 3339) the sniper buys nothing and unwinds its book with
+    /// covered sells; `None` means never.
+    pub unwind_from_utc: Option<DateTime<Utc>>,
+    /// Unwind sells are priced at `max(bid, fair - this many points)`, never below that floor.
+    pub unwind_max_haircut_pts: f64,
+    /// The unwind stops once cash is at least this share of equity.
+    pub unwind_target_cash_frac: f64,
+    /// Proceeds of unwind sells sent in any trailing hour stay under this share of equity.
+    pub unwind_max_hourly_frac: f64,
 }
+
+/// 2026-10-24T16:00:00Z (Oct 24 12:00 EDT), when EXP-003's unwind starts.
+pub const SNIPER_UNWIND_FROM_S: i64 = 1_792_857_600;
 
 impl Default for SniperCfg {
     fn default() -> Self {
@@ -257,6 +269,10 @@ impl Default for SniperCfg {
             max_mistake_frac: 0.01,
             order_ttl_s: 30,
             max_total_gross_frac: 0.35,
+            unwind_from_utc: DateTime::from_timestamp(SNIPER_UNWIND_FROM_S, 0),
+            unwind_max_haircut_pts: 2.0,
+            unwind_target_cash_frac: 0.60,
+            unwind_max_hourly_frac: 0.10,
         }
     }
 }
@@ -601,6 +617,14 @@ impl Config {
                 "strategies.sniper.max_total_gross_frac",
                 self.strategies.sniper.max_total_gross_frac,
             ),
+            (
+                "strategies.sniper.unwind_target_cash_frac",
+                self.strategies.sniper.unwind_target_cash_frac,
+            ),
+            (
+                "strategies.sniper.unwind_max_hourly_frac",
+                self.strategies.sniper.unwind_max_hourly_frac,
+            ),
             ("strategies.farquote.max_fair", self.strategies.farquote.max_fair),
             (
                 "strategies.farquote.reserve_frac",
@@ -654,6 +678,12 @@ impl Config {
         }
         if fq.order_ttl_s == 0 || fq.interval_s == 0 {
             return bad("strategies.farquote.order_ttl_s and interval_s must be > 0".into());
+        }
+        let haircut = self.strategies.sniper.unwind_max_haircut_pts;
+        if !(haircut.is_finite() && (0.0..=100.0).contains(&haircut)) {
+            return bad(format!(
+                "strategies.sniper.unwind_max_haircut_pts = {haircut} must be in [0, 100]"
+            ));
         }
         let en = &self.strategies.en;
         for (name, v) in [
@@ -866,6 +896,58 @@ mod tests {
                 "{to} should be rejected"
             );
         }
+    }
+
+    /// EXP-003: the shipped `[strategies.sniper]` spells out the unwind and equals the Rust
+    /// defaults (which equal the bridge's `SniperConfig` defaults), and unsafe values are refused.
+    #[test]
+    fn sniper_unwind_ships_explicit_and_equal_to_the_defaults() {
+        let text = shared_toml();
+        let cfg = Config::from_toml_str(&text).expect("valid shared config");
+        let sniper = &cfg.strategies.sniper;
+        assert_eq!(
+            sniper.unwind_from_utc.map(|t| t.to_rfc3339()).as_deref(),
+            Some("2026-10-24T16:00:00+00:00")
+        );
+        assert_eq!(sniper.unwind_max_haircut_pts, 2.0);
+        assert_eq!(sniper.unwind_target_cash_frac, 0.60);
+        assert_eq!(sniper.unwind_max_hourly_frac, 0.10);
+        assert_eq!(
+            *sniper,
+            SniperCfg::default(),
+            "the file documents the Rust defaults"
+        );
+        for key in [
+            "unwind_from_utc",
+            "unwind_max_haircut_pts",
+            "unwind_target_cash_frac",
+            "unwind_max_hourly_frac",
+        ] {
+            assert!(text.contains(&format!("\n{key} = ")), "{key} must be explicit");
+        }
+        for (from, to) in [
+            ("unwind_max_haircut_pts = 2.0", "unwind_max_haircut_pts = -1.0"),
+            ("unwind_max_haircut_pts = 2.0", "unwind_max_haircut_pts = nan"),
+            ("unwind_target_cash_frac = 0.60", "unwind_target_cash_frac = 1.5"),
+            ("unwind_max_hourly_frac = 0.10", "unwind_max_hourly_frac = -0.1"),
+        ] {
+            let bad = text.replacen(from, to, 1);
+            assert_ne!(bad, text, "{from} not found");
+            assert!(
+                matches!(Config::from_toml_str(&bad), Err(ConfigError::Invalid(_))),
+                "{to} should be rejected"
+            );
+        }
+        let bad = text.replacen(
+            "unwind_from_utc = \"2026-10-24T16:00:00Z\"",
+            "unwind_from_utc = \"Oct 24\"",
+            1,
+        );
+        assert_ne!(bad, text);
+        assert!(
+            Config::from_toml_str(&bad).is_err(),
+            "an unparseable start is refused"
+        );
     }
 
     #[test]

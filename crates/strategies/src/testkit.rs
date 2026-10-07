@@ -23,6 +23,7 @@ pub fn p(raw: u32) -> Pips {
 pub struct World {
     pub now_ns: i64,
     pub equity: f64,
+    pub cash: Option<f64>,
     pub books: BookStore,
     pub book_max_age_ns: i64,
     pub positions: HashMap<ExchangeId, i64>,
@@ -46,6 +47,7 @@ impl World {
         Self {
             now_ns: NOW_S * NS_PER_S,
             equity,
+            cash: None,
             books: BookStore::new(),
             book_max_age_ns: 10 * NS_PER_S,
             positions: HashMap::new(),
@@ -74,6 +76,7 @@ impl World {
         Snapshot {
             now_ns: self.now_ns,
             equity: self.equity,
+            cash: self.cash,
             books: &self.books,
             book_max_age_ns: self.book_max_age_ns,
             positions: &self.positions,

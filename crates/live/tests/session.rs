@@ -681,6 +681,59 @@ async fn a_malformed_fair_file_is_refused_and_the_old_values_age_out() {
     assert_eq!(s.intents("sniper").len(), 2, "once they age out, nothing more");
 }
 
+/// EXP-003 through the whole engine, live against the mock's matching engine: the account holds a
+/// near-certain CA-GOV leg; before the unwind start the sniper leaves it alone, after it the engine
+/// sells the holding into the bid (within the 2-pt haircut) and never sells more than it holds.
+#[tokio::test]
+async fn the_sniper_unwinds_a_near_certain_holding_after_the_start() {
+    let tweak = |cfg: &mut Config| {
+        // The session clock is Oct 8; start the unwind an hour in.
+        cfg.strategies.sniper.unwind_from_utc = Some("2026-10-08T17:00:00Z".parse().expect("ts"));
+        // The mock account is almost all cash; ask for all of it so the holding may go.
+        cfg.strategies.sniper.unwind_target_cash_frac = 1.0;
+        cfg.strategies.farquote.enabled = false;
+        cfg.strategies.racer.enabled = false;
+    };
+    let mut s = session_in(
+        Mode::Live,
+        tweak,
+        |home, clock| {
+            std::fs::create_dir_all(home.join("ops")).expect("mkdir");
+            std::fs::write(home.join("ops/GO_LIVE"), "go live\n").expect("arm");
+            write_fair(home, clock.now_ns(), &[("6", 0.98)]);
+        },
+        None,
+    )
+    .await;
+    // The account buys bob's 100 YES at 0.99 (the next step's reconcile picks it up).
+    s.mock
+        .seed_order(CALLER, "6", Side::Yes, Action::Buy, 100, px(9900));
+    s.tick(1).await;
+    assert_eq!(s.paper_position("6").await, 100);
+    assert!(s.intents("sniper").is_empty(), "nothing is sold before the start");
+
+    s.clock.advance(Duration::from_secs(3600));
+    write_fair(s.home.path(), s.clock.now_ns(), &[("6", 0.98)]);
+    s.tick(1).await;
+    let sells = s.intents("sniper");
+    assert_eq!(sells.len(), 1, "{sells:?}");
+    assert!(sells[0].0.starts_with("sniper:6:unwind:"), "{sells:?}");
+    assert_eq!(
+        sells[0].1,
+        OrderState::Filled,
+        "alice's 0.97 bid is within 2 pts of 0.98"
+    );
+    assert_eq!(
+        s.paper_position("6").await,
+        0,
+        "sold exactly what it held, never short"
+    );
+
+    write_fair(s.home.path(), s.clock.now_ns() + S, &[("6", 0.98)]);
+    s.tick(31).await;
+    assert_eq!(s.intents("sniper").len(), 1, "nothing left to unwind");
+}
+
 // ───────────────────────────── far quoter ─────────────────────────────
 
 /// The far quoter's cadence from the shared config, in whole seconds for `tick`.
