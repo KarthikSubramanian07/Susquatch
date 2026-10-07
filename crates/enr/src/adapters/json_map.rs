@@ -63,6 +63,19 @@ pub struct JsonMapping {
     /// Source timestamp (RFC 3339 or Clarity-style local time).
     #[serde(default)]
     pub source_ts: Option<String>,
+    /// Root path to a string holding the real document, base64-encoded JSON (Texas' Civix
+    /// results API wraps every payload as `{"upload": "<base64>"}`). Paths then apply to the
+    /// decoded document.
+    #[serde(default)]
+    pub unwrap_base64: Option<String>,
+    /// Sum rows that land on the same (race, county, vote type) into one result. Needed for flat
+    /// feeds with one row per (county, contest, candidate), such as Arizona's.
+    #[serde(default)]
+    pub merge_rows: bool,
+    /// Without a party path (or when it is empty), take the party from a trailing
+    /// parenthesised code in the candidate name: `"Gallego, Ruben (DEM)"` gives `DEM`.
+    #[serde(default)]
+    pub party_from_name: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -245,6 +258,9 @@ pub struct CompiledMapping {
     pub precincts_reporting: Option<Path>,
     pub precincts_total: Option<Path>,
     pub source_ts: Option<Path>,
+    pub unwrap_base64: Option<Path>,
+    pub merge_rows: bool,
+    pub party_from_name: bool,
 }
 
 impl JsonMapping {
@@ -281,6 +297,9 @@ impl JsonMapping {
             precincts_reporting: opt(&self.precincts_reporting)?,
             precincts_total: opt(&self.precincts_total)?,
             source_ts: opt(&self.source_ts)?,
+            unwrap_base64: opt(&self.unwrap_base64)?,
+            merge_rows: self.merge_rows,
+            party_from_name: self.party_from_name,
             rows,
         };
         let n = m.rows.wildcards();
@@ -377,6 +396,9 @@ mod tests {
             precincts_reporting: None,
             precincts_total: None,
             source_ts: None,
+            unwrap_base64: None,
+            merge_rows: false,
+            party_from_name: false,
         };
         assert!(m.compile().is_err());
         m.race = "^0.name".into();

@@ -59,6 +59,31 @@ impl EnrConfig {
             if let SourceKind::EnhancedVoting { .. } = &s.kind {
                 validate_enhanced_voting(s)?;
             }
+            if let SourceKind::StaticJson {
+                urls,
+                version_url,
+                version_path,
+                ..
+            } = &s.kind
+            {
+                let bad = |what: &str| Err(ConfigError::Invalid(format!("source {:?}: {what}", s.id)));
+                match (version_url, version_path) {
+                    (None, None) => {
+                        if urls.iter().any(|u| u.contains("{version}")) {
+                            return bad("{version} in urls needs version_url and version_path");
+                        }
+                    }
+                    (Some(_), Some(p)) => {
+                        if crate::adapters::json_map::Path::parse(p).is_err() {
+                            return bad("version_path is not a path");
+                        }
+                        if urls.is_empty() || !urls.iter().all(|u| u.contains("{version}")) {
+                            return bad("with version_url every url must contain {version}");
+                        }
+                    }
+                    _ => return bad("version_url and version_path go together"),
+                }
+            }
         }
         for r in &self.races {
             if r.race_id.trim().is_empty() || r.contest.trim().is_empty() {
@@ -260,6 +285,14 @@ pub enum SourceKind {
     /// Any static JSON document, mapped with [`JsonMapping`].
     StaticJson {
         urls: Vec<String>,
+        /// Optional version document fetched before `urls` (e.g. Arizona's
+        /// `election_<eid>_0.json`, whose `uploadId` names the current upload). The value at
+        /// `version_path` replaces `{version}` in every url; a lower numeric version than the
+        /// last one is refused as a regression, like Clarity's.
+        #[serde(default)]
+        version_url: Option<String>,
+        #[serde(default)]
+        version_path: Option<String>,
         mapping: Box<JsonMapping>,
     },
     /// A delimited results file (CSV/TSV, plain or zipped), mapped by column name with

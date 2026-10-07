@@ -4,19 +4,30 @@ use std::collections::BTreeMap;
 
 use async_trait::async_trait;
 use serde_json::Value;
-use susq_contracts::v1::{CandidateVotes, VoteType};
+use susq_contracts::v1::{CandidateVotes, CountyResult, VoteType};
 
-use super::json_map::{CompiledMapping, as_text, expand_rows, select, select_one};
-use super::{AdapterContext, ParseError, Parsed, PollOutput, ResultsSource, SourceError, poll_url_list};
-use crate::http::HttpClient;
+use super::json_map::{CompiledMapping, Path, as_text, expand_rows, select, select_one};
+use super::{
+    AdapterContext, ParseError, Parsed, PollOutput, RawPayload, ResultsSource, SourceError, poll_url_list,
+};
+use crate::http::{Fetched, HttpClient};
 use crate::model::{classify_vote_type, normalize_party, parse_count, parse_source_ts};
 
-/// Polls a fixed list of JSON documents.
+/// Polls a fixed list of JSON documents, optionally behind a version document.
 pub struct StaticJsonSource {
     ctx: AdapterContext,
     urls: Vec<String>,
     mapping: CompiledMapping,
     http: HttpClient,
+    version: Option<VersionedUrls>,
+    last_version: Option<String>,
+}
+
+/// A version document whose value (at `path`) is substituted for `{version}` in the urls.
+#[derive(Debug, Clone)]
+pub struct VersionedUrls {
+    pub url: String,
+    pub path: Path,
 }
 
 impl StaticJsonSource {
@@ -26,8 +37,85 @@ impl StaticJsonSource {
             urls,
             mapping,
             http,
+            version: None,
+            last_version: None,
         }
     }
+
+    /// Resolve `{version}` in the urls from a version document before every poll.
+    pub fn with_version(mut self, version: Option<VersionedUrls>) -> Self {
+        self.version = version;
+        self
+    }
+
+    /// Fetch the version document; returns the version and its fresh body (if not a 304).
+    async fn current_version(
+        &mut self,
+        v: &VersionedUrls,
+    ) -> Result<(String, Option<RawPayload>), SourceError> {
+        let malformed = |reason: String| SourceError::Malformed {
+            url: v.url.clone(),
+            reason,
+        };
+        let body = match self.http.get(&v.url).await {
+            Ok(Fetched::Body(b)) => b,
+            Ok(Fetched::NotModified) => {
+                return match &self.last_version {
+                    Some(last) => Ok((last.clone(), None)),
+                    None => {
+                        self.http.invalidate(&v.url);
+                        Err(malformed("304 before any version was read".into()))
+                    }
+                };
+            }
+            Err(source) => {
+                return Err(SourceError::Fetch {
+                    url: v.url.clone(),
+                    source,
+                });
+            }
+        };
+        let parsed = parse_version(&body, &v.path);
+        let version = match parsed {
+            Ok(ver) => ver,
+            Err(e) => {
+                self.http.invalidate(&v.url);
+                return Err(malformed(e.0));
+            }
+        };
+        if let Some(last) = &self.last_version
+            && let (Ok(prev), Ok(got)) = (last.parse::<u64>(), version.parse::<u64>())
+            && got < prev
+        {
+            self.http.invalidate(&v.url);
+            return Err(SourceError::VersionRegression { prev, got });
+        }
+        Ok((
+            version,
+            Some(RawPayload {
+                url: v.url.clone(),
+                body,
+            }),
+        ))
+    }
+}
+
+/// The version value in a version document: a scalar at `path`, path-safe (letters, digits,
+/// `.`, `_`, `-`) so it can only ever fill one url segment.
+pub fn parse_version(body: &[u8], path: &Path) -> Result<String, ParseError> {
+    let root: Value = serde_json::from_slice(body)?;
+    let v = select_one(path, &root, &[], &root)
+        .and_then(as_text)
+        .map(|s| s.trim().to_owned())
+        .ok_or_else(|| ParseError("version document has no scalar at the version path".into()))?;
+    if v.is_empty()
+        || !v
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'_' || b == b'-')
+    {
+        return Err(ParseError(format!("version {v:?} is not path-safe")));
+    }
+    Ok(v)
 }
 
 #[async_trait]
@@ -37,11 +125,29 @@ impl ResultsSource for StaticJsonSource {
     }
 
     async fn poll(&mut self) -> Result<PollOutput, SourceError> {
+        let (urls, version_raw) = match self.version.clone() {
+            None => (self.urls.clone(), None),
+            Some(v) => {
+                let (ver, raw) = self.current_version(&v).await?;
+                let urls = self.urls.iter().map(|u| u.replace("{version}", &ver)).collect();
+                (urls, raw.map(|r| (ver, r)))
+            }
+        };
         let (ctx, mapping) = (&self.ctx, &self.mapping);
-        poll_url_list(&mut self.http, &self.urls, |body, observed| {
+        let mut out = poll_url_list(&mut self.http, &urls, |body, observed| {
             parse(body, mapping, ctx, observed)
         })
-        .await
+        .await?;
+        if let Some((ver, raw)) = version_raw {
+            out.raw.insert(0, raw);
+            // Advance only once the versioned documents parsed; a bad upload is retried.
+            if out.malformed_payloads == 0 {
+                self.last_version = Some(ver);
+            } else if let Some(v) = &self.version {
+                self.http.invalidate(&v.url);
+            }
+        }
+        Ok(out)
     }
 }
 
@@ -55,7 +161,51 @@ pub fn parse(
     observed_at_ns: i64,
 ) -> Result<Parsed, ParseError> {
     let root: Value = serde_json::from_slice(body)?;
-    parse_value(&root, m, ctx, observed_at_ns)
+    match &m.unwrap_base64 {
+        None => parse_value(&root, m, ctx, observed_at_ns),
+        Some(p) => {
+            let encoded = select_one(p, &root, &[], &root)
+                .and_then(Value::as_str)
+                .ok_or_else(|| ParseError("unwrap_base64: no string at the configured path".into()))?;
+            let decoded = decode_base64(encoded)?;
+            let inner: Value = serde_json::from_slice(&decoded)?;
+            parse_value(&inner, m, ctx, observed_at_ns)
+        }
+    }
+}
+
+/// Standard or URL-safe base64, padding optional, ASCII whitespace ignored.
+pub fn decode_base64(s: &str) -> Result<Vec<u8>, ParseError> {
+    let mut out = Vec::with_capacity(s.len() / 4 * 3);
+    let (mut acc, mut bits) = (0u32, 0u32);
+    for b in s.bytes() {
+        let v = match b {
+            b'A'..=b'Z' => b - b'A',
+            b'a'..=b'z' => b - b'a' + 26,
+            b'0'..=b'9' => b - b'0' + 52,
+            b'+' | b'-' => 62,
+            b'/' | b'_' => 63,
+            b'=' => break,
+            b if b.is_ascii_whitespace() => continue,
+            _ => return Err(ParseError(format!("base64: unexpected byte 0x{b:02x}"))),
+        };
+        acc = (acc << 6) | u32::from(v);
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((acc >> bits) as u8);
+            acc &= (1 << bits) - 1;
+        }
+    }
+    Ok(out)
+}
+
+/// `"Gallego, Ruben (DEM)"` → `"DEM"`; `None` without a trailing parenthesised code.
+fn party_suffix(name: &str) -> Option<&str> {
+    let inner = name.trim_end().strip_suffix(')')?;
+    let open = inner.rfind('(')?;
+    let code = inner[open + 1..].trim();
+    (!code.is_empty()).then_some(code)
 }
 
 /// [`parse`] over an already-decoded document, for adapters that inspect the payload first
@@ -108,13 +258,19 @@ pub fn parse_value(
                 .and_then(as_text)
                 .ok_or_else(|| ParseError(format!("{contest}/{county_raw}: candidate without a name")))?;
             let name = name.trim().to_owned();
-            let party = normalize_party(
-                &m.candidate_party
-                    .as_ref()
-                    .and_then(|p| select_one(p, root, &binds, cand))
-                    .and_then(as_text)
-                    .unwrap_or_default(),
-            );
+            let party_raw = m
+                .candidate_party
+                .as_ref()
+                .and_then(|p| select_one(p, root, &binds, cand))
+                .and_then(as_text)
+                .filter(|p| !p.trim().is_empty())
+                .or_else(|| {
+                    m.party_from_name
+                        .then(|| party_suffix(&name).map(str::to_owned))
+                        .flatten()
+                })
+                .unwrap_or_default();
+            let party = normalize_party(&party_raw);
             let bad_votes = || ParseError(format!("{contest}/{county_raw}: bad votes for {name}"));
             let mut add = |vt: VoteType, v: u64| {
                 let list = by_type.entry(vt as i32).or_default();
@@ -190,7 +346,43 @@ pub fn parse_value(
             ));
         }
     }
+    if m.merge_rows {
+        out.results = merge_results(std::mem::take(&mut out.results));
+    }
     Ok(out)
+}
+
+/// Sum results that share (race, county, vote type): candidates by (name, party), precincts and
+/// timestamps by maximum. A row's total may repeat the contest total (Arizona's
+/// `ContestTotalVotes`), so merged totals are cleared and validation recomputes them from the
+/// candidates. Output order follows first appearance.
+fn merge_results(results: Vec<CountyResult>) -> Vec<CountyResult> {
+    let mut index: BTreeMap<(String, String, i32), usize> = BTreeMap::new();
+    let mut out: Vec<CountyResult> = Vec::new();
+    for r in results {
+        let key = (r.race_id.clone(), r.county_fips.clone(), r.vote_type);
+        let Some(&i) = index.get(&key) else {
+            index.insert(key, out.len());
+            out.push(r);
+            continue;
+        };
+        let acc = &mut out[i];
+        for c in r.votes {
+            match acc
+                .votes
+                .iter_mut()
+                .find(|a| a.candidate == c.candidate && a.party == c.party)
+            {
+                Some(a) => a.votes = a.votes.saturating_add(c.votes),
+                None => acc.votes.push(c),
+            }
+        }
+        acc.total_votes = 0;
+        acc.precincts_reporting = acc.precincts_reporting.max(r.precincts_reporting);
+        acc.precincts_total = acc.precincts_total.max(r.precincts_total);
+        acc.source_ts_ns = acc.source_ts_ns.max(r.source_ts_ns);
+    }
+    out
 }
 
 #[cfg(test)]
@@ -225,6 +417,9 @@ mod tests {
             precincts_reporting: Some("reporting".into()),
             precincts_total: Some("precincts".into()),
             source_ts: Some("$.updated".into()),
+            unwrap_base64: None,
+            merge_rows: false,
+            party_from_name: false,
         }
         .compile()
         .expect("compile")
@@ -284,6 +479,9 @@ mod tests {
             precincts_reporting: None,
             precincts_total: None,
             source_ts: None,
+            unwrap_base64: None,
+            merge_rows: false,
+            party_from_name: false,
         }
         .compile()
         .expect("compile");
