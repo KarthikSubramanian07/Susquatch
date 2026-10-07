@@ -54,6 +54,7 @@ fn limits() -> RiskLimits {
         glitch_through_fair: 0.15,
         glitch_max_frac: 0.02,
         needle_glitch_through_fair: 0.40,
+        needle_budget_frac: None,
     }
 }
 
@@ -138,6 +139,7 @@ proptest! {
             markets: &markets,
             locked: &locked,
             glitch_used: 0.0,
+            needle_used: 0.0,
             cash: None,
             bundle_cost: None,
         };

@@ -466,6 +466,14 @@ The first sample drill on 2026-09-28 used the reference backend, all three chaos
   the last one for `[needle] posterior_max_age_s` (600 s) while heartbeats keep the needle healthy. With `--election` the executor also
   refuses disputed races and places no new buys where every mapped source is stale (`[strategies.en] feed_stale_s`); without the pollers
   (a replay published straight onto the bus) neither gate applies. Both gates are unit-tested and have not yet run against the real stack.
+- **Buy threshold and the night budget:** a buy needs `q − ask ≥ max(min_edge_pts, se_mult × SE)`. SE now comes from the posterior's own
+  margin by the delta method, `phi(margin_mean / margin_sd) × se_margin_err_pts / margin_sd` (the move in `q` for a one-point model error),
+  so a narrow lead at a tight sd is treated as fragile however many batches are in, and a race called by several sd trades on the 8-point
+  floor; a posterior without `margin_sd` falls back to `sqrt(q(1−q)/(1+n_batches))`. Risk caps what needle-derived buys may have deployed at
+  once at `[strategies.en] night_budget_frac` of equity (bought or resting at their limit, less roll proceeds). After a restart, closed
+  election-night orders are counted as fully bought, so the cap can only bind harder. `crates/live/tests/session.rs` drives a real
+  `NeedleState` into the engine: a posterior with edge produces a filled buy on the mock exchange, heartbeat silence cancels the working
+  order and blocks new ones despite fresh size on the book, and trading resumes only after the resume streak and a fresh posterior.
 
 ## Sources (all accessed 2026-09-28)
 

@@ -139,7 +139,7 @@ max_hourly_notional_frac = 0.02    # stop once the trailing hour's tranches exce
 # OFF until the night: at the Nov 3 17:00 ET pre-flight flip the next line to `enabled = true` (nothing else).
 enabled = false
 min_edge_pts = 8.0                 # buy only when posterior − ask ≥ this many points ...
-se_mult = 3.0                      # ... and ≥ this many model standard errors (sqrt(q(1−q)/(1+n_batches)))
+se_mult = 3.0                      # ... and ≥ this many model standard errors (see se_margin_err_pts below)
 roll_within_pts = 2.0              # sell a held side once its bid is within this many points of the posterior
 require_corroboration = true       # a buy needs ≥ 2 county batches or a same-direction real-money fair move
 max_order_frac = 0.02              # notional per order as a share of equity (also bounded by [risk])
@@ -153,6 +153,18 @@ en_glitch_pts = 40.0
 # three polls in a row, or never polled, gets no new buys (rolls of held legs still happen). A race whose
 # sources disagree beyond [consistency] is disputed: the executor refuses it and cancels its resting orders.
 feed_stale_s = 180
+# ── Model SE and the night budget (readiness audit gaps #11 and #10) ──────────────────────────────────────
+# The model standard error behind se_mult comes from the posterior's own margin uncertainty: with margin_mean m
+# and margin_sd s (points), SE(q) = phi(m / s) × se_margin_err_pts / s, the delta-method move in the win
+# probability for a model error of se_margin_err_pts points in the margin. A toss-up with a tight sd is
+# fragile (large SE, no buy); a race called by many sd is not. 0 keeps the old batch-count proxy
+# sqrt(q(1−q)/(1+n_batches)), which is also the fallback for a posterior without margin_sd.
+se_margin_err_pts = 1.0
+# Share of equity the executor may have deployed in needle-derived orders at any time across the night
+# (buys at their limit, filled or resting, net of what rolls sold back). Enforced by risk: a buy that would
+# push past it is refused like any other cap. Cash for it has to be free at 19:00 ET (EXP-003 or a manual
+# Nov 2 trim decides how; this knob only makes the budget explicit).
+night_budget_frac = 0.25
 
 [telemetry]
 leaderboard_interval_s = 3600

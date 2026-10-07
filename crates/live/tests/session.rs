@@ -1016,3 +1016,208 @@ async fn realtime_books_are_applied_by_version_and_market_resyncs_stay_scoped() 
     s.tick(1).await;
     assert!(s.engine.world.books.is_dirty(&ex4));
 }
+
+// ── Election night: a real needle state machine on the same watch channel production uses ──────
+
+/// The needle as the engine sees it: the pure monitor state, published on a watch channel the way
+/// `NeedleMonitor` publishes it. Messages carry the session clock so liveness is judged for real,
+/// and each subject numbers its own messages, as `susq-needle` does (the watchdog checks gaps).
+struct FakeNeedle {
+    state: susq_bus::NeedleState,
+    tx: tokio::sync::watch::Sender<susq_bus::NeedleSnapshot>,
+    heartbeat_seq: u64,
+    posterior_seq: u64,
+}
+
+impl FakeNeedle {
+    fn new(cfg: &Config, now: i64) -> (Self, tokio::sync::watch::Receiver<susq_bus::NeedleSnapshot>) {
+        let races = ["2026-SEN-OH", "2026-GOV-TX", "2026-GOV-CA"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        let state = susq_bus::NeedleState::new(susq_bus::WatchdogCfg::from_config(&cfg.needle), races)
+            .with_posterior_ttl(Duration::from_secs(cfg.needle.posterior_max_age_s));
+        let (tx, rx) = tokio::sync::watch::channel(state.snapshot(now));
+        (
+            Self {
+                state,
+                tx,
+                heartbeat_seq: 0,
+                posterior_seq: 0,
+            },
+            rx,
+        )
+    }
+
+    fn header(seq: u64, now: i64) -> Option<Header> {
+        Some(Header {
+            schema_version: susq_contracts::SCHEMA_VERSION,
+            produced_at_ns: now,
+            producer: Some(Producer {
+                name: "needle".into(),
+                git_sha: "test".into(),
+            }),
+            seq,
+        })
+    }
+
+    fn publish(&mut self, now: i64) {
+        self.state.on_tick(now);
+        let _ = self.tx.send(self.state.snapshot(now));
+    }
+
+    fn heartbeat(&mut self, now: i64) {
+        self.heartbeat_seq += 1;
+        let header = Self::header(self.heartbeat_seq, now);
+        self.state.on_message(
+            susq_bus::NeedleMessage::Heartbeat(v1::Heartbeat {
+                header,
+                status: "ok".into(),
+                last_input_seq: 0,
+            }),
+            now,
+        );
+        self.publish(now);
+    }
+
+    /// One posterior: Democrat wins `race` with `p_dem`, the margin it rests on, `n_batches` batches.
+    fn posterior(
+        &mut self,
+        now: i64,
+        race: &str,
+        p_dem: f64,
+        margin_mean: f64,
+        margin_sd: f64,
+        n_batches: u32,
+    ) {
+        self.posterior_seq += 1;
+        let header = Self::header(self.posterior_seq, now);
+        self.state.on_message(
+            susq_bus::NeedleMessage::Posteriors(v1::RacePosteriors {
+                header,
+                races: vec![v1::RacePosterior {
+                    race_id: race.into(),
+                    p_dem,
+                    p_rep: 1.0 - p_dem,
+                    margin_mean,
+                    margin_sd,
+                    n_batches,
+                    reported_frac: 0.6,
+                    ..Default::default()
+                }],
+            }),
+            now,
+        );
+        self.publish(now);
+    }
+}
+
+/// Readiness audit step I. The election-night executor turns a bus posterior into a real order on
+/// the exchange, goes quiet the moment the needle's heartbeat stops (even with fresh edge on the
+/// book), and comes back only after the watchdog's resume streak and a fresh posterior.
+#[tokio::test]
+async fn needle_posterior_drives_an_election_night_buy_and_silence_stops_it() {
+    let home = tempfile::tempdir().expect("tmp");
+    let mut cfg = config();
+    cfg.strategies.en.enabled = true;
+    let clock = ManualClock::at("2026-10-08T16:00:00Z".parse().expect("ts"));
+    let mock = Arc::new(MockPlatform::new(
+        Arc::new(clock.clone()),
+        MockConfig {
+            tournament_id: TID.into(),
+            slug: SLUG.into(),
+            starting_balance: 100_000.0,
+            member_count: 1200,
+            page_size: 200,
+            collateral: true,
+        },
+    ));
+    seed(&mock);
+    write_market_map(home.path(), &cfg);
+    let (mut needle, rx) = FakeNeedle::new(&cfg, clock.now_ns());
+    let mut engine = build(BuildOpts {
+        cfg: cfg.clone(),
+        home: home.path().to_owned(),
+        mode: Mode::Paper,
+        clock: Arc::new(clock.clone()),
+        platform: mock.clone(),
+        journal: Journal::discard(),
+        tournament: TournamentId::new(TID),
+        paper_balance: 100_000.0,
+        realtime: None,
+        needle: Some(rx),
+        enr: None,
+        host: "test".into(),
+        pid: 1,
+        kill: None,
+    })
+    .expect("engine");
+    engine.bootstrap().await;
+    let mut s = Session {
+        home,
+        clock,
+        mock,
+        engine,
+    };
+
+    // Healthy needle, Texas governor counted 60% with the Democrat 5 ± 3 ahead (q = 0.95) on three
+    // county batches. The Cup still asks 0.03 for the Democrat: the trade the executor exists for.
+    for _ in 0..cfg.needle.resume_after_healthy {
+        needle.heartbeat(s.clock.now_ns());
+    }
+    needle.posterior(s.clock.now_ns(), "2026-GOV-TX", 0.95, 5.0, 3.0, 3);
+    s.tick(1).await;
+    s.tick(1).await;
+    let en: Vec<_> = s.intents("en");
+    assert!(
+        !en.is_empty(),
+        "a posterior with 90 points of edge must produce an election-night buy"
+    );
+    assert!(
+        s.paper_position("5").await > 0,
+        "the buy filled against the 0.03 ask on the Texas Democrat"
+    );
+    let placed = en.len();
+
+    // The needle goes silent for longer than heartbeat_timeout_s. Fresh size appears at 0.03.
+    // Nothing needle-derived may be sent: the posterior is no longer trusted.
+    s.mock
+        .seed_order("carol", "5", Side::Yes, Action::Sell, 100, px(300));
+    s.clock
+        .advance(Duration::from_secs(cfg.needle.heartbeat_timeout_s + 2));
+    needle.publish(s.clock.now_ns());
+    s.tick(1).await;
+    s.tick(1).await;
+    assert_eq!(s.intents("en").len(), placed, "a silent needle places nothing");
+    assert!(
+        s.intents("en").iter().all(|(_, state)| !state.is_live()),
+        "every needle-derived order still working when the needle fell silent was cancelled"
+    );
+    let health = status::snapshot(&s.engine, s.clock.now_ns(), 1).health;
+    let item = health
+        .iter()
+        .find(|h| h.name == "needle")
+        .expect("needle health item");
+    assert_ne!(item.state, "ok", "the dashboard shows the needle down");
+
+    // One heartbeat is not enough to trust it again (resume_after_healthy).
+    needle.heartbeat(s.clock.now_ns());
+    s.tick(1).await;
+    assert_eq!(
+        s.intents("en").len(),
+        placed,
+        "one heartbeat does not resume trading"
+    );
+
+    // The full resume streak plus a fresh posterior: trading resumes on the new size.
+    for _ in 0..cfg.needle.resume_after_healthy {
+        needle.heartbeat(s.clock.now_ns());
+    }
+    needle.posterior(s.clock.now_ns(), "2026-GOV-TX", 0.95, 5.0, 3.0, 4);
+    s.tick(1).await;
+    s.tick(1).await;
+    assert!(
+        s.intents("en").len() > placed,
+        "a healthy needle with edge trades again"
+    );
+}

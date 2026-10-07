@@ -39,7 +39,7 @@ use tokio::{sync::watch, task::JoinHandle};
 use crate::{
     enr_health::{self, EnrFeed},
     realtime::RealtimeFeed,
-    world::{World, intent_views, live_orders},
+    world::{World, intent_views, live_orders, needle_budget_used},
 };
 
 const S: i64 = 1_000_000_000;
@@ -179,7 +179,8 @@ impl Engine {
         Self {
             risk: PreTrade {
                 limits: RiskLimits::from_cfg(&cfg.risk)
-                    .with_needle_glitch_pts(cfg.strategies.en.en_glitch_pts),
+                    .with_needle_glitch_pts(cfg.strategies.en.en_glitch_pts)
+                    .with_needle_budget_frac(cfg.strategies.en.night_budget_frac),
             },
             breakers: Breakers::new(BreakerConfig::from_cfg(&cfg.risk)),
             targets: TargetsReader::new(ReaderConfig::from_core(cfg, &d.home)),
@@ -887,11 +888,12 @@ impl Engine {
             let oms = self.d.gateway.oms().lock();
             let intents = intent_views(&oms);
             let live = live_orders(&oms);
+            let needle_used = needle_budget_used(&oms);
             drop(oms);
             let violations = self.world.violation_list();
             let marks = self.world.marks();
             let locked = self.locked();
-            let ctx = self.risk_ctx(now, &marks, &live, &locked);
+            let ctx = self.risk_ctx(now, &marks, &live, &locked, needle_used);
             let cluster_utilization = self.risk.cluster_utilization(&ctx);
             let targets = self.targets.current().map(|t| t.file());
             let snap = Snapshot {
@@ -971,6 +973,7 @@ impl Engine {
         marks: &'a HashMap<ExchangeId, f64>,
         live: &'a [susq_risk::LiveOrder],
         locked: &'a HashSet<ExchangeId>,
+        needle_used: f64,
     ) -> RiskContext<'a> {
         RiskContext {
             now: susq_core::clock::from_ns(now),
@@ -983,6 +986,7 @@ impl Engine {
             markets: &self.world.markets,
             locked,
             glitch_used: self.world.glitch_used,
+            needle_used,
             // 0 until the first tournament read: leave buying power to the platform until then.
             cash: (self.world.cash > 0.0).then_some(self.world.cash),
             bundle_cost: self
@@ -1006,10 +1010,13 @@ impl Engine {
 
     fn try_submit(&mut self, bundle: &OrderBundle, now: i64) -> Result<(), Blocked> {
         // Rebuild the live-order view per bundle so several bundles in one step share the caps.
-        let live = live_orders(&self.d.gateway.oms().lock());
+        let (live, needle_used) = {
+            let oms = self.d.gateway.oms().lock();
+            (live_orders(&oms), needle_budget_used(&oms))
+        };
         let marks = self.world.marks();
         let locked = self.locked();
-        let ctx = self.risk_ctx(now, &marks, &live, &locked);
+        let ctx = self.risk_ctx(now, &marks, &live, &locked, needle_used);
         let glitch: f64 = bundle
             .legs
             .iter()
