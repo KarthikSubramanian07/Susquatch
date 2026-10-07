@@ -9,6 +9,7 @@ pub mod clarity;
 pub mod csv;
 pub mod enhanced_voting;
 pub mod json_map;
+pub mod nv_sos;
 pub mod static_json;
 
 use std::time::Duration;
@@ -151,6 +152,7 @@ pub fn build_source(cfg: &EnrConfig, s: &SourceConfig) -> Result<Box<dyn Results
     };
     Ok(match &s.kind {
         SourceKind::CaSos { urls } => Box::new(ca_sos::CaSosSource::new(ctx, urls.clone(), http)),
+        SourceKind::NvSos { urls } => Box::new(nv_sos::NvSosSource::new(ctx, urls.clone(), http)),
         SourceKind::Clarity { base_url, detail } => {
             Box::new(clarity::ClaritySource::new(ctx, base_url.clone(), *detail, http))
         }
