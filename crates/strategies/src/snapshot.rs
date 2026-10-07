@@ -91,6 +91,19 @@ pub struct NeedleView {
     /// `[strategies.en] feed_stale_s`, three failures in a row, or never polled): no new buys,
     /// rolls of held legs still happen.
     pub stale_feed_races: HashSet<String>,
+    /// race_id → the needle's last posterior for races it has gone quiet on (older than `[needle]
+    /// posterior_max_age_s`, needle still healthy in the same epoch). Read only by the
+    /// election-night executor's lock-time rule (EXP-006), under its own age limit; every other
+    /// use of needle numbers goes through `posteriors`.
+    pub quiet_posteriors: HashMap<String, QuietPosterior>,
+}
+
+/// A posterior past the needle's TTL, with when the needle produced it.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct QuietPosterior {
+    pub posterior: RacePosterior,
+    /// `header.produced_at_ns` of the message that carried it.
+    pub produced_at_ns: i64,
 }
 
 /// Everything a strategy may read for one decision.

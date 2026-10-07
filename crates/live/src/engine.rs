@@ -30,7 +30,7 @@ use susq_platform::{
 use susq_risk::{BreakerConfig, Breakers, BundleCost, PreTrade, RiskContext, RiskLimits};
 use susq_strategies::{
     ConstraintsRacer, Decision, EnExecutor, FairQuote, FarQuoter, IntentView, MarketMaker, NeedleView,
-    ScenarioExecutor, Snapshot, Sniper, Strategy,
+    QuietPosterior, ScenarioExecutor, Snapshot, Sniper, Strategy,
     farquote::{self, ScanSummary},
 };
 use susq_targets::{FairOutcome, FairReader, ReaderConfig, RefreshOutcome, TargetsReader};
@@ -74,6 +74,9 @@ pub struct EngineDeps {
     pub needle: Option<watch::Receiver<NeedleSnapshot>>,
     /// The results pollers' health (`--election`), for the disputed / stale-feed gates.
     pub enr: Option<EnrFeed>,
+    /// The pre-registered count-order table (EXP-006), loaded by [`crate::wiring::build`] when
+    /// the election-night executor is enabled with its gate or lock-time rule on.
+    pub count_order: Option<Arc<susq_core::count_order::CountOrder>>,
 }
 
 #[derive(Debug, Default)]
@@ -193,7 +196,10 @@ impl Engine {
             sniper: Sniper::new(cfg.strategies.sniper.clone()),
             mm: MarketMaker::new(cfg.strategies.mm.clone()),
             scenario: ScenarioExecutor::new(cfg.strategies.scenario.clone()),
-            en: EnExecutor::new(cfg.strategies.en.clone()),
+            en: match d.count_order.clone() {
+                Some(table) => EnExecutor::new(cfg.strategies.en.clone()).with_count_order(table),
+                None => EnExecutor::new(cfg.strategies.en.clone()),
+            },
             farquote: FarQuoter::new(cfg.strategies.farquote.clone()),
             sends: Vec::new(),
             due: Due::default(),
@@ -716,6 +722,28 @@ impl Engine {
             })
             .unwrap_or_default();
         let healthy = snap.actionable_posteriors(now).is_some();
+        // Races the needle has gone quiet on (past posterior_max_age_s, same healthy epoch): only
+        // the executor's lock-time rule reads them (EXP-006), so they are passed only when it is on.
+        let en = &self.d.cfg.strategies.en;
+        let quiet_posteriors: HashMap<String, QuietPosterior> = if en.enabled && en.lock_rule_enabled {
+            snap.quiet_posteriors(now)
+                .map(|m| {
+                    m.into_iter()
+                        .map(|(k, v)| {
+                            (
+                                k.to_owned(),
+                                QuietPosterior {
+                                    posterior: v.value.clone(),
+                                    produced_at_ns: v.produced_at_ns,
+                                },
+                            )
+                        })
+                        .collect()
+                })
+                .unwrap_or_default()
+        } else {
+            HashMap::new()
+        };
         // Without the pollers (a drill replaying straight onto the bus) nothing gates races;
         // with them, a race whose mapped sources are all stale gets no new buys and a disputed
         // race is refused (the executor does both).
@@ -724,6 +752,7 @@ impl Engine {
                 enr.disputed_races.clone(),
                 posteriors
                     .keys()
+                    .chain(quiet_posteriors.keys())
                     .filter(|race| !enr.live_feed_races.contains(*race))
                     .cloned()
                     .collect(),
@@ -736,6 +765,7 @@ impl Engine {
             posteriors,
             disputed_races,
             stale_feed_races,
+            quiet_posteriors,
         });
         self.world.put_health(snap.health.clone());
     }

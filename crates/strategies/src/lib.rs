@@ -27,7 +27,9 @@ pub use en_executor::EnExecutor;
 pub use farquote::FarQuoter;
 pub use market_maker::MarketMaker;
 pub use scenario_executor::ScenarioExecutor;
-pub use snapshot::{CancelRequest, Decision, Event, FairQuote, IntentView, NeedleView, Snapshot};
+pub use snapshot::{
+    CancelRequest, Decision, Event, FairQuote, IntentView, NeedleView, QuietPosterior, Snapshot,
+};
 pub use sniper::Sniper;
 
 /// A trading strategy: a pure function from a snapshot to a decision.

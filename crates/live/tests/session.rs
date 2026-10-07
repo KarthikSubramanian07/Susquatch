@@ -44,6 +44,9 @@ fn config() -> Config {
     // shipped start date is an experiment knob (EXP-002, EXP-007 moved it past this clock), not what
     // is under test here.
     cfg.strategies.scenario.start_utc = None;
+    // Sessions run in a temporary $SUSQ_HOME: read the shipped count-order table from the repo.
+    cfg.strategies.en.count_order_path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../config/count_order.toml");
     cfg
 }
 
@@ -91,8 +94,8 @@ fn seed(mock: &MockPlatform) {
     ]);
 }
 
-fn write_market_map(home: &Path, cfg: &Config) {
-    let rule = |ex: &str, market: &str, race: &str, party: &str, clusters: &[&str]| MarketRule {
+fn map_rule(ex: &str, market: &str, race: &str, party: &str, clusters: &[&str]) -> MarketRule {
+    MarketRule {
         market_id: market.into(),
         exchange_id: ex.into(),
         title: format!("{race} {party}"),
@@ -102,17 +105,27 @@ fn write_market_map(home: &Path, cfg: &Config) {
         clusters: clusters.iter().map(|c| (*c).to_owned()).collect(),
         verified: true,
         ..Default::default()
-    };
+    }
+}
+
+fn write_market_map(home: &Path, cfg: &Config) {
+    write_market_map_plus(home, cfg, Vec::new());
+}
+
+fn write_market_map_plus(home: &Path, cfg: &Config, extra: Vec<MarketRule>) {
+    let rule = map_rule;
+    let mut markets = vec![
+        rule("1", "m1", "2026-SEN-OH", "DEM", &["national", "state:OH"]),
+        rule("2", "m1", "2026-SEN-OH", "REP", &["national", "state:OH"]),
+        rule("3", "m1", "2026-SEN-OH", "IND", &["national", "state:OH"]),
+        rule("4", "m2", "", "DEM", &["house"]),
+        rule("5", "m3", "2026-GOV-TX", "DEM", &["state:TX"]),
+        rule("6", "m4", "2026-GOV-CA", "DEM", &["state:CA"]),
+    ];
+    markets.extend(extra);
     let map = MarketMap {
         header: None,
-        markets: vec![
-            rule("1", "m1", "2026-SEN-OH", "DEM", &["national", "state:OH"]),
-            rule("2", "m1", "2026-SEN-OH", "REP", &["national", "state:OH"]),
-            rule("3", "m1", "2026-SEN-OH", "IND", &["national", "state:OH"]),
-            rule("4", "m2", "", "DEM", &["house"]),
-            rule("5", "m3", "2026-GOV-TX", "DEM", &["state:TX"]),
-            rule("6", "m4", "2026-GOV-CA", "DEM", &["state:CA"]),
-        ],
+        markets,
     };
     let path = home.join(&cfg.paths.market_map);
     std::fs::create_dir_all(path.parent().expect("dir")).expect("mkdir");
@@ -1031,7 +1044,7 @@ struct FakeNeedle {
 
 impl FakeNeedle {
     fn new(cfg: &Config, now: i64) -> (Self, tokio::sync::watch::Receiver<susq_bus::NeedleSnapshot>) {
-        let races = ["2026-SEN-OH", "2026-GOV-TX", "2026-GOV-CA"]
+        let races = ["2026-SEN-OH", "2026-GOV-TX", "2026-GOV-CA", "2026-GOV-NV"]
             .into_iter()
             .map(str::to_owned)
             .collect();
@@ -1220,4 +1233,136 @@ async fn needle_posterior_drives_an_election_night_buy_and_silence_stops_it() {
         s.intents("en").len() > placed,
         "a healthy needle with edge trades again"
     );
+}
+
+/// EXP-006 lock-time rule, end to end. Nevada governor at 60% counted on Wednesday morning: the
+/// Democrat trails on the print, the needle projects D +3 ± 1.2 (q 0.994) from the late Clark mail
+/// still to come, and then goes quiet on the race (Clark posts once a day) while it keeps
+/// heartbeating. Two hours later the Cup sells the Democrat at 0.40 off the print. With the lock
+/// rule on the executor buys the Democrat on that quiet posterior; with it off nothing is sent,
+/// because the posterior is older than `[needle] posterior_max_age_s`.
+async fn nevada_lock_session(lock_rule_enabled: bool) -> (Session, usize) {
+    let home = tempfile::tempdir().expect("tmp");
+    let mut cfg = config();
+    cfg.strategies.en.enabled = true;
+    cfg.strategies.en.lock_rule_enabled = lock_rule_enabled;
+    let clock = ManualClock::at("2026-11-04T12:30:00Z".parse().expect("ts"));
+    let mock = Arc::new(MockPlatform::new(
+        Arc::new(clock.clone()),
+        MockConfig {
+            tournament_id: TID.into(),
+            slug: SLUG.into(),
+            starting_balance: 100_000.0,
+            member_count: 1200,
+            page_size: 200,
+            collateral: true,
+        },
+    ));
+    seed(&mock);
+    mock.add_market("m5", "NV-GOV", &[("7", "DEM")]);
+    // While the needle is fresh nobody sells the Democrat below 0.995: no edge. (The bid sits low so
+    // the later 0.40 offer rests instead of crossing it.)
+    mock.seed_order("alice", "7", Side::Yes, Action::Buy, 100, px(3500));
+    mock.seed_order("bob", "7", Side::Yes, Action::Sell, 100, px(9950));
+    write_market_map_plus(
+        home.path(),
+        &cfg,
+        vec![map_rule("7", "m5", "2026-GOV-NV", "DEM", &["state:NV"])],
+    );
+    let (mut needle, rx) = FakeNeedle::new(&cfg, clock.now_ns());
+    let engine = build(BuildOpts {
+        cfg: cfg.clone(),
+        home: home.path().to_owned(),
+        mode: Mode::Paper,
+        clock: Arc::new(clock.clone()),
+        platform: mock.clone(),
+        journal: Journal::discard(),
+        tournament: TournamentId::new(TID),
+        paper_balance: 100_000.0,
+        realtime: None,
+        needle: Some(rx),
+        enr: None,
+        host: "test".into(),
+        pid: 1,
+        kill: None,
+    })
+    .expect("engine (the count-order table loads)");
+    let mut s = Session {
+        home,
+        clock,
+        mock,
+        engine,
+    };
+    s.engine.bootstrap().await;
+
+    for _ in 0..cfg.needle.resume_after_healthy {
+        needle.heartbeat(s.clock.now_ns());
+    }
+    // reported_frac 0.6 (FakeNeedle's), 40 county batches.
+    needle.posterior(s.clock.now_ns(), "2026-GOV-NV", 0.994, 3.0, 1.2, 40);
+    s.tick(1).await;
+    s.tick(1).await;
+    assert!(
+        s.intents("en").is_empty(),
+        "no edge while the Cup asks 0.995 for a 0.994 Democrat"
+    );
+
+    // Two hours on, heartbeating every 5 s (well inside heartbeat_timeout_s), no new batch for
+    // Nevada; the engine steps every half hour.
+    for _ in 0..4 {
+        for _ in 0..(30 * 60 / 5) {
+            s.clock.advance(Duration::from_secs(5));
+            needle.heartbeat(s.clock.now_ns());
+        }
+        s.tick(1).await;
+    }
+    assert!(
+        s.intents("en").is_empty(),
+        "still nothing while nobody offers the Democrat cheaply"
+    );
+    // 14:30Z: the Cup now sells the Democrat at 0.40 off the print.
+    s.mock
+        .seed_order("carol", "7", Side::Yes, Action::Sell, 100, px(4000));
+    // Without realtime the book is refetched by REST once it is half its max age old.
+    for _ in 0..cfg.live.book_max_age_s {
+        needle.heartbeat(s.clock.now_ns());
+        s.tick(1).await;
+    }
+    let n = s.engine.world.needle.as_ref().expect("needle view");
+    assert!(
+        n.healthy && n.posteriors.is_empty(),
+        "healthy needle, nothing fresh"
+    );
+    if lock_rule_enabled {
+        assert!(
+            n.quiet_posteriors.contains_key("2026-GOV-NV"),
+            "the quiet posterior is passed on"
+        );
+    } else {
+        assert!(
+            n.quiet_posteriors.is_empty(),
+            "nothing quiet is passed with the rule off"
+        );
+    }
+    let placed = s.intents("en").len();
+    (s, placed)
+}
+
+#[tokio::test]
+async fn lock_rule_buys_a_trailing_nevada_democrat_on_a_quiet_needle_only_when_on() {
+    let (s, placed) = nevada_lock_session(true).await;
+    assert!(
+        placed > 0,
+        "the lock rule must buy the Democrat on the quiet posterior"
+    );
+    assert!(
+        s.paper_position("7").await > 0,
+        "the buy filled against the 0.40 ask"
+    );
+    let (s, placed) = nevada_lock_session(false).await;
+    assert_eq!(
+        placed, 0,
+        "with the lock rule off a quiet posterior is never traded"
+    );
+    assert_eq!(s.paper_position("7").await, 0);
 }
