@@ -65,7 +65,9 @@ class _Event:
 
 
 def _party(medsl: str) -> str:
-    return {"DEMOCRAT": "DEM", "REPUBLICAN": "REP", "LIBERTARIAN": "LIB"}.get(medsl, "OTH")
+    return {"DEMOCRAT": "DEM", "REPUBLICAN": "REP", "LIBERTARIAN": "LIB", "INDEPENDENT": "IND"}.get(
+        medsl, "OTH"
+    )
 
 
 def _allocate(rng: np.random.Generator, final: dict[str, int], n: int, conc: float) -> list[dict[str, int]]:

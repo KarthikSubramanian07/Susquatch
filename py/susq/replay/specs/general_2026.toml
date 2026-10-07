@@ -1,0 +1,990 @@
+# Generated on 2026-10-07 by:
+#   python -m susq.replay spec2026 --market-map state/market_map.json --fair state/fair_live.json --history data/replay/county_results_2022.csv --history data/replay/county_results_2024.csv --out py/susq/replay/specs/general_2026.toml
+# Do not edit by hand: re-run the command (the pre-flight does, on the VM, from fair_live.json).
+# Margins: prior_margin_mean = prior_margin_sd * Phi^-1(p_left), prior_margin_sd = the sim's race
+# margin SD (see susq/replay/spec2026.py). House races are not modelled (see the list at the end).
+# fair values produced 2026-10-01T01:39Z
+# history 2022: 37 states
+# history 2024: 44 states
+history = ["data/replay/county_results_2022.csv", "data/replay/county_results_2024.csv"]
+seed = 7
+horizon_h = 17.0
+bucket_s = 60.0
+national_shift_prior_sd = 2.964
+
+[[races]]
+# fair p_left=0.7811 (DEM) -> +4.14 pts at sd 5.34
+# turnout_ratio: baseline is the 2022 midterm
+race_id = "2026-GOV-AK"
+state = "AK"
+year = 2022
+office = "GOVERNOR"
+prior_margin_mean = 4.145
+prior_margin_sd = 5.342
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T06:00:00Z"
+
+[[races]]
+# fair p_left=0.0972 (DEM) -> -6.65 pts at sd 5.13
+# turnout_ratio: baseline is the 2022 midterm
+race_id = "2026-GOV-AL"
+state = "AL"
+year = 2022
+office = "GOVERNOR"
+prior_margin_mean = -6.652
+prior_margin_sd = 5.127
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T01:00:00Z"
+
+[[races]]
+# fair p_left=0.0307 (DEM) -> -9.59 pts at sd 5.13
+# saturated price: using the 2022 GOVERNOR margin -28.48
+# turnout_ratio: baseline is the 2022 midterm
+race_id = "2026-GOV-AR"
+state = "AR"
+year = 2022
+office = "GOVERNOR"
+prior_margin_mean = -28.485
+prior_margin_sd = 5.127
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T01:30:00Z"
+
+[[races]]
+# fair p_left=0.8889 (DEM) -> +6.26 pts at sd 5.13
+# turnout_ratio: baseline is the 2022 midterm
+race_id = "2026-GOV-AZ"
+state = "AZ"
+year = 2022
+office = "GOVERNOR"
+prior_margin_mean = 6.258
+prior_margin_sd = 5.127
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T02:00:00Z"
+
+[[races]]
+# fair p_left=0.9609 (DEM) -> +9.03 pts at sd 5.13
+# saturated price: using the 2022 GOVERNOR margin +18.36
+# turnout_ratio: baseline is the 2022 midterm
+race_id = "2026-GOV-CA"
+state = "CA"
+year = 2022
+office = "GOVERNOR"
+prior_margin_mean = 18.363
+prior_margin_sd = 5.127
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T04:00:00Z"
+
+[[races]]
+# fair p_left=0.9704 (DEM) -> +9.67 pts at sd 5.13
+# saturated price: using the 2022 GOVERNOR margin +19.80
+# turnout_ratio: baseline is the 2022 midterm
+race_id = "2026-GOV-CO"
+state = "CO"
+year = 2022
+office = "GOVERNOR"
+prior_margin_mean = 19.802
+prior_margin_sd = 5.127
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T02:00:00Z"
+
+[[races]]
+# fair p_left=0.9701 (DEM) -> +9.65 pts at sd 5.13
+# saturated price: using the 2022 GOVERNOR margin +12.98
+# turnout_ratio: baseline is the 2022 midterm
+race_id = "2026-GOV-CT"
+state = "CT"
+year = 2022
+office = "GOVERNOR"
+prior_margin_mean = 12.977
+prior_margin_sd = 5.127
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T01:00:00Z"
+
+[[races]]
+# fair p_left=0.2239 (DEM) -> -3.89 pts at sd 5.13
+# turnout_ratio: baseline is the 2022 midterm
+race_id = "2026-GOV-FL"
+state = "FL"
+year = 2022
+office = "GOVERNOR"
+prior_margin_mean = -3.892
+prior_margin_sd = 5.127
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T01:00:00Z"
+
+[[races]]
+# fair p_left=0.4975 (DEM) -> -0.03 pts at sd 5.13
+# turnout_ratio: baseline is the 2022 midterm
+race_id = "2026-GOV-GA"
+state = "GA"
+year = 2022
+office = "GOVERNOR"
+prior_margin_mean = -0.032
+prior_margin_sd = 5.127
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T00:00:00Z"
+
+[[races]]
+# fair p_left=0.9758 (DEM) -> +10.12 pts at sd 5.13
+# saturated price: using the 2022 GOVERNOR margin +26.32
+# turnout_ratio: baseline is the 2022 midterm
+race_id = "2026-GOV-HI"
+state = "HI"
+year = 2022
+office = "GOVERNOR"
+prior_margin_mean = 26.324
+prior_margin_sd = 5.127
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T05:00:00Z"
+
+[[races]]
+# fair p_left=0.8434 (DEM) -> +5.39 pts at sd 5.34
+# turnout_ratio: baseline is the 2022 midterm
+race_id = "2026-GOV-IA"
+state = "IA"
+year = 2022
+office = "GOVERNOR"
+prior_margin_mean = 5.388
+prior_margin_sd = 5.342
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T02:00:00Z"
+
+[[races]]
+# fair p_left=0.0244 (DEM) -> -10.10 pts at sd 5.13
+# saturated price: using the 2022 GOVERNOR margin -49.75
+# turnout_ratio: baseline is the 2022 midterm
+race_id = "2026-GOV-ID"
+state = "ID"
+year = 2022
+office = "GOVERNOR"
+prior_margin_mean = -49.748
+prior_margin_sd = 5.127
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T04:00:00Z"
+
+[[races]]
+# fair p_left=0.9729 (DEM) -> +9.87 pts at sd 5.13
+# saturated price: using the 2022 GOVERNOR margin +12.89
+# turnout_ratio: baseline is the 2022 midterm
+race_id = "2026-GOV-IL"
+state = "IL"
+year = 2022
+office = "GOVERNOR"
+prior_margin_mean = 12.889
+prior_margin_sd = 5.127
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T01:00:00Z"
+
+[[races]]
+# fair p_left=0.2750 (DEM) -> -3.19 pts at sd 5.34
+# turnout_ratio: baseline is the 2022 midterm
+race_id = "2026-GOV-KS"
+state = "KS"
+year = 2022
+office = "GOVERNOR"
+prior_margin_mean = -3.193
+prior_margin_sd = 5.342
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T02:00:00Z"
+
+[[races]]
+# fair p_left=0.9604 (DEM) -> +9.00 pts at sd 5.13
+# saturated price: using the 2022 GOVERNOR margin +29.67
+# turnout_ratio: baseline is the 2022 midterm
+race_id = "2026-GOV-MA"
+state = "MA"
+year = 2022
+office = "GOVERNOR"
+prior_margin_mean = 29.670
+prior_margin_sd = 5.127
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T01:00:00Z"
+
+[[races]]
+# fair p_left=0.9729 (DEM) -> +9.87 pts at sd 5.13
+# saturated price: using the 2022 GOVERNOR margin +33.54
+# turnout_ratio: baseline is the 2022 midterm
+race_id = "2026-GOV-MD"
+state = "MD"
+year = 2022
+office = "GOVERNOR"
+prior_margin_mean = 33.538
+prior_margin_sd = 5.127
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T01:00:00Z"
+
+[[races]]
+# fair p_left=0.9580 (DEM) -> +9.23 pts at sd 5.34
+# saturated price: using the 2022 GOVERNOR margin +13.32
+# turnout_ratio: baseline is the 2022 midterm
+race_id = "2026-GOV-ME"
+state = "ME"
+year = 2022
+office = "GOVERNOR"
+prior_margin_mean = 13.322
+prior_margin_sd = 5.342
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T01:00:00Z"
+
+[[races]]
+# fair p_left=0.9144 (DEM) -> +7.31 pts at sd 5.34
+# turnout_ratio: baseline is the 2022 midterm
+race_id = "2026-GOV-MI"
+state = "MI"
+year = 2022
+office = "GOVERNOR"
+prior_margin_mean = 7.309
+prior_margin_sd = 5.342
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T02:00:00Z"
+
+[[races]]
+# fair p_left=0.9501 (DEM) -> +8.44 pts at sd 5.13
+# turnout_ratio: baseline is the 2022 midterm
+race_id = "2026-GOV-MN"
+state = "MN"
+year = 2022
+office = "GOVERNOR"
+prior_margin_mean = 8.438
+prior_margin_sd = 5.127
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T02:00:00Z"
+
+[[races]]
+# fair p_left=0.0898 (DEM) -> -6.88 pts at sd 5.13
+# turnout_ratio: baseline is the 2022 midterm
+race_id = "2026-GOV-NE"
+state = "NE"
+year = 2022
+office = "GOVERNOR"
+prior_margin_mean = -6.879
+prior_margin_sd = 5.127
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T02:00:00Z"
+
+[[races]]
+# fair p_left=0.0386 (DEM) -> -9.06 pts at sd 5.13
+# saturated price: using the 2022 GOVERNOR margin -15.76
+# turnout_ratio: baseline is the 2022 midterm
+race_id = "2026-GOV-NH"
+state = "NH"
+year = 2022
+office = "GOVERNOR"
+prior_margin_mean = -15.756
+prior_margin_sd = 5.127
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T01:00:00Z"
+
+[[races]]
+# fair p_left=0.9423 (DEM) -> +8.07 pts at sd 5.13
+# turnout_ratio: 2022/2024 statewide totals for NM
+race_id = "2026-GOV-NM"
+state = "NM"
+year = 2024
+office = "US PRESIDENT"
+prior_margin_mean = 8.071
+prior_margin_sd = 5.127
+national_beta = 1.000
+turnout_ratio = 0.7799
+poll_close_utc = "2026-11-04T02:00:00Z"
+
+[[races]]
+# fair p_left=0.4759 (DEM) -> -0.31 pts at sd 5.13
+# turnout_ratio: baseline is the 2022 midterm
+race_id = "2026-GOV-NV"
+state = "NV"
+year = 2022
+office = "GOVERNOR"
+prior_margin_mean = -0.310
+prior_margin_sd = 5.127
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T03:00:00Z"
+
+[[races]]
+# fair p_left=0.9496 (DEM) -> +8.41 pts at sd 5.13
+# turnout_ratio: baseline is the 2022 midterm
+race_id = "2026-GOV-NY"
+state = "NY"
+year = 2022
+office = "GOVERNOR"
+prior_margin_mean = 8.412
+prior_margin_sd = 5.127
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T02:00:00Z"
+
+[[races]]
+# fair p_left=0.0753 (DEM) -> -7.37 pts at sd 5.13
+# turnout_ratio: baseline is the 2022 midterm
+race_id = "2026-GOV-OK"
+state = "OK"
+year = 2022
+office = "GOVERNOR"
+prior_margin_mean = -7.368
+prior_margin_sd = 5.127
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T01:00:00Z"
+
+[[races]]
+# fair p_left=0.8040 (DEM) -> +4.39 pts at sd 5.13
+# turnout_ratio: baseline is the 2022 midterm
+race_id = "2026-GOV-OR"
+state = "OR"
+year = 2022
+office = "GOVERNOR"
+prior_margin_mean = 4.389
+prior_margin_sd = 5.127
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T04:00:00Z"
+
+[[races]]
+# fair p_left=0.9705 (DEM) -> +9.68 pts at sd 5.13
+# saturated price: using the 2022 GOVERNOR margin +15.04
+# turnout_ratio: baseline is the 2022 midterm
+race_id = "2026-GOV-PA"
+state = "PA"
+year = 2022
+office = "GOVERNOR"
+prior_margin_mean = 15.043
+prior_margin_sd = 5.127
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T01:00:00Z"
+
+[[races]]
+# fair p_left=0.9843 (DEM) -> +11.03 pts at sd 5.13
+# saturated price: using the 2022 GOVERNOR margin +19.69
+# turnout_ratio: baseline is the 2022 midterm
+race_id = "2026-GOV-RI"
+state = "RI"
+year = 2022
+office = "GOVERNOR"
+prior_margin_mean = 19.691
+prior_margin_sd = 5.127
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T01:00:00Z"
+
+[[races]]
+# fair p_left=0.0515 (DEM) -> -8.71 pts at sd 5.34
+# turnout_ratio: baseline is the 2022 midterm
+race_id = "2026-GOV-SC"
+state = "SC"
+year = 2022
+office = "GOVERNOR"
+prior_margin_mean = -8.708
+prior_margin_sd = 5.342
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T00:00:00Z"
+
+[[races]]
+# fair p_left=0.0283 (DEM) -> -9.77 pts at sd 5.13
+# saturated price: using the 2022 GOVERNOR margin -27.60
+# turnout_ratio: baseline is the 2022 midterm
+race_id = "2026-GOV-SD"
+state = "SD"
+year = 2022
+office = "GOVERNOR"
+prior_margin_mean = -27.599
+prior_margin_sd = 5.127
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T02:00:00Z"
+
+[[races]]
+# fair p_left=0.0482 (DEM) -> -8.52 pts at sd 5.13
+# saturated price: using the 2024 US PRESIDENT margin -30.12
+# turnout_ratio: no 2022 total for TN: median of 37 states
+race_id = "2026-GOV-TN"
+state = "TN"
+year = 2024
+office = "US PRESIDENT"
+prior_margin_mean = -30.121
+prior_margin_sd = 5.127
+national_beta = 1.000
+turnout_ratio = 0.7516
+poll_close_utc = "2026-11-04T01:00:00Z"
+
+[[races]]
+# fair p_left=0.2193 (DEM) -> -4.14 pts at sd 5.34
+# turnout_ratio: baseline is the 2022 midterm
+race_id = "2026-GOV-TX"
+state = "TX"
+year = 2022
+office = "GOVERNOR"
+prior_margin_mean = -4.137
+prior_margin_sd = 5.342
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T02:00:00Z"
+
+[[races]]
+# fair p_left=0.1723 (DEM) -> -4.85 pts at sd 5.13
+# turnout_ratio: baseline is the 2022 midterm
+race_id = "2026-GOV-VT"
+state = "VT"
+year = 2022
+office = "US SENATE"
+prior_margin_mean = -4.846
+prior_margin_sd = 5.127
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T00:00:00Z"
+
+[[races]]
+# fair p_left=0.8060 (DEM) -> +4.43 pts at sd 5.13
+# turnout_ratio: baseline is the 2022 midterm
+race_id = "2026-GOV-WI"
+state = "WI"
+year = 2022
+office = "GOVERNOR"
+prior_margin_mean = 4.425
+prior_margin_sd = 5.127
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T02:00:00Z"
+
+[[races]]
+# fair p_left=0.0313 (DEM) -> -9.55 pts at sd 5.13
+# saturated price: using the 2024 US PRESIDENT margin -46.96
+# turnout_ratio: 2022/2024 statewide totals for WY
+race_id = "2026-GOV-WY"
+state = "WY"
+year = 2024
+office = "US PRESIDENT"
+prior_margin_mean = -46.958
+prior_margin_sd = 5.127
+national_beta = 1.000
+turnout_ratio = 0.7211
+poll_close_utc = "2026-11-04T02:00:00Z"
+
+[[races]]
+# fair p_left=0.6950 (DEM) -> +2.72 pts at sd 5.34
+# turnout_ratio: baseline is the 2022 midterm
+race_id = "2026-SEN-AK"
+state = "AK"
+year = 2022
+office = "GOVERNOR"
+prior_margin_mean = 2.725
+prior_margin_sd = 5.342
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T06:00:00Z"
+
+[[races]]
+# fair p_left=0.0320 (DEM) -> -9.49 pts at sd 5.13
+# saturated price: using the 2022 US SENATE margin -36.65
+# turnout_ratio: baseline is the 2022 midterm
+race_id = "2026-SEN-AL"
+state = "AL"
+year = 2022
+office = "US SENATE"
+prior_margin_mean = -36.653
+prior_margin_sd = 5.127
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T01:00:00Z"
+
+[[races]]
+# fair p_left=0.0649 (DEM) -> -7.77 pts at sd 5.13
+# turnout_ratio: baseline is the 2022 midterm
+race_id = "2026-SEN-AR"
+state = "AR"
+year = 2022
+office = "US SENATE"
+prior_margin_mean = -7.767
+prior_margin_sd = 5.127
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T01:30:00Z"
+
+[[races]]
+# fair p_left=0.9849 (DEM) -> +11.12 pts at sd 5.13
+# saturated price: using the 2022 US SENATE margin +15.05
+# turnout_ratio: baseline is the 2022 midterm
+race_id = "2026-SEN-CO"
+state = "CO"
+year = 2022
+office = "US SENATE"
+prior_margin_mean = 15.047
+prior_margin_sd = 5.127
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T02:00:00Z"
+
+[[races]]
+# fair p_left=0.9896 (DEM) -> +11.86 pts at sd 5.13
+# saturated price: using the 2024 US SENATE margin +17.78
+# turnout_ratio: no 2022 total for DE: median of 37 states
+race_id = "2026-SEN-DE"
+state = "DE"
+year = 2024
+office = "US SENATE"
+prior_margin_mean = 17.783
+prior_margin_sd = 5.127
+national_beta = 1.000
+turnout_ratio = 0.7516
+poll_close_utc = "2026-11-04T01:00:00Z"
+
+[[races]]
+# fair p_left=0.0919 (DEM) -> -6.81 pts at sd 5.13
+# turnout_ratio: baseline is the 2022 midterm
+race_id = "2026-SEN-FL-S"
+state = "FL"
+year = 2022
+office = "US SENATE"
+prior_margin_mean = -6.814
+prior_margin_sd = 5.127
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T01:00:00Z"
+
+[[races]]
+# fair p_left=0.9511 (DEM) -> +8.49 pts at sd 5.13
+# turnout_ratio: baseline is the 2022 midterm
+race_id = "2026-SEN-GA"
+state = "GA"
+year = 2022
+office = "US SENATE"
+prior_margin_mean = 8.490
+prior_margin_sd = 5.127
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T00:00:00Z"
+
+[[races]]
+# fair p_left=0.4129 (DEM) -> -1.18 pts at sd 5.34
+# turnout_ratio: baseline is the 2022 midterm
+race_id = "2026-SEN-IA"
+state = "IA"
+year = 2022
+office = "US SENATE"
+prior_margin_mean = -1.175
+prior_margin_sd = 5.342
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T02:00:00Z"
+
+[[races]]
+# fair p_left=0.0036 (DEM) -> -13.77 pts at sd 5.13
+# saturated price: using the 2022 US SENATE margin -35.65
+# turnout_ratio: baseline is the 2022 midterm
+race_id = "2026-SEN-ID"
+state = "ID"
+year = 2022
+office = "US SENATE"
+prior_margin_mean = -35.655
+prior_margin_sd = 5.127
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T04:00:00Z"
+
+[[races]]
+# fair p_left=0.9780 (DEM) -> +10.33 pts at sd 5.13
+# saturated price: using the 2022 US SENATE margin +15.58
+# turnout_ratio: baseline is the 2022 midterm
+race_id = "2026-SEN-IL"
+state = "IL"
+year = 2022
+office = "US SENATE"
+prior_margin_mean = 15.584
+prior_margin_sd = 5.127
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T01:00:00Z"
+
+[[races]]
+# fair p_left=0.2900 (DEM) -> -2.96 pts at sd 5.34
+# turnout_ratio: baseline is the 2022 midterm
+race_id = "2026-SEN-KS"
+state = "KS"
+year = 2022
+office = "US SENATE"
+prior_margin_mean = -2.956
+prior_margin_sd = 5.342
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T02:00:00Z"
+
+[[races]]
+# fair p_left=0.0432 (DEM) -> -8.79 pts at sd 5.13
+# saturated price: using the 2022 US SENATE margin -23.62
+# turnout_ratio: baseline is the 2022 midterm
+race_id = "2026-SEN-KY"
+state = "KY"
+year = 2022
+office = "US SENATE"
+prior_margin_mean = -23.623
+prior_margin_sd = 5.127
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T00:00:00Z"
+
+[[races]]
+# fair p_left=0.0703 (DEM) -> -7.55 pts at sd 5.13
+# turnout_ratio: baseline is the 2022 midterm
+race_id = "2026-SEN-LA"
+state = "LA"
+year = 2022
+office = "US SENATE"
+prior_margin_mean = -7.554
+prior_margin_sd = 5.127
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T02:00:00Z"
+
+[[races]]
+# fair p_left=0.9852 (DEM) -> +11.16 pts at sd 5.13
+# saturated price: using the 2022 GOVERNOR margin +29.67
+# turnout_ratio: baseline is the 2022 midterm
+race_id = "2026-SEN-MA"
+state = "MA"
+year = 2022
+office = "GOVERNOR"
+prior_margin_mean = 29.670
+prior_margin_sd = 5.127
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T01:00:00Z"
+
+[[races]]
+# fair p_left=0.5879 (DEM) -> +1.19 pts at sd 5.34
+# turnout_ratio: baseline is the 2022 midterm
+race_id = "2026-SEN-ME"
+state = "ME"
+year = 2022
+office = "GOVERNOR"
+prior_margin_mean = 1.187
+prior_margin_sd = 5.342
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T01:00:00Z"
+
+[[races]]
+# fair p_left=0.7264 (DEM) -> +3.22 pts at sd 5.34
+# turnout_ratio: baseline is the 2022 midterm
+race_id = "2026-SEN-MI"
+state = "MI"
+year = 2022
+office = "GOVERNOR"
+prior_margin_mean = 3.215
+prior_margin_sd = 5.342
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T02:00:00Z"
+
+[[races]]
+# fair p_left=0.8899 (DEM) -> +6.29 pts at sd 5.13
+# turnout_ratio: baseline is the 2022 midterm
+race_id = "2026-SEN-MN"
+state = "MN"
+year = 2022
+office = "GOVERNOR"
+prior_margin_mean = 6.286
+prior_margin_sd = 5.127
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T02:00:00Z"
+
+[[races]]
+# fair p_left=0.0866 (DEM) -> -6.98 pts at sd 5.13
+# turnout_ratio: no 2022 total for MS: median of 37 states
+race_id = "2026-SEN-MS"
+state = "MS"
+year = 2024
+office = "US SENATE"
+prior_margin_mean = -6.983
+prior_margin_sd = 5.127
+national_beta = 1.000
+turnout_ratio = 0.7516
+poll_close_utc = "2026-11-04T01:00:00Z"
+
+[[races]]
+# fair p_left=0.0855 (IND) -> -7.90 pts at sd 5.77
+# turnout_ratio: no 2022 total for MT: median of 37 states
+race_id = "2026-SEN-MT"
+state = "MT"
+year = 2024
+office = "US SENATE"
+prior_margin_mean = -7.899
+prior_margin_sd = 5.770
+national_beta = 1.000
+turnout_ratio = 0.7516
+poll_close_utc = "2026-11-04T03:00:00Z"
+independent_major = true
+
+[[races]]
+# fair p_left=0.9479 (DEM) -> +8.33 pts at sd 5.13
+# turnout_ratio: baseline is the 2022 midterm
+race_id = "2026-SEN-NC"
+state = "NC"
+year = 2022
+office = "US SENATE"
+prior_margin_mean = 8.332
+prior_margin_sd = 5.127
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T00:30:00Z"
+
+[[races]]
+# fair p_left=0.2932 (IND) -> -3.14 pts at sd 5.77
+# turnout_ratio: 2022/2024 statewide totals for NE
+race_id = "2026-SEN-NE"
+state = "NE"
+year = 2024
+office = "US SENATE"
+prior_margin_mean = -3.138
+prior_margin_sd = 5.770
+national_beta = 1.000
+turnout_ratio = 0.7040
+poll_close_utc = "2026-11-04T02:00:00Z"
+independent_major = true
+
+[[races]]
+# fair p_left=0.8600 (DEM) -> +5.54 pts at sd 5.13
+# turnout_ratio: baseline is the 2022 midterm
+race_id = "2026-SEN-NH"
+state = "NH"
+year = 2022
+office = "US SENATE"
+prior_margin_mean = 5.539
+prior_margin_sd = 5.127
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T01:00:00Z"
+
+[[races]]
+# fair p_left=0.9778 (DEM) -> +10.31 pts at sd 5.13
+# turnout_ratio: no 2022 total for NJ: median of 37 states
+race_id = "2026-SEN-NJ"
+state = "NJ"
+year = 2024
+office = "US SENATE"
+prior_margin_mean = 10.308
+prior_margin_sd = 5.127
+national_beta = 1.000
+turnout_ratio = 0.7516
+poll_close_utc = "2026-11-04T01:00:00Z"
+
+[[races]]
+# fair p_left=0.9847 (DEM) -> +11.09 pts at sd 5.13
+# turnout_ratio: 2022/2024 statewide totals for NM
+race_id = "2026-SEN-NM"
+state = "NM"
+year = 2024
+office = "US SENATE"
+prior_margin_mean = 11.087
+prior_margin_sd = 5.127
+national_beta = 1.000
+turnout_ratio = 0.7799
+poll_close_utc = "2026-11-04T02:00:00Z"
+
+[[races]]
+# fair p_left=0.0198 (DEM) -> -10.55 pts at sd 5.13
+# saturated price: using the 2022 US SENATE margin -33.41
+# turnout_ratio: baseline is the 2022 midterm
+race_id = "2026-SEN-OK"
+state = "OK"
+year = 2022
+office = "US SENATE"
+prior_margin_mean = -33.407
+prior_margin_sd = 5.127
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T01:00:00Z"
+
+[[races]]
+# fair p_left=0.9815 (DEM) -> +10.70 pts at sd 5.13
+# saturated price: using the 2022 US SENATE margin +15.41
+# turnout_ratio: baseline is the 2022 midterm
+race_id = "2026-SEN-OR"
+state = "OR"
+year = 2022
+office = "US SENATE"
+prior_margin_mean = 15.409
+prior_margin_sd = 5.127
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T04:00:00Z"
+
+[[races]]
+# fair p_left=0.9902 (DEM) -> +11.97 pts at sd 5.13
+# saturated price: using the 2022 GOVERNOR margin +19.69
+# turnout_ratio: baseline is the 2022 midterm
+race_id = "2026-SEN-RI"
+state = "RI"
+year = 2022
+office = "GOVERNOR"
+prior_margin_mean = 19.691
+prior_margin_sd = 5.127
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T01:00:00Z"
+
+[[races]]
+# fair p_left=0.1300 (DEM) -> -6.02 pts at sd 5.34
+# turnout_ratio: baseline is the 2022 midterm
+race_id = "2026-SEN-SC"
+state = "SC"
+year = 2022
+office = "US SENATE"
+prior_margin_mean = -6.017
+prior_margin_sd = 5.342
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T00:00:00Z"
+
+[[races]]
+# fair p_left=0.0030 (DEM) -> -14.09 pts at sd 5.13
+# saturated price: using the 2022 US SENATE margin -45.39
+# turnout_ratio: baseline is the 2022 midterm
+race_id = "2026-SEN-SD"
+state = "SD"
+year = 2022
+office = "US SENATE"
+prior_margin_mean = -45.394
+prior_margin_sd = 5.127
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T02:00:00Z"
+
+[[races]]
+# fair p_left=0.0209 (DEM) -> -10.44 pts at sd 5.13
+# saturated price: using the 2024 US SENATE margin -30.25
+# turnout_ratio: no 2022 total for TN: median of 37 states
+race_id = "2026-SEN-TN"
+state = "TN"
+year = 2024
+office = "US SENATE"
+prior_margin_mean = -30.252
+prior_margin_sd = 5.127
+national_beta = 1.000
+turnout_ratio = 0.7516
+poll_close_utc = "2026-11-04T01:00:00Z"
+
+[[races]]
+# fair p_left=0.6272 (DEM) -> +1.73 pts at sd 5.34
+# turnout_ratio: baseline is the 2022 midterm
+race_id = "2026-SEN-TX"
+state = "TX"
+year = 2022
+office = "GOVERNOR"
+prior_margin_mean = 1.734
+prior_margin_sd = 5.342
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T02:00:00Z"
+
+[[races]]
+# fair p_left=0.9846 (DEM) -> +11.07 pts at sd 5.13
+# turnout_ratio: no 2022 total for VA: median of 37 states
+race_id = "2026-SEN-VA"
+state = "VA"
+year = 2024
+office = "US SENATE"
+prior_margin_mean = 11.074
+prior_margin_sd = 5.127
+national_beta = 1.000
+turnout_ratio = 0.7516
+poll_close_utc = "2026-11-04T00:00:00Z"
+
+[[races]]
+# fair p_left=0.0188 (DEM) -> -10.66 pts at sd 5.13
+# saturated price: using the 2024 US SENATE margin -42.48
+# turnout_ratio: no 2022 total for WV: median of 37 states
+race_id = "2026-SEN-WV"
+state = "WV"
+year = 2024
+office = "US SENATE"
+prior_margin_mean = -42.478
+prior_margin_sd = 5.127
+national_beta = 1.000
+turnout_ratio = 0.7516
+poll_close_utc = "2026-11-04T00:30:00Z"
+
+[[races]]
+# fair p_left=0.0243 (DEM) -> -10.11 pts at sd 5.13
+# saturated price: using the 2024 US SENATE margin -51.38
+# turnout_ratio: 2022/2024 statewide totals for WY
+race_id = "2026-SEN-WY"
+state = "WY"
+year = 2024
+office = "US SENATE"
+prior_margin_mean = -51.380
+prior_margin_sd = 5.127
+national_beta = 1.000
+turnout_ratio = 0.7211
+poll_close_utc = "2026-11-04T02:00:00Z"
+
+# Uncovered (46 races):
+#   2026-HOUSE-AL-02: House: needle priors are keyed by county FIPS and the district splits counties
+#   2026-HOUSE-AZ-01: House: needle priors are keyed by county FIPS and the district splits counties
+#   2026-HOUSE-AZ-06: House: needle priors are keyed by county FIPS and the district splits counties
+#   2026-HOUSE-CA-22: House: needle priors are keyed by county FIPS and the district splits counties
+#   2026-HOUSE-CA-48: House: needle priors are keyed by county FIPS and the district splits counties
+#   2026-HOUSE-CO-03: House: needle priors are keyed by county FIPS and the district splits counties
+#   2026-HOUSE-CO-04: House: needle priors are keyed by county FIPS and the district splits counties
+#   2026-HOUSE-CO-08: House: needle priors are keyed by county FIPS and the district splits counties
+#   2026-HOUSE-FL-07: House: needle priors are keyed by county FIPS and the district splits counties
+#   2026-HOUSE-FL-09: House: needle priors are keyed by county FIPS and the district splits counties
+#   2026-HOUSE-FL-13: House: needle priors are keyed by county FIPS and the district splits counties
+#   2026-HOUSE-FL-16: House: needle priors are keyed by county FIPS and the district splits counties
+#   2026-HOUSE-FL-20: House: needle priors are keyed by county FIPS and the district splits counties
+#   2026-HOUSE-FL-22: House: needle priors are keyed by county FIPS and the district splits counties
+#   2026-HOUSE-IA-01: House: needle priors are keyed by county FIPS and the district splits counties
+#   2026-HOUSE-IA-02: House: needle priors are keyed by county FIPS and the district splits counties
+#   2026-HOUSE-IA-03: House: needle priors are keyed by county FIPS and the district splits counties
+#   2026-HOUSE-KY-04: House: needle priors are keyed by county FIPS and the district splits counties
+#   2026-HOUSE-ME-02: House: needle priors are keyed by county FIPS and the district splits counties
+#   2026-HOUSE-MI-07: House: needle priors are keyed by county FIPS and the district splits counties
+#   2026-HOUSE-MI-10: House: needle priors are keyed by county FIPS and the district splits counties
+#   2026-HOUSE-MN-01: House: needle priors are keyed by county FIPS and the district splits counties
+#   2026-HOUSE-MN-02: House: needle priors are keyed by county FIPS and the district splits counties
+#   2026-HOUSE-MN-05: House: needle priors are keyed by county FIPS and the district splits counties
+#   2026-HOUSE-MT-01: House: needle priors are keyed by county FIPS and the district splits counties
+#   2026-HOUSE-NE-02: House: needle priors are keyed by county FIPS and the district splits counties
+#   2026-HOUSE-NH-01: House: needle priors are keyed by county FIPS and the district splits counties
+#   2026-HOUSE-NJ-07: House: needle priors are keyed by county FIPS and the district splits counties
+#   2026-HOUSE-NY-13: House: needle priors are keyed by county FIPS and the district splits counties
+#   2026-HOUSE-NY-17: House: needle priors are keyed by county FIPS and the district splits counties
+#   2026-HOUSE-PA-01: House: needle priors are keyed by county FIPS and the district splits counties
+#   2026-HOUSE-PA-07: House: needle priors are keyed by county FIPS and the district splits counties
+#   2026-HOUSE-PA-08: House: needle priors are keyed by county FIPS and the district splits counties
+#   2026-HOUSE-PA-10: House: needle priors are keyed by county FIPS and the district splits counties
+#   2026-HOUSE-SC-01: House: needle priors are keyed by county FIPS and the district splits counties
+#   2026-HOUSE-TN-05: House: needle priors are keyed by county FIPS and the district splits counties
+#   2026-HOUSE-TX-15: House: needle priors are keyed by county FIPS and the district splits counties
+#   2026-HOUSE-TX-23: House: needle priors are keyed by county FIPS and the district splits counties
+#   2026-HOUSE-TX-28: House: needle priors are keyed by county FIPS and the district splits counties
+#   2026-HOUSE-VA-01: House: needle priors are keyed by county FIPS and the district splits counties
+#   2026-HOUSE-VA-02: House: needle priors are keyed by county FIPS and the district splits counties
+#   2026-HOUSE-VA-05: House: needle priors are keyed by county FIPS and the district splits counties
+#   2026-HOUSE-VA-07: House: needle priors are keyed by county FIPS and the district splits counties
+#   2026-HOUSE-WA-03: House: needle priors are keyed by county FIPS and the district splits counties
+#   2026-HOUSE-WI-01: House: needle priors are keyed by county FIPS and the district splits counties
+#   2026-HOUSE-WI-03: House: needle priors are keyed by county FIPS and the district splits counties

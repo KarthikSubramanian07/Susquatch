@@ -36,6 +36,14 @@ uv run python -m susq.replay drill py/susq/replay/specs/sample_2022.toml \
     --chaos-drop 1800:900 --chaos-malformed-every 7 --chaos-kill 5400:600
 uv run python -m susq.replay build py/susq/replay/specs/sample_2022.toml --out data/replay/sample.jsonl
 uv run python -m susq.replay publish data/replay/sample.jsonl --nats nats://127.0.0.1:4222 --speed 120
+
+# The 2026 prior: history for every Cup state, the spec from the fair file, then the NeedlePrior (§5)
+uv run python -m susq.replay download 2022 --market-map state/market_map.json --out data/replay/county_results_2022.csv
+uv run python -m susq.replay download 2024 --market-map state/market_map.json --out data/replay/county_results_2024.csv
+uv run python -m susq.replay spec2026 --market-map state/market_map.json --fair state/fair_live.json \
+    --history data/replay/county_results_2022.csv --history data/replay/county_results_2024.csv \
+    --out py/susq/replay/specs/general_2026.toml
+uv run python -m susq.replay prior py/susq/replay/specs/general_2026.toml --out state/needle/prior.json
 ```
 
 ---
@@ -262,10 +270,16 @@ AZ, western TX/KS, MI UP, …), 03:00Z (NV, MT, UT), 04:00Z (CA, WA, OR), 05:00Z
 | tonmcg county presidential 2008–2024 | github.com/tonmcg/US_County_Level_Election_Results_08-24 | MIT | County | no | Yes |
 | Georgia SoS (Enhanced Voting) | results.sos.ga.gov API (§1.3) | Public record | County × method | **yes** (2022 and 2024) | Yes |
 
-- `python -m susq.replay download <year> <states…>` pulls the GitHub precinct zips and aggregates them to county CSV under `data/replay/` (gitignored).
+- `python -m susq.replay download <year> [<states…>] [--market-map state/market_map.json] [--house]` pulls the GitHub precinct zips and aggregates them to county CSV under `data/replay/` (gitignored).
+  - `--market-map` adds every state with a Cup Senate or Governor race (44 states on Oct 6).
+  - Each state is cached as `data/replay/medsl/<year>/<ST>.csv` and reused unless `--refresh`. A state that fails is reported and the command exits non-zero, but the merged CSV still holds every state that worked. A state with no Senate, Governor or President race that year (DE, MS, MT, NJ, TN, VA, WV in 2022) is listed, not failed.
   - It keeps general-stage rows only.
-  - It drops non-candidate rows (undervotes, overvotes, total ballots cast) and rows without a FIPS code ("STATE FLOATING").
-  - Statewide offices only.
+  - It drops non-candidate rows: undervotes, overvotes, blanks, voids, and the ballot counts some states file as candidates (NY "PUBLIC COUNTER", 3.3M "votes" in 2022; MI "BALLOTS CAST"; NJ "CONTEST TOTAL"). The loader drops the same labels again, so older CSVs read correctly.
+  - It drops rows without a FIPS code ("STATE FLOATING"). Alaska has no counties: its rows are keyed by state house district (`jurisdiction_fips`, 02001-02040).
+  - Suppressed vote cells (`*`, in 2024 CA, KS, NM, NV) count as 0.
+  - Special elections are kept apart (`US SENATE SPECIAL`: OK 2022 ran two Senate races).
+  - Party: `party_simplified`, falling back to `party_detailed` where MEDSL simplified a major party to OTHER (MN DFL, NE 2024 President). The loader also counts fusion lines (NY Working Families, Conservative) for the candidate's major party.
+  - Statewide offices by default. `--house` also keeps US House rows by county × district (`district = "07"`); the needle cannot use them yet (§6).
 - **Which states split by method:**
   - 2022 Senate: AK AR AZ GA HI IA ID LA MD NC NY OK SC (WA only has write-in rows).
   - 2024 president: AK AL AR AZ CT DE HI IA IN MD NC NJ NY OK RI SC (WV has one label only).
@@ -276,6 +290,17 @@ AZ, western TX/KS, MI UP, …), 03:00Z (NV, MT, UT), 04:00Z (CA, WA, OR), 05:00Z
 - GA 2022 US Senate: 159 counties × 4 methods, from MEDSL. It matches the SoS certified totals exactly (Warnock 1,946,117, Walker 1,908,442, Oliver 81,365), and the test asserts this.
 - NH 2022 Senate and 2024 president: towns summed to counties.
 - ME 2022 Governor and 2024 president.
+
+**Coverage on Oct 6** (all 44 Cup states downloaded for both years; no failures):
+
+| | 2022 | 2024 |
+|---|---|---|
+| States with a Senate, Governor or President race in the file | 37 | 44 |
+| No statewide race in the MEDSL file | DE MS MT NJ TN VA WV (TN held a Governor race, but the MEDSL file lacks it) | none |
+| Known source mislabels | CA has no Senate rows; NM has no party labels; VT Governor's Democrat is OTHER; WY Governor's Democrat is LIBERTARIAN | NE Senate's Osborn (independent) is DEMOCRAT; NE's special Senate race is missing |
+
+The spec builder skips a contest where either side has under 15% of the two-party vote, so the mislabels fall through to the
+next baseline instead of producing a −100 prior.
 
 **Caveats:**
 - Alaska reports by state house district, not county.
@@ -397,6 +422,92 @@ The per-state conventions in `conventions.py` are **modeling assumptions (low co
 - **County margin sd:** `prior_margin_sd = hypot(race sd, county sd)`, with county sd defaulting to 4 pts.
 - **Vote types:** shares and mail/E-day margin offsets come from split history. `typical_report_order` comes from the conventions. Unsplit history gives one MIXED entry.
 
+### The 2026 spec (`spec2026.py`, `specs/general_2026.toml`)
+
+`python -m susq.replay spec2026` writes a spec that `load_spec` reads, one race per Cup Senate or Governor race id in the market
+map (69 on Oct 6). It never copies anything from the map except race ids. The generated file is committed with a header naming
+the command, the run date and the fair file's timestamp. The pre-flight regenerates it on the VM.
+
+- **Prior margin from the fair file.** The left side is the Democrat, or the independent where the independent out-prices the
+  Democrat (`calibrate.consensus.left_party`: NE and MT Senate on Oct 6). `p_left = p_left / (p_left + p_rep)` removes the two-way
+  overround. The sim maps a margin to a win probability through the race's unconditional margin SD, and the needle reads
+  `prior_margin_sd` as the race's total prior SD, so:
+
+  ```
+  prior_margin_sd   = analytic_margin_sd(race spec, SimParams())   # 5.13 pts; 5.34 with a named cluster; 5.77 for an independent
+  prior_margin_mean = prior_margin_sd × Φ⁻¹(p_left)                 # p clipped to [0.001, 0.999]
+  national_shift_prior_sd = sqrt(national_sd² + miss_p × miss_shift²) = 2.96
+  ```
+
+  With no returns the needle then says `Φ(mean / sd)`, which is the fair value.
+- **Saturated prices.** Beyond 95/5 a price says "safe" but not how safe: 0.99 is 2.3 SD, about 12 points, while Wyoming is 40+.
+  A race whose prior is 30 points too close would pull the needle's shared national shift as soon as it reports. So when
+  `|Φ⁻¹(p)| ≥ 1.645` and the historical margin points the same way and is larger, the historical margin is used (30 of 69 races on
+  Oct 6). The race SD is unchanged, so those races sit further from 50/50 than the fair value says, which only matters for races
+  nobody trades.
+- **Baseline contest.** The same-state statewide contest closest to a 2026 midterm: 2022 same office, 2022 other office, 2024
+  same office, 2024 President. A contest is skipped if either side has under 15% of the two-party vote. Independent-led races pool
+  the leading independent with the Democrat (`history.pool_independent`, the needle's "side A"). They prefer a contest where an
+  independent ran strongly, then any same-office contest.
+- **Turnout ratio.** 1.0 for a 2022 baseline (midterm to midterm). For a 2024 baseline it is the state's 2022 total over its 2024
+  total, or the median of that ratio (0.752 over 37 states) when the state has no 2022 race. The reason is written next to each race.
+- **Poll close** is the state's last close from `config/poll_closing.toml`, pinned per race (`poll_close_utc`).
+- **Check.** `weighted_prior_margin` (county priors weighted by expected total votes) matches each race's prior margin within 0.3
+  points for 66 of 69 races. The worst are AK (1.5 points; Walker's 20% independent vote in 2022 is uneven across districts) and
+  ID (1.2; counties clipped at −100). The needle re-centres the county priors on the race prior when it loads, so this is a
+  sanity check, not an error in what the needle uses.
+
+**Races and baselines on Oct 6:**
+
+| State | 2022 history | 2024 history | 2026 race: baseline |
+|---|---|---|---|
+| AK | GOV SEN | PRES | GOV: 2022 GOV; SEN: 2022 GOV (2022 Senate was R vs R) |
+| AL | GOV SEN | PRES | GOV: 2022 GOV; SEN: 2022 SEN |
+| AR | GOV SEN | PRES | GOV: 2022 GOV; SEN: 2022 SEN |
+| AZ | GOV SEN | PRES SEN | GOV: 2022 GOV |
+| CA | GOV | PRES SEN | GOV: 2022 GOV |
+| CO | GOV SEN | PRES | GOV: 2022 GOV; SEN: 2022 SEN |
+| CT | GOV SEN | PRES SEN | GOV: 2022 GOV |
+| DE | - | GOV PRES SEN | SEN: 2024 SEN |
+| FL | GOV SEN | PRES SEN | GOV: 2022 GOV; SEN (special): 2022 SEN |
+| GA | GOV SEN | PRES | GOV: 2022 GOV; SEN: 2022 SEN |
+| HI | GOV SEN | PRES SEN | GOV: 2022 GOV |
+| IA | GOV SEN | PRES | GOV: 2022 GOV; SEN: 2022 SEN |
+| ID | GOV SEN | PRES | GOV: 2022 GOV; SEN: 2022 SEN |
+| IL | GOV SEN | PRES | GOV: 2022 GOV; SEN: 2022 SEN |
+| KS | GOV SEN | PRES | GOV: 2022 GOV; SEN: 2022 SEN |
+| KY | SEN | PRES | SEN: 2022 SEN |
+| LA | SEN | PRES | SEN: 2022 SEN |
+| MA | GOV | PRES SEN | GOV: 2022 GOV; SEN: 2022 GOV |
+| MD | GOV SEN | PRES SEN | GOV: 2022 GOV |
+| ME | GOV | PRES SEN | GOV: 2022 GOV; SEN: 2022 GOV |
+| MI | GOV | PRES SEN | GOV: 2022 GOV; SEN: 2022 GOV |
+| MN | GOV | PRES SEN | GOV: 2022 GOV; SEN: 2022 GOV |
+| MS | - | PRES SEN | SEN: 2024 SEN |
+| MT | - | GOV PRES SEN | SEN: 2024 SEN, independent pooled |
+| NC | SEN | GOV PRES | SEN: 2022 SEN |
+| NE | GOV | PRES SEN | GOV: 2022 GOV; SEN: 2024 SEN (Osborn), independent pooled |
+| NH | GOV SEN | GOV PRES | GOV: 2022 GOV; SEN: 2022 SEN |
+| NJ | - | PRES SEN | SEN: 2024 SEN |
+| NM | GOV (no parties) | PRES SEN | GOV: 2024 PRES; SEN: 2024 SEN |
+| NV | GOV SEN | PRES SEN | GOV: 2022 GOV |
+| NY | GOV SEN | PRES SEN | GOV: 2022 GOV |
+| OK | GOV SEN SEN-special | PRES | GOV: 2022 GOV; SEN: 2022 SEN |
+| OR | GOV SEN | PRES | GOV: 2022 GOV; SEN: 2022 SEN |
+| PA | GOV SEN | PRES SEN | GOV: 2022 GOV |
+| RI | GOV | PRES SEN | GOV: 2022 GOV; SEN: 2022 GOV |
+| SC | GOV SEN | PRES | GOV: 2022 GOV; SEN: 2022 SEN |
+| SD | GOV SEN | PRES | GOV: 2022 GOV; SEN: 2022 SEN |
+| TN | - | PRES SEN | GOV: 2024 PRES; SEN: 2024 SEN |
+| TX | GOV | PRES SEN | GOV: 2022 GOV; SEN: 2022 GOV |
+| VA | - | PRES SEN | SEN: 2024 SEN |
+| VT | GOV SEN | GOV PRES SEN | GOV: 2022 SEN (the 2022 Governor file has no Democrat) |
+| WI | GOV SEN | PRES SEN | GOV: 2022 GOV |
+| WV | - | GOV PRES SEN | SEN: 2024 SEN |
+| WY | GOV | PRES SEN | GOV: 2024 PRES; SEN: 2024 SEN |
+
+**Not covered:** every House race (46 on Oct 6), for the reason in §6. Every Senate and Governor race in the map has a prior.
+
 ### Needle backends
 
 - **C++** is used when `susq_models.needle.Needle` is importable. The contract for the C++ owner uses serialized protos at the boundary:
@@ -444,6 +555,19 @@ The first sample drill on 2026-09-28 used the reference backend, all three chaos
 ---
 
 ## 6. Open issues and what is not verified
+
+- **House races have no needle prior.** The needle keys county priors by (race, county FIPS), and most competitive districts
+  split counties (CA-22 and CA-48 both do), so a district cannot be modelled from county history: the feed's county totals
+  would mix two districts. `download --house` already keeps MEDSL House rows by county × district. What is missing is a
+  county × district key in the ENR feed (`CountyResult`), in `CountyPrior` and in the needle. Until then `spec2026` lists the
+  46 House races as uncovered and the executor gets no House posteriors.
+- **Baselines are a different candidate pair.** A 2026 Senate race often uses the 2022 Governor or the 2024 Senate race as its
+  county pattern (see the table in §5). The race-level shift absorbs the statewide gap but not a home-county or incumbency
+  pattern (VT Governor uses Welch's 2022 Senate map for a Scott race).
+- **Prior margins go stale.** The committed spec uses the Oct 1 fair file. The pre-flight must regenerate it from the current
+  `state/fair_live.json` on Oct 31 and Nov 3 (RUNBOOK).
+- **Alaska** history is keyed by state house district (02001-02040); the AK priors only work with a feed that reports by the
+  same code, and no AK source is built.
 
 - **CA SoS 2026 general test dates:** unverified (§1.1). The 2026 general endpoint CSVs are not posted yet.
 - **2026 election ids** for Clarity (SC, IA) are not published yet. Those configs point at 2024 or primary references and are disabled.

@@ -39,6 +39,7 @@ class RaceInput:
     turnout_ratio: float = 1.0
     turnout_sd_frac: float = 0.08
     county_sd_pts: float = 4.0
+    poll_close_utc: datetime | None = None  # overrides the state table when set (2026 specs pin it)
 
 
 def _size_sd_frac(expected: float) -> float:
@@ -103,7 +104,7 @@ def build_prior(
             prior_margin_sd=r.prior_margin_sd,
             national_beta=r.national_beta,
             independent_major=r.independent_major,
-            poll_close_utc=poll_close_utc[state].strftime("%Y-%m-%dT%H:%M:%SZ"),
+            poll_close_utc=(r.poll_close_utc or poll_close_utc[state]).strftime("%Y-%m-%dT%H:%M:%SZ"),
         )
         for fips in sorted(r.contest.counties):
             prior.counties.append(_county_prior(r, r.contest.counties[fips], shift, state))

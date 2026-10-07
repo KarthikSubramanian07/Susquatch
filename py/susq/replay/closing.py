@@ -2,13 +2,24 @@
 
 from __future__ import annotations
 
+import os
 import tomllib
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-DEFAULT_PATH = REPO_ROOT / "config" / "poll_closing.toml"
+_TABLE = Path("config") / "poll_closing.toml"
+
+
+def _default_path() -> Path:
+    """The repo's table in a checkout; `$SUSQ_HOME/config` (or the cwd) in the installed image,
+    where the package sits in site-packages and `config/` is mounted at /susq/config."""
+    roots = [REPO_ROOT, Path(os.environ.get("SUSQ_HOME", ".")), Path.cwd()]
+    return next((r / _TABLE for r in roots if (r / _TABLE).exists()), REPO_ROOT / _TABLE)
+
+
+DEFAULT_PATH = _default_path()
 
 
 @dataclass(frozen=True)
