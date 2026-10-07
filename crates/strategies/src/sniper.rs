@@ -20,7 +20,10 @@
 //! * the market is verified, its fair is fresh, its book is fresh and passes the mapping-error gate;
 //! * the held side's fair is at least 0.90 (YES held and fair ≥ 0.90, or NO held and fair ≤ 0.10);
 //! * the exchange is not a locked leg of the target file;
-//! * no other strategy has a live intent on the exchange, and the sniper has none there either.
+//! * no other strategy has a live intent on the exchange, and the sniper has none there either;
+//! * (rust-live only, election night) the needle has no posterior for the market's race: those
+//!   races belong to the election-night executor. The bridge has no needle, so before the night the
+//!   rule is the same in both traders.
 //!
 //! Exchanges are taken in id order. Each sell is covered (at most the holding, so the position never
 //! flips) and priced at `max(held-side bid, ceil_tick(side fair − unwind_max_haircut_pts))`, never
@@ -150,6 +153,14 @@ impl Sniper {
             Some("another strategy is working it")
         } else if snap.has_live_intent(NAME, ex) {
             Some("already working it")
+        } else if snap.needle.is_some_and(|n| {
+            snap.markets
+                .rule(ex)
+                .is_some_and(|r| !r.race_id.is_empty() && n.posteriors.contains_key(&r.race_id))
+        }) {
+            // Election night: the executor buys and rolls these races on the needle's posteriors;
+            // its filled buys must not be sold back here to top up cash.
+            Some("the election-night executor's race")
         } else {
             None
         }
@@ -721,6 +732,20 @@ mod tests {
         let mut w = unwinding_world();
         w.fair_at("10", 0.95, None, w.now_ns - 61 * NS_PER_S);
         assert!(sniper().decide(&w.snap()).bundles.is_empty(), "stale fair");
+    }
+
+    /// On election night the executor's filled buys sit on near-certain sides with no live
+    /// intent left; the unwind must not sell them back to top up cash.
+    #[test]
+    fn leaves_the_election_night_executors_races_alone() {
+        let mut w = unwinding_world();
+        w.rule("10", "m10", "2026-SEN-PA", "DEM", true);
+        w.needle(true, &[("2026-SEN-GA", 0.5, 0.5, 3)]);
+        assert_eq!(sells(&sniper().decide(&w.snap())).len(), 1, "another race");
+        w.needle(true, &[("2026-SEN-PA", 0.97, 0.03, 3)]);
+        let d = sniper().decide(&w.snap());
+        assert!(d.bundles.is_empty());
+        assert!(d.notes.iter().any(|n| n.contains("election-night executor")));
     }
 
     #[test]

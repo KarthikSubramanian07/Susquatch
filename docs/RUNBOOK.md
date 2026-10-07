@@ -41,7 +41,8 @@ deliberate act: say **"go live"** in a Claude Code session (the `/go-live` pre-f
 
 From the start time the sniper stops buying and sells its near-certain holdings, at most 2 pts under fair, until cash
 is 60% of equity. Neither trader needs a restart for it; both read the start from `[strategies.sniper] unwind_from_utc`.
-The rules are in [EXP-003](../experiments/EXP-003-late-october-sniper-unwind.md).
+The rules are in [EXP-003](../experiments/EXP-003-late-october-sniper-unwind.md). After the Nov 2 cutover (§2a)
+rust-live carries on with the same rule; on the night it leaves the races the needle covers to the executor.
 
 - **Normal:** *recent trades* shows sniper **sells** at 0.90 or above. Cash on the dashboard climbs a few percent of
   equity an hour at most (10% of equity per hour is the cap) and then levels off at about 60%.

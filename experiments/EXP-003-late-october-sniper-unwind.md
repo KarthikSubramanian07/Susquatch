@@ -33,6 +33,9 @@ it when all of these hold:
 3. the exchange is not a locked leg in the current targets file;
 4. no other strategy has an order working on the exchange (orders of unknown origin count as another strategy), and the
    sniper has none working there either.
+5. On election night, rust-live only: the needle has no posterior for the market's race. Those races belong to the
+   election-night executor, and its filled buys must not be sold back to top up cash. The bridge has no needle, so
+   before the night the rule is the same in both traders.
 
 Far-quote fills on near-certain sides qualify too, but only once no far-quote ladder is resting on that exchange.
 
