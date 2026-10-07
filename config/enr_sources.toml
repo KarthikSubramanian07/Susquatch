@@ -287,6 +287,17 @@ candidate_votes = "vCount"
 precincts_reporting = "reportedPrecincts"
 precincts_total = "totalPrecincts"
 
+# ── Kansas Secretary of State: HTML only, behind a Cloudflare challenge (2026-10-06) ───────
+# Not configured. Election-night results are static HTML at https://ent.sos.ks.gov/kssos_ent.html
+# (plus national.html, ks-senate.html and one page per county such as allen.html); sos.ks.gov
+# links there on the night. Each statewide contest is an <h3> with "Precincts Reporting: N of M",
+# and county numbers sit inside the title= attribute of <area> map tags, with the party as a
+# name prefix ("R-Donald J. Trump"). No JSON, CSV or XML feed, no vote-method split. Live
+# requests get 403 with cf-mitigated: challenge. Wayback has the 2024 general (final page "Last
+# Updated: 11/06/2024 3:06 AM") and the 2026 primary ("United States Senate (R)", "Governor / Lt.
+# Governor (R)"); the 2026 general is not set up yet. Needs an HTML adapter and a way past the
+# challenge. Races: 2026-SEN-KS, 2026-GOV-KS.
+
 # ── Georgia (Enhanced Voting; not Clarity since 2024), discovered at runtime ──────────────
 # Election slugs and ballot-item ids are minted per election and published late, so this source
 # names *what* to follow and finds *where* itself: it polls the jurisdiction's election list until
