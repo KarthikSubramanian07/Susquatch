@@ -260,7 +260,9 @@ def test_eight_processes_race_one_winner(path: Path, tmp_path: Path) -> None:
 
 
 async def test_hold_regains_an_expired_lease(path: Path) -> None:
-    a = Lease(path, "bridge", ttl_s=0.05, host="h", pid=1)
+    # Margins wide enough for a slow CI runner: a 50 ms TTL lapsed again between the renewal and the
+    # `held()` check when the runner stalled (seen on PR #74's CI).
+    a = Lease(path, "bridge", ttl_s=0.5, host="h", pid=1)
     assert a.acquire()
     events: list[str] = []
     regained = asyncio.Event()
@@ -269,9 +271,9 @@ async def test_hold_regains_an_expired_lease(path: Path) -> None:
         events.append("regained")
         regained.set()
 
-    await asyncio.sleep(0.1)  # the lease lapses before the holder starts renewing (a slow open)
+    await asyncio.sleep(0.6)  # the lease lapses before the holder starts renewing (a slow open)
     assert not a.held()
-    task = asyncio.create_task(a.hold(0.01, lambda: events.append("lost"), on_regained))
+    task = asyncio.create_task(a.hold(0.05, lambda: events.append("lost"), on_regained))
     await asyncio.wait_for(regained.wait(), timeout=2)
     assert a.held()
     assert events == ["regained"]
