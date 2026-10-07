@@ -1088,7 +1088,7 @@ impl Engine {
             SendOutcome::Unknown(code) => self
                 .world
                 .event(format!("order outcome unknown ({code}); reconciling")),
-            SendOutcome::Blocked(_) | SendOutcome::NotSendable => {}
+            SendOutcome::Blocked(_) | SendOutcome::NotSendable | SendOutcome::Expired => {}
         }
     }
 

@@ -73,7 +73,14 @@ pub enum SendOutcome {
     Blocked(Blocked),
     /// The OMS refused to send (intent already closed).
     NotSendable,
+    /// The order's own expiry passed before the venue accepted it (a rate-limit pause outlasted
+    /// its time-to-live). Closed locally; not a rejection, so the reject breaker never counts it.
+    Expired,
 }
+
+/// An order this close to its expiry is not sent: it could not rest long enough to matter, and a
+/// venue that sees it after the expiry rejects it.
+const EXPIRY_MARGIN_NS: i64 = 1_000_000_000;
 
 /// Everything the gateway needs.
 pub struct GatewayDeps {
@@ -268,6 +275,9 @@ impl Gateway {
                     SendOutcome::Unknown("BLOCKED_DURING_RETRY".into())
                 };
             }
+            if self.past_expiry(&p, EXPIRY_MARGIN_NS) {
+                return self.expire_unsent(&ids, "EXPIRED_BEFORE_SEND");
+            }
             if !self.d.oms.lock().mark_sent(&ids, self.d.clock.now_ns()) {
                 return SendOutcome::NotSendable;
             }
@@ -290,6 +300,11 @@ impl Gateway {
                         self.d
                             .retry
                             .next_delay(attempt, class, started.elapsed(), &mut self.jitter.lock());
+                    if class == RetryClass::Terminal && self.past_expiry(&p, 0) {
+                        // Waited out a pause inside the call (the limiter, or the paper broker's book
+                        // read) past the order's own expiry: the venue refused a stale order.
+                        return self.expire_unsent(&ids, "EXPIRED_BEFORE_ACK");
+                    }
                     if class == RetryClass::Terminal {
                         let mut oms = self.d.oms.lock();
                         ids.iter().for_each(|id| oms.apply_reject(id, &code, now_ns));
@@ -312,6 +327,26 @@ impl Gateway {
                 }
             }
         }
+    }
+
+    /// The request's earliest order expiry is within `margin_ns` of now (engine clock).
+    fn past_expiry(&self, p: &Prepared, margin_ns: i64) -> bool {
+        p.expires_at_ns()
+            .is_some_and(|exp| exp <= self.d.clock.now_ns().saturating_add(margin_ns))
+    }
+
+    fn expire_unsent(&self, ids: &[String], reason: &str) -> SendOutcome {
+        let now_ns = self.d.clock.now_ns();
+        let mut oms = self.d.oms.lock();
+        ids.iter().for_each(|id| oms.expire_local(id, reason, now_ns));
+        drop(oms);
+        metrics::counter!("susq_orders_expired_unsent_total", "reason" => reason.to_owned()).increment(1);
+        tracing::info!(
+            reason,
+            n = ids.len(),
+            "order expired before the venue accepted it"
+        );
+        SendOutcome::Expired
     }
 
     fn pre_attempt_gate(&self) -> Result<(), Blocked> {

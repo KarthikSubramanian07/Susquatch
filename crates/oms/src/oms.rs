@@ -133,6 +133,18 @@ impl Prepared {
             Prepared::MultiLeg { request, .. } => &request.idempotency_key,
         }
     }
+
+    /// Earliest `expirationDate` among the request's orders (ns since the epoch), if any.
+    pub fn expires_at_ns(&self) -> Option<i64> {
+        match self {
+            Prepared::Single { request, .. } => request.order.expiration_date.timestamp_nanos_opt(),
+            Prepared::MultiLeg { request, .. } => request
+                .legs
+                .iter()
+                .filter_map(|l| l.expiration_date.timestamp_nanos_opt())
+                .min(),
+        }
+    }
 }
 
 /// Position change implied by an ack (for the optimistic position tracker).
@@ -521,6 +533,28 @@ impl Oms {
             .is_some_and(|t| t.state == OrderState::Pending)
         {
             self.transition(intent_id, OrderState::Cancelled, now_ns, Some(reason));
+        }
+    }
+
+    /// The order's own expiry passed before the venue accepted it (it waited out a rate-limit
+    /// pause, or the venue refused it as expired). Close it locally as expired by the legal path:
+    /// never sent -> cancelled, sent or unknown -> expired. No-op once the intent is terminal or acked.
+    pub fn expire_local(&mut self, intent_id: &str, reason: &str, now_ns: i64) {
+        let Some(state) = self.orders.get(intent_id).map(|t| t.state) else {
+            return;
+        };
+        match state {
+            OrderState::Pending => {
+                self.transition(intent_id, OrderState::Cancelled, now_ns, Some(reason));
+            }
+            OrderState::Sent => {
+                self.transition(intent_id, OrderState::Unknown, now_ns, Some(reason));
+                self.transition(intent_id, OrderState::Expired, now_ns, Some(reason));
+            }
+            OrderState::Unknown => {
+                self.transition(intent_id, OrderState::Expired, now_ns, Some(reason));
+            }
+            _ => {}
         }
     }
 
