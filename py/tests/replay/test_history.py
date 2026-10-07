@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from susq.replay.history import (
     EARLY,
@@ -8,8 +10,13 @@ from susq.replay.history import (
     MIXED,
     PROVISIONAL,
     ContestHistory,
+    ContestKey,
     classify_mode,
+    load_all,
     load_contest,
+    party_code,
+    pool_independent,
+    top_independent,
 )
 
 from .conftest import SAMPLE_CSV
@@ -74,3 +81,73 @@ def test_missing_contest_raises() -> None:
 )
 def test_mode_labels(label: str, expected: int) -> None:
     assert classify_mode(label) == expected
+
+
+HEADER = (
+    "year,state,state_po,county_name,county_fips,office,district,candidate,party,mode,"
+    "candidatevotes,totalvotes\n"
+)
+
+
+def _csv(path: Path, rows: list[str]) -> Path:
+    path.write_text(HEADER + "\n".join(rows) + "\n")
+    return path
+
+
+def test_multiple_files_and_district_selection(tmp_path: Path) -> None:
+    a = _csv(
+        tmp_path / "a.csv",
+        [
+            "2022,GEORGIA,GA,A,13001,US SENATE,STATEWIDE,D,DEMOCRAT,TOTAL,60,100",
+            "2022,GEORGIA,GA,A,13001,US SENATE,STATEWIDE,R,REPUBLICAN,TOTAL,40,100",
+            "2022,GEORGIA,GA,A,13001,US HOUSE,01,HD,DEMOCRAT,TOTAL,10,30",
+            "2022,GEORGIA,GA,A,13001,US HOUSE,01,HR,REPUBLICAN,TOTAL,20,30",
+            "2022,GEORGIA,GA,A,13001,US HOUSE,02,HD2,DEMOCRAT,TOTAL,7,7",
+        ],
+    )
+    b = _csv(
+        tmp_path / "b.csv",
+        [
+            "2024,GEORGIA,GA,A,13001,US PRESIDENT,,D,DEMOCRAT,TOTAL,70,120",  # blank district = statewide
+            "2024,GEORGIA,GA,A,13001,US PRESIDENT,,R,REPUBLICAN,TOTAL,50,120",
+        ],
+    )
+    sen = load_contest([a, b], year=2022, state="ga", office="us senate")
+    assert sen.tally.total == 100
+    pres = load_contest([a, b], year=2024, state="GA", office="US PRESIDENT")
+    assert (pres.tally.dem, pres.tally.rep) == (70, 50)
+    h1 = load_contest(a, year=2022, state="GA", office="US HOUSE", district="01")
+    assert (h1.tally.dem, h1.tally.rep) == (10, 20)
+    with pytest.raises(ValueError, match="no rows"):
+        load_contest(a, year=2022, state="GA", office="US HOUSE")  # House needs a district
+
+    every = load_all([a, b])
+    assert set(every) == {
+        ContestKey(2022, "GA", "US SENATE"),
+        ContestKey(2022, "GA", "US HOUSE", "01"),
+        ContestKey(2022, "GA", "US HOUSE", "02"),
+        ContestKey(2024, "GA", "US PRESIDENT"),
+    }
+    assert every[ContestKey(2022, "GA", "US HOUSE", "02")].tally.dem == 7
+
+
+def test_pool_independent_joins_the_democrat(tmp_path: Path) -> None:
+    p = _csv(
+        tmp_path / "ne.csv",
+        [
+            "2024,NEBRASKA,NE,A,31001,US SENATE,STATEWIDE,FISCHER,REPUBLICAN,TOTAL,55,100",
+            "2024,NEBRASKA,NE,A,31001,US SENATE,STATEWIDE,OSBORN,OTHER,TOTAL,40,100",
+            "2024,NEBRASKA,NE,A,31001,US SENATE,STATEWIDE,MINOR,OTHER,TOTAL,5,100",
+        ],
+    )
+    c = load_contest(p, year=2024, state="NE", office="US SENATE")
+    assert c.tally.dem == 0
+    assert top_independent(c) == ("OSBORN", pytest.approx(0.40))
+    pooled = pool_independent(c)
+    t = pooled.tally
+    assert (t.dem, t.rep, t.other) == (40, 55, 5)
+    assert pooled.counties["31001"].candidates["OSBORN"][0] == "INDEPENDENT"
+    assert party_code("INDEPENDENT") == "IND"
+    assert c.tally.dem == 0, "the input contest is not mutated"
+    plain = load_contest(SAMPLE_CSV, year=2022, state="NH", office="US SENATE")
+    assert pool_independent(plain).tally.dem >= plain.tally.dem
