@@ -207,6 +207,17 @@ candidate_votes = "V"
 precincts_reporting = "^0.Summary.PRR"
 precincts_total = "^0.Summary.PRP"
 
+# ── Nevada Secretary of State: behind an Incapsula bot wall (2026-10-06) ──────────────────
+# Not configured. silverstateelection.nv.gov serves XML, not JSON: /_xml/USandNV.xml has every
+# statewide race with one `<County>Votes` attribute per county (e.g. ClarkVotes="493,052"),
+# /_xml/<County>.xml has per-county precincts, /_xml/Homepage.xml the ReportedTime. Every live
+# request (browser User-Agent, Accept, Referer and Sec-Fetch headers) gets Incapsula's "Pardon
+# Our Interruption" page, which needs a JavaScript challenge cookie. Wayback has the 2024 final
+# (2025-07-17 capture) and the 2026 primary, but no election-night copies of USandNV.xml. No
+# vote-method split anywhere. The 2026 general is not posted yet (2026-09-23 capture still shows
+# the June primary). Needs an XML attribute mapper plus a way past the challenge (a browser on
+# the host) before it can be polled. Nevada has no 2026 Senate race; Governor is 2026-GOV-NV.
+
 # ── Georgia (Enhanced Voting; not Clarity since 2024), discovered at runtime ──────────────
 # Election slugs and ballot-item ids are minted per election and published late, so this source
 # names *what* to follow and finds *where* itself: it polls the jurisdiction's election list until
