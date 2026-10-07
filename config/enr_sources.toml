@@ -5,6 +5,8 @@
 #   clarity     Clarity/Scytl ENR: polls <base_url>/current_ver.txt, fetches a snapshot only when
 #               the version changes (detail = "xml" for county x vote type, "json" for totals only)
 #   static_json any JSON document, mapped with the path language in adapters/json_map.rs
+#   csv         a delimited file (CSV/TSV, plain or zipped), mapped by header name and summed
+#               to counties (adapters/csv.rs)
 #   enhanced_voting  Enhanced Voting sites (Georgia): finds the election by date and its ballot
 #               items by contest name at runtime, then maps each item like static_json
 # [[races]] maps a contest name exactly as the source prints it (case/whitespace-insensitive) to
@@ -77,6 +79,33 @@ enabled = false
 base_url = "https://electionresults.iowa.gov/IA/126082"
 detail = "xml"
 
+# ── North Carolina State Board of Elections (csv) ─────────────────────────────────────────
+# One zipped, tab-separated, CRLF file per election with a row per (precinct, contest, choice)
+# and one column per vote method; the adapter sums precincts to counties. Served from S3 with
+# ETag/Last-Modified, so conditional GETs are cheap. The 2026 general file already exists (all
+# zeros, US SENATE: Cooper / Whatley / Bray / Dublin; verified 2026-10-06), as did the 2024
+# general's (results_pct_20241105.zip, the fixture). Reporting is a proxy: distinct precincts
+# with `Real Precinct = Y` that have any vote in the contest (docs/ELECTION_NIGHT.md §1.4).
+# Enabled: before results it only re-reads a 0.6 MB zip that answers 304, and emits zeros.
+[[sources]]
+id = "nc_sbe"
+state = "NC"
+kind = "csv"
+tz = "America/New_York"
+poll_interval_s = 30.0
+urls = ["https://s3.amazonaws.com/dl.ncsbe.gov/ENRS/2026_11_03/results_pct_20261103.zip"]
+
+[sources.mapping]
+delimiter = "tab"
+zip_entry = ".txt"
+race = "Contest Name"
+county = "County"
+candidate = "Choice"
+party = "Choice Party"
+vote_type_columns = ["Election Day", "Early Voting", "Absentee by Mail", "Provisional"]
+precinct = "Precinct"
+precinct_flag = "Real Precinct"
+
 # ── Georgia (Enhanced Voting; not Clarity since 2024), discovered at runtime ──────────────
 # Election slugs and ballot-item ids are minted per election and published late, so this source
 # names *what* to follow and finds *where* itself: it polls the jurisdiction's election list until
@@ -148,6 +177,12 @@ race_id = "2026-GOV-CA"
 source = "clarity:SC"
 contest = "President and Vice President"
 race_id = "2024-PRES-SC"
+
+# North Carolina: no governor's race in 2026. Contest name verified in the 2026 file (2026-10-06).
+[[races]]
+source = "nc_sbe"
+contest = "US SENATE"
+race_id = "2026-SEN-NC"
 
 # California House: the bulk files say "United States Representative District N", the REST API
 # says "U.S. House of Representatives District N". Both map to the same race id.

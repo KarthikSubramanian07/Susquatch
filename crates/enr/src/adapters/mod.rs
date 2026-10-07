@@ -6,6 +6,7 @@
 
 pub mod ca_sos;
 pub mod clarity;
+pub mod csv;
 pub mod enhanced_voting;
 pub mod json_map;
 pub mod static_json;
@@ -163,6 +164,12 @@ pub fn build_source(cfg: &EnrConfig, s: &SourceConfig) -> Result<Box<dyn Results
                 compiled,
                 http,
             ))
+        }
+        SourceKind::Csv { urls, mapping } => {
+            let compiled = mapping
+                .compile()
+                .map_err(|e| BuildError(format!("{}: {e}", s.id)))?;
+            Box::new(csv::CsvSource::new(ctx, urls.clone(), compiled, http))
         }
         SourceKind::EnhancedVoting {
             base_url,

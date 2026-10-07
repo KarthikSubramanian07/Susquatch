@@ -262,6 +262,12 @@ pub enum SourceKind {
         urls: Vec<String>,
         mapping: Box<JsonMapping>,
     },
+    /// A delimited results file (CSV/TSV, plain or zipped), mapped by column name with
+    /// [`crate::adapters::csv::CsvMapping`] (e.g. North Carolina's `results_pct_*.zip`).
+    Csv {
+        urls: Vec<String>,
+        mapping: Box<crate::adapters::csv::CsvMapping>,
+    },
     /// Enhanced Voting (e.g. Georgia's results.sos.ga.gov): the election and its ballot items are
     /// discovered at runtime from the jurisdiction's election list, then each ballot item is
     /// mapped with [`JsonMapping`]. See [`crate::adapters::enhanced_voting`].
