@@ -259,6 +259,37 @@ def check_quotas(
 # ── orchestration ───────────────────────────────────────────────────────────────
 
 
+NEEDLE_PRIOR_FROM = date(2026, 10, 20)  # before this the 2026 prior may not be staged yet
+NEEDLE_PRIOR_MIN_RACES = 60
+NEEDLE_PRIOR_MAX_AGE_D = 9.0
+
+
+def check_needle_prior(prior: Path, *, now: datetime) -> Check:
+    """The staged 2026 needle prior (state/needle/prior.json): present, full and recent from Oct 20."""
+    required = now.date() >= NEEDLE_PRIOR_FROM
+    try:
+        doc = json.loads(prior.read_text(encoding="utf-8"))
+        races = len(doc.get("races") or [])
+        age_d = (now.timestamp() - prior.stat().st_mtime) / 86_400
+    except (OSError, ValueError, AttributeError):
+        if required:
+            return Check(
+                "needle-prior", "degraded", "no 2026 prior staged",
+                "Stage the needle prior: ops/needle-prior.sh (docs/RUNBOOK.md §2 pre-flight).",
+            )  # fmt: skip
+        return Check("needle-prior", "ok", "not staged yet (needed from Oct 20)")
+    detail = f"{races} races, built {age_d:.1f} d ago"
+    if races < NEEDLE_PRIOR_MIN_RACES:
+        return Check(
+            "needle-prior", "degraded", detail, f"The needle prior has only {races} races: rebuild it."
+        )
+    if required and age_d > NEEDLE_PRIOR_MAX_AGE_D:
+        return Check(
+            "needle-prior", "degraded", detail, "The needle prior is stale: run ops/needle-prior.sh."
+        )
+    return Check("needle-prior", "ok", detail)
+
+
 def _read_json(path: Path) -> dict[str, Any] | None:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -286,6 +317,7 @@ def run_checks(
         check_tls(tls_hosts, tls_days),
         check_lease(paths.lease_file, now=now, open_utc=parse_utc(open_text) if open_text else None),
         check_backup(backup, now=now, max_age_h=float(ops_setting(config, "backup_max_age_h", 30))),
+        check_needle_prior(paths.home / "state" / "needle" / "prior.json", now=now),
         check_quotas(
             backup,
             _read_json(paths.push_record),
