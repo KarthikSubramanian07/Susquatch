@@ -133,6 +133,7 @@ fn risk() -> PreTrade {
             max_order_notional_frac: 0.5,
             glitch_through_fair: 0.15,
             glitch_max_frac: 0.02,
+            needle_glitch_through_fair: 0.40,
         },
     }
 }

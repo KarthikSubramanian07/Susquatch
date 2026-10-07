@@ -73,10 +73,15 @@ pub struct RiskLimits {
     pub max_order_notional_frac: f64,
     pub glitch_through_fair: f64,
     pub glitch_max_frac: f64,
+    /// Glitch threshold for needle-derived legs (`[strategies.en] en_glitch_pts`), whose
+    /// `fair_yes` is the needle posterior: a post-batch edge is a 15+ point buy by design, so
+    /// the general threshold would spend the whole glitch cap on the first good trades.
+    pub needle_glitch_through_fair: f64,
 }
 
 impl RiskLimits {
-    /// From `[risk]`.
+    /// From `[risk]`. Needle-derived legs use the general glitch threshold until
+    /// [`RiskLimits::with_needle_glitch_pts`] sets their own.
     pub fn from_cfg(cfg: &RiskCfg) -> Self {
         Self {
             per_market_gross_frac: cfg.per_market_gross_frac,
@@ -86,7 +91,14 @@ impl RiskLimits {
             max_order_notional_frac: cfg.max_order_notional_frac,
             glitch_through_fair: cfg.glitch_through_fair_pts / 100.0,
             glitch_max_frac: cfg.glitch_max_frac,
+            needle_glitch_through_fair: cfg.glitch_through_fair_pts / 100.0,
         }
+    }
+
+    /// Glitch threshold (points) for needle-derived legs (`[strategies.en] en_glitch_pts`).
+    pub fn with_needle_glitch_pts(mut self, pts: f64) -> Self {
+        self.needle_glitch_through_fair = pts / 100.0;
+        self
     }
 
     /// Cap fraction for a cluster label (tightest applicable), if any.
@@ -351,7 +363,8 @@ impl PreTrade {
         Ok(())
     }
 
-    /// An order priced `glitch_through_fair` or more through fair in our favour.
+    /// An order priced `glitch_through_fair` or more through fair in our favour
+    /// (`needle_glitch_through_fair` for a needle-derived leg, whose fair is the posterior).
     pub fn is_glitch(&self, leg: &OrderSpec) -> bool {
         let Some(fair_yes) = leg.fair_yes else {
             return false;
@@ -361,7 +374,12 @@ impl PreTrade {
             BookSide::Bid => fair_yes - yes_price.prob(),
             BookSide::Ask => yes_price.prob() - fair_yes,
         };
-        through >= self.limits.glitch_through_fair - 1e-9
+        let threshold = if leg.needle_derived {
+            self.limits.needle_glitch_through_fair
+        } else {
+            self.limits.glitch_through_fair
+        };
+        through >= threshold - 1e-9
     }
 
     /// `after` is the money committed per exchange once the bundle fills.
@@ -494,6 +512,7 @@ mod tests {
             max_order_notional_frac: 0.02,
             glitch_through_fair: 0.15,
             glitch_max_frac: 0.02,
+            needle_glitch_through_fair: 0.40,
         }
     }
 
@@ -842,5 +861,61 @@ mod tests {
             pt.check_bundle(&ctx, &OrderBundle::single(leg), &w.tid),
             Err(Rejection::GlitchCap { .. })
         ));
+    }
+
+    /// Gap 9 of the readiness audit: a needle-derived buy 20 points through its posterior is the
+    /// trade the election-night executor exists for, not a glitch; its own threshold applies.
+    #[test]
+    fn needle_derived_legs_have_their_own_glitch_threshold() {
+        let w = World::new();
+        let pt = PreTrade { limits: limits() };
+        let mut ctx = w.ctx(10_000.0);
+        ctx.glitch_used = 150.0;
+        let mut leg = spec("1", Side::Yes, Action::Buy, 300, 3000);
+        leg.fair_yes = Some(0.50); // 20 pts through the posterior
+        leg.needle_derived = true;
+        assert!(!pt.is_glitch(&leg), "20 pts is under the 40 pt needle threshold");
+        assert_eq!(
+            pt.check_bundle(&ctx, &OrderBundle::single(leg.clone()), &w.tid),
+            Ok(()),
+            "the general glitch cap no longer bites"
+        );
+        // The same edge on the NO side: a NO buy at 0.30 (YES ask 0.70) against a posterior of 0.50.
+        let mut no = spec("1", Side::No, Action::Buy, 300, 3000);
+        no.fair_yes = Some(0.50);
+        no.needle_derived = true;
+        assert!(!pt.is_glitch(&no));
+        // 45 pts through the posterior is a glitch even for the needle (inverted map, broken model).
+        leg.fair_yes = Some(0.75);
+        assert!(pt.is_glitch(&leg));
+        assert!(matches!(
+            pt.check_bundle(&ctx, &OrderBundle::single(leg.clone()), &w.tid),
+            Err(Rejection::GlitchCap { .. })
+        ));
+        // Exactly at the threshold counts (same rule as the general cap).
+        leg.fair_yes = Some(0.70);
+        assert!(pt.is_glitch(&leg));
+        // Without the builder, needle legs fall under the general threshold.
+        let plain = PreTrade {
+            limits: RiskLimits::from_cfg(&RiskCfg {
+                per_market_gross_frac: 0.05,
+                total_gross_frac: 0.6,
+                glitch_through_fair_pts: 15.0,
+                glitch_max_frac: 0.02,
+                loss_per_hour_frac: 0.03,
+                reject_breaker_per_min: 10,
+                max_order_notional_frac: 0.02,
+                clusters: BTreeMap::new(),
+                bus_error_breaker_per_min: 20,
+                use_collateral_buying_power: Default::default(),
+            }),
+        };
+        leg.fair_yes = Some(0.50);
+        assert!(plain.is_glitch(&leg));
+        assert_eq!(plain.limits.needle_glitch_through_fair, 0.15);
+        let built = PreTrade {
+            limits: plain.limits.clone().with_needle_glitch_pts(40.0),
+        };
+        assert!(!built.is_glitch(&leg));
     }
 }

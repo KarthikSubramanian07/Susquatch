@@ -175,7 +175,8 @@ impl Engine {
         };
         Self {
             risk: PreTrade {
-                limits: RiskLimits::from_cfg(&cfg.risk),
+                limits: RiskLimits::from_cfg(&cfg.risk)
+                    .with_needle_glitch_pts(cfg.strategies.en.en_glitch_pts),
             },
             breakers: Breakers::new(BreakerConfig::from_cfg(&cfg.risk)),
             targets: TargetsReader::new(ReaderConfig::from_core(cfg, &d.home)),

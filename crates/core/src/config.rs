@@ -339,6 +339,11 @@ pub struct EnCfg {
     pub roll_within_pts: f64,
     pub max_order_frac: f64,
     pub order_ttl_s: u64,
+    /// A needle-derived order this many points (or more) through its own posterior counts as a
+    /// "glitch trade" under `[risk] glitch_max_frac`, instead of the general
+    /// `[risk] glitch_through_fair_pts`. A big post-batch edge is exactly a 15+ point buy, so the
+    /// general cap would stop the best election-night trades after 2 % of equity.
+    pub en_glitch_pts: f64,
 }
 
 impl Default for EnCfg {
@@ -351,6 +356,7 @@ impl Default for EnCfg {
             roll_within_pts: 2.0,
             max_order_frac: 0.02,
             order_ttl_s: 20,
+            en_glitch_pts: 40.0,
         }
     }
 }
@@ -636,6 +642,12 @@ impl Config {
                 return bad(format!("{name} = {v} must be a finite non-negative number"));
             }
         }
+        if !(en.en_glitch_pts.is_finite() && en.en_glitch_pts > 0.0 && en.en_glitch_pts <= 100.0) {
+            return bad(format!(
+                "strategies.en.en_glitch_pts = {} must be in (0, 100]",
+                en.en_glitch_pts
+            ));
+        }
         if en.order_ttl_s == 0 {
             return bad("strategies.en.order_ttl_s must be > 0".into());
         }
@@ -795,6 +807,7 @@ mod tests {
         assert!(en.require_corroboration);
         assert_eq!(en.max_order_frac, 0.02);
         assert_eq!(en.order_ttl_s, 20);
+        assert_eq!(en.en_glitch_pts, 40.0);
         assert_eq!(*en, EnCfg::default(), "the file documents the Rust defaults");
         // The one line the runbook flips.
         let armed = text.replacen("enabled = false\nmin_edge_pts", "enabled = true\nmin_edge_pts", 1);
@@ -815,6 +828,8 @@ mod tests {
             ("min_edge_pts = 8.0", "min_edge_pts = -1.0"),
             ("se_mult = 3.0", "se_mult = nan"),
             ("order_ttl_s = 20 ", "order_ttl_s = 0 "),
+            ("en_glitch_pts = 40.0", "en_glitch_pts = 0.0"),
+            ("en_glitch_pts = 40.0", "en_glitch_pts = 150.0"),
         ] {
             let bad = text.replacen(from, to, 1);
             assert_ne!(bad, text, "{from} not found");
