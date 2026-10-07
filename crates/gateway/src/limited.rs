@@ -11,28 +11,48 @@ use async_trait::async_trait;
 use susq_core::{ExchangeId, OrderId, TournamentId};
 use susq_platform::{PlatformAdapter, PlatformResult, RetryClass, models::*};
 
-use crate::limiter::{RateLimiter, RequestClass};
+use crate::limiter::{LimiterConfig, RateLimiter, RequestClass};
 
 /// Read attempts including the first.
 const READ_ATTEMPTS: u32 = 3;
+
+/// Per-exchange order books (`GET /exchanges/{id}/orderbook`) answer `429` at about 20 reads a
+/// minute even with the account's 100-read budget mostly unused (Oct 7: 18 of 22 throttles in
+/// 40 minutes, at 22 book reads a minute). They get their own adaptive budget, at most 18 a
+/// minute, so a throttled book read slows book reads only.
+fn book_limiter() -> RateLimiter {
+    RateLimiter::new(LimiterConfig {
+        initial_rps: 0.25,
+        min_rps: 0.05,
+        max_rps: 0.3,
+        order_budget_frac: 0.0,
+        increase_per_success: 0.005,
+        default_backoff: Duration::from_secs(5),
+    })
+}
 
 /// Rate-limited platform.
 #[derive(Debug)]
 pub struct RateLimited<P: ?Sized> {
     inner: Arc<P>,
     limiter: Arc<RateLimiter>,
+    books: RateLimiter,
 }
 
 impl<P: PlatformAdapter + ?Sized> RateLimited<P> {
     /// Wrap `inner`.
     pub fn new(inner: Arc<P>, limiter: Arc<RateLimiter>) -> Self {
-        Self { inner, limiter }
+        Self {
+            inner,
+            limiter,
+            books: book_limiter(),
+        }
     }
 
-    fn feedback<T>(&self, r: &PlatformResult<T>) {
+    fn feedback<T>(&self, class: RequestClass, r: &PlatformResult<T>) {
         match r {
             Ok(_) => self.limiter.on_success(),
-            Err(e) if e.is_rate_limited() => self.limiter.on_rate_limited(e.retry_after()),
+            Err(e) if e.is_rate_limited() => self.limiter.on_rate_limited(class, e.retry_after()),
             Err(_) => {}
         }
     }
@@ -43,7 +63,27 @@ impl<P: PlatformAdapter + ?Sized> RateLimited<P> {
     {
         self.limiter.acquire(RequestClass::Write).await;
         let r = call().await;
-        self.feedback(&r);
+        self.feedback(RequestClass::Write, &r);
+        r
+    }
+
+    /// An order-book read: its own budget first, then a token from the shared read budget. A 429
+    /// here backs off the book budget only.
+    async fn book<T, Fut>(&self, call: impl Fn() -> Fut) -> PlatformResult<T>
+    where
+        Fut: Future<Output = PlatformResult<T>>,
+    {
+        self.books.acquire(RequestClass::Read).await;
+        self.limiter.acquire(RequestClass::Read).await;
+        let r = call().await;
+        match &r {
+            Ok(_) => {
+                self.books.on_success();
+                self.limiter.on_success();
+            }
+            Err(e) if e.is_rate_limited() => self.books.on_rate_limited(RequestClass::Read, e.retry_after()),
+            Err(_) => {}
+        }
         r
     }
 
@@ -55,7 +95,7 @@ impl<P: PlatformAdapter + ?Sized> RateLimited<P> {
         loop {
             self.limiter.acquire(RequestClass::Read).await;
             let r = call().await;
-            self.feedback(&r);
+            self.feedback(RequestClass::Read, &r);
             let retry = match &r {
                 Err(e) if attempt < READ_ATTEMPTS => match e.retry_class() {
                     RetryClass::Retry { min_wait } => Some(min_wait.unwrap_or_default()),
@@ -101,7 +141,7 @@ impl<P: PlatformAdapter + ?Sized> PlatformAdapter for RateLimited<P> {
         exchange: &ExchangeId,
         depth: u32,
     ) -> PlatformResult<OrderBook> {
-        self.read(|| self.inner.orderbook(tid, exchange, depth)).await
+        self.book(|| self.inner.orderbook(tid, exchange, depth)).await
     }
 
     async fn place_order(&self, req: &PlaceOrderRequest) -> PlatformResult<OrderAck> {
@@ -189,7 +229,7 @@ impl<P: PlatformAdapter + ?Sized> PlatformAdapter for RateLimited<P> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::limiter::LimiterConfig;
+
     use susq_core::ManualClock;
     use susq_platform::mock::{Endpoint, Fault, MockConfig, MockPlatform};
 
@@ -235,5 +275,36 @@ mod tests {
         let p = RateLimited::new(mock.clone(), limiter());
         assert!(p.cancel_order(OrderId(1)).await.is_err());
         assert_eq!(mock.calls(Endpoint::Cancel), 1);
+    }
+
+    /// Oct 7: order-book 429s paused every request. A book 429 now backs off book reads only.
+    #[tokio::test(start_paused = true)]
+    async fn a_book_429_leaves_the_shared_budget_alone() {
+        let clock = ManualClock::at_ns(0);
+        let mock = Arc::new(MockPlatform::new(Arc::new(clock), MockConfig::default()));
+        mock.add_market("m1", "Race", &[("7", "Yes")]);
+        mock.inject(
+            Endpoint::Orderbook,
+            Fault::RateLimited {
+                retry_after: Some(Duration::from_secs(60)),
+            },
+        );
+        let l = limiter();
+        let p = RateLimited::new(mock.clone(), l.clone());
+        let tid = susq_core::TournamentId::new("t");
+        assert!(p.orderbook(&tid, &ExchangeId::new("7"), 10).await.is_err());
+        assert_eq!(
+            l.rate_limited_count(),
+            0,
+            "the shared limiter never saw the book throttle"
+        );
+        // A write goes straight out.
+        let t = tokio::time::Instant::now();
+        let _ = p.cancel_order(OrderId(1)).await;
+        assert!(t.elapsed() < Duration::from_secs(1), "{:?}", t.elapsed());
+        // The next book read waits out the book pause.
+        let t = tokio::time::Instant::now();
+        let _ = p.orderbook(&tid, &ExchangeId::new("7"), 10).await;
+        assert!(t.elapsed() >= Duration::from_secs(59), "{:?}", t.elapsed());
     }
 }

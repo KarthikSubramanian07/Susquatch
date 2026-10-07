@@ -1,9 +1,14 @@
 //! Adaptive rate limiter: token bucket with AIMD on `429` and a reserved write budget.
 //!
-//! The platform publishes no numbers, so the rate starts at `initial_rps`, grows additively on
-//! success, halves on every `429` (and pauses for `Retry-After`), bounded by `[min_rps, max_rps]`.
-//! Reads may only spend tokens above a reserve of `order_budget_frac` of the bucket, so market data
-//! polling can never starve order placement and cancels.
+//! The rate starts at `initial_rps`, grows additively on success, halves on every `429` (and
+//! pauses for `Retry-After`), bounded by `[min_rps, max_rps]`. Reads may only spend tokens above a
+//! reserve of `order_budget_frac` of the bucket, so market data polling can never starve order
+//! placement and cancels.
+//!
+//! A `429` pauses only the class that drew it. The platform keeps separate read and write
+//! budgets (100 and 30 a minute) and the trading engine has its own throttle, so a throttled read
+//! must not hold back an order: on Oct 7 a 429 on an order-book read paused every request for
+//! 60 s, which on election night would have stalled the executor for a minute at a time.
 
 use std::time::Duration;
 
@@ -52,8 +57,18 @@ struct State {
     rate: f64,
     tokens: f64,
     last: Instant,
-    paused_until: Option<Instant>,
+    read_paused_until: Option<Instant>,
+    write_paused_until: Option<Instant>,
     rate_limited: u64,
+}
+
+impl State {
+    fn pause_slot(&mut self, class: RequestClass) -> &mut Option<Instant> {
+        match class {
+            RequestClass::Read => &mut self.read_paused_until,
+            RequestClass::Write => &mut self.write_paused_until,
+        }
+    }
 }
 
 /// The shared limiter.
@@ -71,7 +86,8 @@ impl RateLimiter {
             rate,
             tokens: rate.max(1.0),
             last: Instant::now(),
-            paused_until: None,
+            read_paused_until: None,
+            write_paused_until: None,
             rate_limited: 0,
         };
         Self {
@@ -97,10 +113,10 @@ impl RateLimiter {
                 let elapsed = now.saturating_duration_since(s.last).as_secs_f64();
                 s.tokens = (s.tokens + elapsed * s.rate).min(self.burst(s.rate));
                 s.last = now;
-                match s.paused_until {
+                match *s.pause_slot(class) {
                     Some(until) if until > now => until - now,
                     _ => {
-                        s.paused_until = None;
+                        *s.pause_slot(class) = None;
                         let reserve = match class {
                             RequestClass::Read => self.cfg.order_budget_frac * self.burst(s.rate),
                             RequestClass::Write => 0.0,
@@ -123,15 +139,17 @@ impl RateLimiter {
         s.rate = (s.rate + self.cfg.increase_per_success).min(self.cfg.max_rps);
     }
 
-    /// A `429`: halve the rate, empty the bucket and pause for `Retry-After`.
-    pub fn on_rate_limited(&self, retry_after: Option<Duration>) {
+    /// A `429` on a request of `class`: halve the rate, empty the bucket and pause that class (only)
+    /// for `Retry-After`.
+    pub fn on_rate_limited(&self, class: RequestClass, retry_after: Option<Duration>) {
         let mut s = self.state.lock();
         s.rate = (s.rate / 2.0).max(self.cfg.min_rps);
         s.tokens = 0.0;
         s.rate_limited += 1;
         let until = Instant::now() + retry_after.unwrap_or(self.cfg.default_backoff);
-        s.paused_until = Some(s.paused_until.map_or(until, |p| p.max(until)));
-        tracing::warn!(rate = s.rate, ?retry_after, "rate limited: backing off");
+        let slot = s.pause_slot(class);
+        *slot = Some(slot.map_or(until, |p| p.max(until)));
+        tracing::warn!(rate = s.rate, ?retry_after, ?class, "rate limited: backing off");
     }
 
     /// Current allowed rate (requests/second).
@@ -168,7 +186,7 @@ mod tests {
         }
         assert_eq!(l.rate(), 20.0);
         for _ in 0..10 {
-            l.on_rate_limited(None);
+            l.on_rate_limited(RequestClass::Read, None);
         }
         assert_eq!(l.rate(), 0.5);
         assert_eq!(l.rate_limited_count(), 10);
@@ -178,7 +196,7 @@ mod tests {
     async fn honours_retry_after() {
         let l = RateLimiter::new(cfg());
         let start = Instant::now();
-        l.on_rate_limited(Some(Duration::from_secs(7)));
+        l.on_rate_limited(RequestClass::Write, Some(Duration::from_secs(7)));
         l.acquire(RequestClass::Write).await;
         assert!(start.elapsed() >= Duration::from_secs(7));
     }
@@ -233,5 +251,34 @@ mod tests {
         }
         // 4 burst + 20 more at 4 rps = at least 5 s.
         assert!(start.elapsed() >= Duration::from_secs(5), "{:?}", start.elapsed());
+    }
+
+    /// Oct 7: a read 429 paused every request for 60 s. Now it pauses reads only.
+    #[tokio::test(start_paused = true)]
+    async fn a_read_429_does_not_hold_back_writes() {
+        let l = RateLimiter::new(cfg());
+        l.on_rate_limited(RequestClass::Read, Some(Duration::from_secs(60)));
+        // Refill a token, then a write goes out long before the read pause ends.
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        let t = Instant::now();
+        l.acquire(RequestClass::Write).await;
+        assert!(t.elapsed() < Duration::from_secs(2), "{:?}", t.elapsed());
+        // A read still honours the pause.
+        let t = Instant::now();
+        l.acquire(RequestClass::Read).await;
+        assert!(t.elapsed() >= Duration::from_secs(58), "{:?}", t.elapsed());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_write_429_does_not_hold_back_reads() {
+        let l = RateLimiter::new(cfg());
+        l.on_rate_limited(RequestClass::Write, Some(Duration::from_secs(60)));
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        let t = Instant::now();
+        l.acquire(RequestClass::Read).await;
+        assert!(t.elapsed() < Duration::from_secs(2), "{:?}", t.elapsed());
+        let t = Instant::now();
+        l.acquire(RequestClass::Write).await;
+        assert!(t.elapsed() >= Duration::from_secs(58), "{:?}", t.elapsed());
     }
 }
