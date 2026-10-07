@@ -54,7 +54,7 @@ impl fmt::Display for RejectReason {
         match self {
             Self::MissingField(n) => write!(f, "missing {n}"),
             Self::BadState(s) => write!(f, "bad state {s:?}"),
-            Self::BadFips(s) => write!(f, "bad county fips {s:?}"),
+            Self::BadFips(s) => write!(f, "bad county fips or reporting unit {s:?}"),
             Self::NoCandidates => write!(f, "no candidates"),
             Self::DuplicateCandidate(c) => write!(f, "candidate listed twice: {c}"),
             Self::VotesExceedTotal { sum, total } => write!(f, "candidate votes {sum} exceed total {total}"),
@@ -397,7 +397,8 @@ fn validate(mut r: CountyResult) -> Result<CountyResult, RejectReason> {
     if r.state.len() != 2 || !r.state.bytes().all(|b| b.is_ascii_uppercase()) {
         return Err(RejectReason::BadState(r.state));
     }
-    if r.county_fips.len() != 5 || !r.county_fips.bytes().all(|b| b.is_ascii_digit()) {
+    // A county FIPS, or a House district reported as one unit (`CA-HD22`, see `crate::units`).
+    if !crate::units::is_unit_key(&r.county_fips, &r.state) {
         return Err(RejectReason::BadFips(r.county_fips));
     }
     match VoteType::try_from(r.vote_type) {
@@ -508,6 +509,22 @@ mod tests {
         let out = p.ingest(vec![bad_total, bad_fips, dup, prec, vt, empty]);
         assert!(out.accepted.is_empty());
         assert_eq!(p.stats().rejected, 6);
+    }
+
+    #[test]
+    fn house_district_units_are_accepted_for_their_own_state_only() {
+        let mut p = Pipeline::default();
+        let mut ca22 = result("a", "CA-HD22", VoteType::Mixed, 10, 9);
+        ca22.state = "CA".into();
+        ca22.race_id = "2026-HOUSE-CA-22".into();
+        let mut wrong_state = ca22.clone();
+        wrong_state.state = "NV".into();
+        let mut malformed = ca22.clone();
+        malformed.county_fips = "CA-22".into();
+        let out = p.ingest(vec![ca22, wrong_state, malformed]);
+        assert_eq!(out.accepted.len(), 1);
+        assert_eq!(out.accepted[0].county_fips, "CA-HD22");
+        assert_eq!(p.stats().rejected, 2);
     }
 
     #[test]

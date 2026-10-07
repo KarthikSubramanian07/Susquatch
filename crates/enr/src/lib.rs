@@ -19,7 +19,7 @@
 //!
 //! Modules: [`adapters`] (fetch + pure parsers), [`pipeline`] (the state machine),
 //! [`service`] (tasks, backoff, health), [`archive`] (capture to `data/enr/`), [`config`],
-//! [`fips`], [`http`], [`model`].
+//! [`fips`], [`http`], [`model`], [`units`] (county FIPS and House-district reporting units).
 
 pub mod adapters;
 pub mod archive;
@@ -29,6 +29,7 @@ pub mod http;
 pub mod model;
 pub mod pipeline;
 pub mod service;
+pub mod units;
 
 use config::EnrConfig;
 use service::{ServiceConfig, SourceTask};

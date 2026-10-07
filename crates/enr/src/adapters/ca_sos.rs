@@ -14,8 +14,26 @@
 //!   "ReportingTime": "September 28, 2026, 2:11 p.m.",
 //!   "candidates": [{"Name": "...", "Party": "Dem", "Votes": "1,234", "Percent": "53.1", "incumbent": false}]}`.
 //!
-//! Only county rows are emitted (the county model needs county granularity). CA does not split
-//! election-night results by vote type in this feed, so every result is tagged `MIXED`.
+//! Which rows are emitted depends on the race the contest maps to:
+//! * **Statewide races** (governor): one result per county row, keyed by county FIPS. The
+//!   statewide row is skipped (the county model needs county granularity).
+//! * **US House races** (`2026-HOUSE-CA-22`): only the "Districtwide Results" row, keyed by the
+//!   district's reporting unit `CA-HD22` ([`crate::units`]). Most competitive districts split
+//!   counties, so the needle models a district as one unit with its own prior; the district's
+//!   county pieces are skipped, since emitting them too would count the district twice. The REST
+//!   paths `/returns/us-rep/district/<n>` and `/district/all` return only districtwide rows; the
+//!   bulk `us-rep.json` has both.
+//!
+//! CA does not split election-night results by vote type in this feed, so every result is tagged
+//! `MIXED`.
+//!
+//! **Precinct counts are not passed on** (`precincts_reporting = precincts_total = 0`). The needle
+//! reads precinct progress as the share of a unit's ballots counted, but California's precincts
+//! measure neither: most ballots are mailed, and a precinct counts as reporting once its
+//! semi-official election-night tally is in, so the precinct share runs far ahead of the ballot
+//! count (docs/ELECTION_NIGHT.md §1.1). With progress near 100% at the lock the needle would treat
+//! a race as all but finished while 40 to 50% of its ballots are uncounted. Without it the needle
+//! estimates the remaining vote from the unit's expected total in the prior.
 
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -58,8 +76,7 @@ impl ResultsSource for CaSosSource {
 struct Record {
     #[serde(rename = "raceTitle")]
     race_title: String,
-    #[serde(rename = "Reporting", default)]
-    reporting: String,
+    // `Reporting` (precincts) is deliberately not read: see the module docs.
     #[serde(rename = "ReportingTime", default)]
     reporting_time: String,
     candidates: Vec<Candidate>,
@@ -88,19 +105,31 @@ pub fn parse(body: &[u8], ctx: &AdapterContext, observed_at_ns: i64) -> Result<P
         let Some((contest, scope)) = rec.race_title.rsplit_once(" - ") else {
             return Err(ParseError(format!("unexpected raceTitle {:?}", rec.race_title)));
         };
-        let Some(county) = scope
-            .trim()
-            .strip_suffix(" Results")
-            .and_then(|s| s.strip_suffix(" County"))
-        else {
-            continue; // Statewide / Districtwide rows.
-        };
         let Some(race_id) = ctx.races.get(contest) else {
             continue;
         };
-        let Some(fips) = ctx.county_fips(county) else {
-            out.unresolved_counties += 1;
-            continue;
+        let scope = scope.trim();
+        let scope = scope.strip_suffix(" Results").unwrap_or(scope);
+        let unit = if crate::units::house_district(race_id).is_some() {
+            if scope != DISTRICTWIDE {
+                continue; // a county piece of the district: the district is one unit
+            }
+            match crate::units::house_unit_for_race(race_id) {
+                Some(unit) if crate::units::is_house_unit(&unit, &ctx.state) => unit,
+                _ => {
+                    out.unresolved_counties += 1; // another state's House race mapped here
+                    continue;
+                }
+            }
+        } else {
+            let Some(county) = scope.strip_suffix(" County") else {
+                continue; // statewide / districtwide rows of county-modelled races
+            };
+            let Some(fips) = ctx.county_fips(county) else {
+                out.unresolved_counties += 1;
+                continue;
+            };
+            fips
         };
         let mut votes = Vec::with_capacity(rec.candidates.len());
         for c in rec.candidates {
@@ -116,15 +145,14 @@ pub fn parse(body: &[u8], ctx: &AdapterContext, observed_at_ns: i64) -> Result<P
                 votes: v,
             });
         }
-        let precincts = parse_reporting(&rec.reporting).unwrap_or((0, 0));
         let ts = parse_reporting_time(&rec.reporting_time, ctx.tz);
         out.results.push(ctx.result(
             race_id,
-            fips,
+            unit,
             VoteType::Mixed,
             votes,
             0,
-            precincts,
+            NO_PRECINCT_PROGRESS,
             ts,
             observed_at_ns,
         ));
@@ -132,7 +160,14 @@ pub fn parse(body: &[u8], ctx: &AdapterContext, observed_at_ns: i64) -> Result<P
     Ok(out)
 }
 
-/// `"1.5% (335 of 23,095) precincts reporting"` → `(335, 23095)`.
+/// Scope of the one row per district that a House race is modelled from.
+const DISTRICTWIDE: &str = "Districtwide";
+
+/// CA precinct counts do not measure how much of a unit is counted (module docs).
+const NO_PRECINCT_PROGRESS: (u32, u32) = (0, 0);
+
+/// `"1.5% (335 of 23,095) precincts reporting"` → `(335, 23095)`. Not passed on as progress (see
+/// the module docs); kept for reading captured payloads.
 pub fn parse_reporting(s: &str) -> Option<(u32, u32)> {
     let inner = s.split_once('(')?.1.split_once(')')?.0;
     let (a, b) = inner.split_once(" of ")?;

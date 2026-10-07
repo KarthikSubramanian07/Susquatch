@@ -514,96 +514,99 @@ contest = "Governor and Lieutenant Governor"
 race_id = "2026-GOV-OH"
 
 # California House: the bulk files say "United States Representative District N", the REST API
-# says "U.S. House of Representatives District N". Both map to the same race id.
+# says "U.S. House of Representatives District N". Both map to the same race id. The adapter emits
+# each district as ONE reporting unit (`CA-HD22`) from its "Districtwide Results" row and skips the
+# district's county pieces (crates/enr/src/units.rs). Race ids follow the market map exactly
+# (two-digit districts); the config loader refuses any other House id.
 [[races]]
 source = "ca_sos"
 contest = "United States Representative District 1"
-race_id = "2026-HOUSE-CA-1"
+race_id = "2026-HOUSE-CA-01"
 
 [[races]]
 source = "ca_sos_api"
 contest = "U.S. House of Representatives District 1"
-race_id = "2026-HOUSE-CA-1"
+race_id = "2026-HOUSE-CA-01"
 
 [[races]]
 source = "ca_sos"
 contest = "United States Representative District 2"
-race_id = "2026-HOUSE-CA-2"
+race_id = "2026-HOUSE-CA-02"
 
 [[races]]
 source = "ca_sos_api"
 contest = "U.S. House of Representatives District 2"
-race_id = "2026-HOUSE-CA-2"
+race_id = "2026-HOUSE-CA-02"
 
 [[races]]
 source = "ca_sos"
 contest = "United States Representative District 3"
-race_id = "2026-HOUSE-CA-3"
+race_id = "2026-HOUSE-CA-03"
 
 [[races]]
 source = "ca_sos_api"
 contest = "U.S. House of Representatives District 3"
-race_id = "2026-HOUSE-CA-3"
+race_id = "2026-HOUSE-CA-03"
 
 [[races]]
 source = "ca_sos"
 contest = "United States Representative District 4"
-race_id = "2026-HOUSE-CA-4"
+race_id = "2026-HOUSE-CA-04"
 
 [[races]]
 source = "ca_sos_api"
 contest = "U.S. House of Representatives District 4"
-race_id = "2026-HOUSE-CA-4"
+race_id = "2026-HOUSE-CA-04"
 
 [[races]]
 source = "ca_sos"
 contest = "United States Representative District 5"
-race_id = "2026-HOUSE-CA-5"
+race_id = "2026-HOUSE-CA-05"
 
 [[races]]
 source = "ca_sos_api"
 contest = "U.S. House of Representatives District 5"
-race_id = "2026-HOUSE-CA-5"
+race_id = "2026-HOUSE-CA-05"
 
 [[races]]
 source = "ca_sos"
 contest = "United States Representative District 6"
-race_id = "2026-HOUSE-CA-6"
+race_id = "2026-HOUSE-CA-06"
 
 [[races]]
 source = "ca_sos_api"
 contest = "U.S. House of Representatives District 6"
-race_id = "2026-HOUSE-CA-6"
+race_id = "2026-HOUSE-CA-06"
 
 [[races]]
 source = "ca_sos"
 contest = "United States Representative District 7"
-race_id = "2026-HOUSE-CA-7"
+race_id = "2026-HOUSE-CA-07"
 
 [[races]]
 source = "ca_sos_api"
 contest = "U.S. House of Representatives District 7"
-race_id = "2026-HOUSE-CA-7"
+race_id = "2026-HOUSE-CA-07"
 
 [[races]]
 source = "ca_sos"
 contest = "United States Representative District 8"
-race_id = "2026-HOUSE-CA-8"
+race_id = "2026-HOUSE-CA-08"
 
 [[races]]
 source = "ca_sos_api"
 contest = "U.S. House of Representatives District 8"
-race_id = "2026-HOUSE-CA-8"
+race_id = "2026-HOUSE-CA-08"
 
 [[races]]
 source = "ca_sos"
 contest = "United States Representative District 9"
-race_id = "2026-HOUSE-CA-9"
+race_id = "2026-HOUSE-CA-09"
 
 [[races]]
 source = "ca_sos_api"
 contest = "U.S. House of Representatives District 9"
-race_id = "2026-HOUSE-CA-9"
+race_id = "2026-HOUSE-CA-09"
 
 [[races]]
 source = "ca_sos"
