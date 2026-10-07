@@ -254,6 +254,60 @@ TEST(IndependentMajor, LeavesMassForNeither) {
   EXPECT_LT(e.p_dem + e.p_rep, 1.0);
 }
 
+// A California House seat is ONE reporting unit keyed "CA-HD22" (crates/enr/src/units.rs,
+// py/susq/replay/spec2026.py): the needle treats the key as an opaque county id. The prior
+// (unit sd 2, MIXED, as spec2026 writes it) honours the race SD at 0% reporting; a partial count
+// moves the posterior from the print toward the prior by the remaining votes.
+TEST(SingleUnitRace, HouseDistrictIsOneCountyUnderItsUnitKey) {
+  const double race_sd = 5.342;
+  susq::v1::NeedlePrior prior;
+  *prior.mutable_header() = TestHeader();
+  prior.set_national_shift_prior_sd(2.964);
+  auto* race = AddRace(&prior, "2026-HOUSE-CA-22", 3.0, race_sd);
+  race->set_state("CA");
+  auto* unit = AddCounty(&prior, "2026-HOUSE-CA-22", "CA-HD22", 100000, 3.0, 2.0);
+  unit->set_state("CA");
+  unit->set_expected_total_sd_frac(0.16);
+  AddVoteType(unit, susq::v1::VOTE_TYPE_MIXED, 1.0, 0.0, 0.5);
+  NeedleModel m(prior);
+  EXPECT_GT(m.RaceLevelSd("2026-HOUSE-CA-22"), NeedleParams{}.race_level_sd_floor) << "delta is not floored";
+  {
+    const RaceEstimate e = Find(m, "2026-HOUSE-CA-22");
+    EXPECT_NEAR(e.margin_mean, 3.0, 1e-9);
+    EXPECT_NEAR(e.margin_sd, race_sd, 1e-6) << "the race prior SD is honoured with one unit";
+    EXPECT_DOUBLE_EQ(e.reported_frac, 0.0);
+  }
+
+  // Wednesday morning: 55% counted, the Democrat trails the print by 4 (26,400 to 28,600). CA
+  // precinct counts are not passed on (precincts 0 of 0), so the remainder is expected - reported.
+  auto r = Result("2026-HOUSE-CA-22", "CA-HD22", susq::v1::VOTE_TYPE_MIXED, 26400, 28600, "ca22-1", "ca_sos");
+  r.set_state("CA");
+  EXPECT_EQ(m.Ingest(r), IngestStatus::kAccepted);
+  m.Recompute();
+  const RaceEstimate e = Find(m, "2026-HOUSE-CA-22");
+  EXPECT_NEAR(e.reported_frac, 0.55, 1e-9);
+  EXPECT_NEAR(e.expected_remaining_votes, 45000.0, 1e-6);
+  EXPECT_EQ(e.n_counties_reporting, 1U);
+  EXPECT_GT(e.margin_mean, -4.0) << "the uncounted 45% is projected from the prior and the print";
+  EXPECT_LT(e.margin_mean, 3.0);
+  EXPECT_LT(e.margin_sd, race_sd);
+  EXPECT_EQ(m.national().n_races_informing, 1U);
+  const auto counties = m.Counties();
+  ASSERT_EQ(counties.size(), 1U);
+  EXPECT_EQ(counties[0].county_fips, "CA-HD22");
+  EXPECT_TRUE(counties[0].modeled);
+
+  // Why the adapter drops CA precinct counts: a feed at "100% of precincts" would end the count.
+  NeedleModel with_precincts(prior);
+  auto all_precincts = r;
+  all_precincts.set_precincts_reporting(575);
+  all_precincts.set_precincts_total(575);
+  with_precincts.Ingest(all_precincts);
+  with_precincts.Recompute();
+  EXPECT_DOUBLE_EQ(Find(with_precincts, "2026-HOUSE-CA-22").reported_frac, 1.0);
+  EXPECT_NEAR(Find(with_precincts, "2026-HOUSE-CA-22").margin_mean, -4.0, 1e-9);
+}
+
 TEST(Prior, RejectsInconsistentPriors) {
   susq::v1::NeedlePrior prior;
   *prior.mutable_header() = TestHeader();
