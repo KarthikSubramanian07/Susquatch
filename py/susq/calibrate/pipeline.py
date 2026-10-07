@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -25,12 +26,13 @@ from susq.fair.service import compute_fair
 from susq.mapping.io import load_best_map
 from susq.models.facade import get_engine, get_threshold_simulator
 from susq.models.tourney import FieldParams, ThresholdFit
-from susq.models.types import SimParams
-from susq.optimizer.book import OptimizerResult, build_book
+from susq.models.types import BoolArray, FloatArray, SimParams
+from susq.optimizer.book import ROBUST_ASSUMPTIONS, OptimizerResult, build_book
 from susq.optimizer.legs import build_legs, leg_outcomes
 from susq.optimizer.scenarios import scenario_grid
 from susq.research_env import Paths, ResearchConfig, SeqCounter, sha256_bytes, sha256_file
 from susq.telemetry.cupdata import read_prices, with_cup_mid
+from susq.telemetry.field import FieldFootprint, leaderboard_floor, tape_field_params, tape_threshold
 
 log = logging.getLogger(__name__)
 
@@ -67,6 +69,53 @@ def _telemetry(paths: Paths) -> dict[str, Any]:
 def _threshold_fit(tele: dict[str, Any]) -> ThresholdFit | None:
     th = (tele.get("leaderboard") or {}).get("threshold")
     return ThresholdFit(**th) if th else None
+
+
+def _footprint(tele: dict[str, Any]) -> FieldFootprint | None:
+    raw = tele.get("field")
+    if not raw:
+        return None
+    try:
+        return FieldFootprint.from_dict(raw)
+    except (TypeError, ValueError):
+        log.exception("telemetry field footprint unreadable; using the leaderboard fit")
+        return None
+
+
+def select_threshold(
+    tele: dict[str, Any], outcomes: BoolArray, contracts: Sequence[str], prices: FloatArray, *, seed: int
+) -> tuple[FloatArray, str]:
+    """T per world and a description of the method, in order of preference (EXP-004):
+
+    1. the tape-fitted resolved field maximum, when telemetry's footprint is usable
+       (`field.MIN_TRADES` trades over `field.MIN_DAYS` days with `field.MIN_CHEAP_SIDES` cheap sides),
+       floored at the leaderboard anchor (`field.leaderboard_floor`);
+    2. the EXP-001 leaderboard fit, sampled independently of the worlds;
+    3. the SPEC field model with the α-price YOLO prior.
+    """
+    lb = tele.get("leaderboard") or {}
+    field_size = int(lb.get("field_size") or 2000)
+    fp = _footprint(tele)
+    if fp is not None and fp.usable:
+        floor = leaderboard_floor(lb)
+        params = tape_field_params(field_size, fp)
+        t = tape_threshold(outcomes, contracts, fp, params, np.random.default_rng(seed), floor=floor)
+        return t, (
+            f"tape(N={field_size}, bots={params.count(params.frac_bot)}, floor={floor:.2f}x; {fp.summary()})"
+        )
+    fit = _threshold_fit(tele)
+    skipped = f"; tape not used: {fp.reason}" if fp is not None else ""
+    if fit is not None:
+        return fit.sample(outcomes.shape[0], seed=seed), fit.method + skipped
+    name, sim_t = get_threshold_simulator()
+    return sim_t(outcomes, prices, FieldParams(n_players=field_size), seed), (
+        f"field-model({name}, N={field_size}){skipped}"
+    )
+
+
+def robust_thresholds(worlds: int) -> dict[str, FloatArray]:
+    """The constant field assumptions every ranking is checked against (thin, medium, tail)."""
+    return {name: np.full(worlds, t) for name, t in ROBUST_ASSUMPTIONS.items()}
 
 
 def _input_refs(paths: Paths, now_ns: int) -> list[InputRef]:
@@ -118,15 +167,14 @@ def run_targets(
     outcomes = all_outcomes[:, tradable]
 
     tele = _telemetry(paths)
-    fit = _threshold_fit(tele)
     field_size = int((tele.get("leaderboard") or {}).get("field_size") or 2000)
-    if fit is not None:
-        threshold, t_source = fit.sample(calib.draws.n, seed=seed), fit.method
-    else:
-        name, sim_t = get_threshold_simulator()
-        prices = np.array([leg.ask for leg in universe])
-        threshold = sim_t(all_outcomes, prices, FieldParams(n_players=field_size), seed)
-        t_source = f"field-model({name}, N={field_size})"
+    threshold, t_source = select_threshold(
+        tele,
+        all_outcomes,
+        [leg.exchange_id for leg in universe],
+        np.array([leg.ask for leg in universe]),
+        seed=seed,
+    )
     drift = (tele.get("crowd") or {}).get("cluster_drift_pts") or {}
     now = datetime.fromtimestamp(now_ns / 1e9, tz=UTC)
     book_frac = cfg.optimizer.book_frac_at(now)
@@ -140,6 +188,7 @@ def run_targets(
         equity=equity,
         cluster_drift_pts=drift,
         book_frac=book_frac,
+        robust_thresholds=robust_thresholds(threshold.shape[0]),
     )
     tourney = targets_pb2.TourneyEstimate(
         p_first=result.p_first,
