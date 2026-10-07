@@ -17,6 +17,17 @@
 # matter under contention, and then the trading path wins: rust-live/bridge 4096, needle/nats 3072,
 # kill-poller 2048, ops helpers 1024, scheduler 256 and hard-capped at 1.5 CPUs. The co-tenant's
 # containers default to 1024; ops/priority.sh lowers its non-critical jobs further on election night.
+#
+# Memory budget (2026-10-06): the host is a 4 GB B2pls_v2 with 4 GB of swap. The kernel, dockerd/containerd and a
+# co-tenant need about 700 MB, so the mem_limits below sum to 3,360 MiB (3.28 GiB) over EVERY service, i.e. bridge +
+# rust-live + needle + python-scheduler + the helpers all fit at once when the bridge and election profiles overlap:
+#   nats 96 + rust-live 640 + bridge 512 + needle 256 + python-scheduler 1536
+#   + status-pusher 96 + kill-poller 96 + watchdog 96 + docker-proxy 32 = 3,360 MiB
+# Measured so far: the scheduler's telemetry job peaked at 1.3 GB on Oct 6, which is why it gets 1.5 GB and not
+# 2 GB (2 GB does not fit beside the traders); the needle model is small (3,000 counties recompute in under a
+# millisecond), so 256 MB is a ceiling, not a need; the bridge and rust-live resident sizes are NOT measured under
+# load, so check `docker stats` and `free -m` in the Oct 8 needle smoke and both rehearsals, and raise one cap only
+# by lowering another. A cap is a ceiling, not a reservation; the OOM scores decide who dies first (scheduler).
 name: susquatch
 
 x-susq: &susq
@@ -67,7 +78,7 @@ services:
       retries: 3
       start_period: 5s
     cpu_shares: 3072
-    mem_limit: 256m
+    mem_limit: 96m                # core NATS, no JetStream: ~20 MB resident
     pids_limit: 128
     oom_score_adj: -500
     logging: *logging
@@ -100,7 +111,7 @@ services:
       start_period: 300s  # /healthz answers during the REST bootstrap, which can take minutes under the rate budget
     stop_grace_period: 30s # SIGTERM -> cancel-all -> exit
     cpu_shares: 4096
-    mem_limit: 1g
+    mem_limit: 640m               # unmeasured under load: see the memory budget above
     pids_limit: 256
     oom_score_adj: -800
 
@@ -133,7 +144,7 @@ services:
       start_period: 120s
     stop_grace_period: 30s
     cpu_shares: 4096
-    mem_limit: 768m
+    mem_limit: 512m               # pure-Python trader (no numpy); unmeasured under load, see the budget above
     pids_limit: 256
     oom_score_adj: -800
 
@@ -153,7 +164,7 @@ services:
     depends_on:
       nats: { condition: service_healthy }
     cpu_shares: 3072
-    mem_limit: 2g
+    mem_limit: 256m               # a ceiling: the county model is tiny, cnats + protobuf dominate
     pids_limit: 128
     oom_score_adj: -300
 
@@ -174,7 +185,8 @@ services:
       start_period: 300s
     cpu_shares: 256
     cpus: 1.5
-    mem_limit: 2g                 # the host has 4 GB; a runaway job must OOM here, not starve the bridge (2026-10-05)
+    mem_limit: 1536m              # telemetry peaked at 1.3 GB on Oct 6; a runaway job must OOM here, not starve the
+                                  # traders (2026-10-05). 2 GB would not fit the election-night budget above.
     pids_limit: 512
     oom_score_adj: 500
 
@@ -182,14 +194,14 @@ services:
     <<: [*susq, *python-image]
     command: ["python", "-m", "susq.ops.status_push"]
     cpu_shares: 1024
-    mem_limit: 192m
+    mem_limit: 96m
     pids_limit: 64
 
   kill-poller:
     <<: [*susq, *python-image]
     command: ["python", "-m", "susq.ops.kill_poller", "run"]
     cpu_shares: 2048
-    mem_limit: 128m
+    mem_limit: 96m
     pids_limit: 64
     oom_score_adj: -500
 
@@ -209,7 +221,7 @@ services:
       retries: 2
       start_period: 60s
     cpu_shares: 1024
-    mem_limit: 128m
+    mem_limit: 96m
     pids_limit: 64
 
   # The watchdog never sees the raw Docker socket. This proxy allows exactly two calls: list containers and
@@ -232,7 +244,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks: [dockerapi]
     cpu_shares: 512
-    mem_limit: 64m
+    mem_limit: 32m
     logging: *logging
 
 networks:
