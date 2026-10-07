@@ -188,11 +188,31 @@ impl World {
             });
     }
 
+    /// Mark a race disputed (sources disagree) in the installed needle view.
+    pub fn dispute(&mut self, race: &str) {
+        self.needle
+            .as_mut()
+            .expect("needle view installed")
+            .disputed_races
+            .insert(race.to_owned());
+    }
+
+    /// Mark a race's results feed stale in the installed needle view.
+    pub fn stale_feed(&mut self, race: &str) {
+        self.needle
+            .as_mut()
+            .expect("needle view installed")
+            .stale_feed_races
+            .insert(race.to_owned());
+    }
+
     /// Install a needle view with one posterior per `(race, p_dem, p_rep, n_batches)`.
     pub fn needle(&mut self, healthy: bool, races: &[(&str, f64, f64, u32)]) {
         self.needle = Some(NeedleView {
             healthy,
             epoch: 1,
+            disputed_races: Default::default(),
+            stale_feed_races: Default::default(),
             posteriors: races
                 .iter()
                 .map(|&(race, p_dem, p_rep, n_batches)| {

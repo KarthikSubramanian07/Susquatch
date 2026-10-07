@@ -40,6 +40,10 @@ fn config() -> Config {
         .expect("shared config");
     let mut cfg = Config::from_toml_str(&text).expect("valid config");
     cfg.realtime.enabled = false;
+    // These sessions start on 2026-10-08 and exercise the scenario executor from the first tick; the
+    // shipped start date is an experiment knob (EXP-002, EXP-007 moved it past this clock), not what
+    // is under test here.
+    cfg.strategies.scenario.start_utc = None;
     cfg
 }
 
@@ -252,6 +256,7 @@ fn boot(
         paper_balance: 100_000.0,
         realtime,
         needle: None,
+        enr: None,
         host: "test".into(),
         pid,
         kill: None,

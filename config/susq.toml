@@ -35,7 +35,8 @@ per_market_gross_frac = 0.05
 # ladders. The Oct 2 review decides how the sniper book is trimmed to fund the scenario book from Oct 7.
 total_gross_frac = 0.90
 glitch_through_fair_pts = 15.0     # an order this far through fair is a "glitch trade"...
-glitch_max_frac = 0.02             # ...and is capped at this share of capital
+glitch_max_frac = 0.02             # ...and is capped at this share of capital (needle-derived election-night
+                                   # orders use [strategies.en] en_glitch_pts instead of 15 pts; same cap)
 loss_per_hour_frac = 0.03          # MTM loss in any rolling hour that trips cancel-all + freeze
 reject_breaker_per_min = 10
 max_order_notional_frac = 0.02     # default per-order cap unless a strategy sets tighter
@@ -129,6 +130,30 @@ start_utc = "2026-10-11T16:00:00Z" # EXP-007: held until the tape-fitted thresho
 min_interval_s = 900               # at least 15 min between tranches on the same exchange
 max_hourly_notional_frac = 0.02    # stop once the trailing hour's tranches exceed 2% of equity
 
+[strategies.en]
+# Election-night executor (rust-live only; the Python bridge has no election-night code). It trades race
+# markets on the needle's posteriors: buys a side when the posterior beats the ask by the threshold below,
+# and "rolls" (sells) a held side once its bid is within roll_within_pts of the posterior. It acts only while
+# the needle watchdog is healthy; a silent or invalid needle cancels every needle-derived order
+# (docs/ELECTION_NIGHT.md, docs/RUNBOOK.md §2). The values here equal the Rust defaults (EnCfg) on purpose.
+# OFF until the night: at the Nov 3 17:00 ET pre-flight flip the next line to `enabled = true` (nothing else).
+enabled = false
+min_edge_pts = 8.0                 # buy only when posterior − ask ≥ this many points ...
+se_mult = 3.0                      # ... and ≥ this many model standard errors (sqrt(q(1−q)/(1+n_batches)))
+roll_within_pts = 2.0              # sell a held side once its bid is within this many points of the posterior
+require_corroboration = true       # a buy needs ≥ 2 county batches or a same-direction real-money fair move
+max_order_frac = 0.02              # notional per order as a share of equity (also bounded by [risk])
+order_ttl_s = 20                   # buys and rolls are re-decided every tick; nothing rests for long
+# Glitch cap for needle-derived orders: an order this many points through its own posterior counts as a
+# glitch trade (cumulative cap [risk] glitch_max_frac). The general 15 pts would cap the best post-batch
+# buys, which are 15+ point edges by design; 40 pts still catches an inverted map or a broken posterior.
+en_glitch_pts = 40.0
+# With --election, rust-live reads the results pollers' health (crates/enr EnrHealth): a race whose mapped
+# sources (config/enr_sources.toml [[races]] / contests) have all had no successful poll for this long, failed
+# three polls in a row, or never polled, gets no new buys (rolls of held legs still happen). A race whose
+# sources disagree beyond [consistency] is disputed: the executor refuses it and cancels its resting orders.
+feed_stale_s = 180
+
 [telemetry]
 leaderboard_interval_s = 3600
 price_snapshot_interval_s = 60
@@ -153,8 +178,15 @@ max_legs = 12                      # most legs in one scenario book
 max_leg_frac = 0.12                # most equity in any single leg
 
 [needle]
+# Liveness: no healthy needle message (heartbeat or posterior) for this long = unhealthy. The watchdog then
+# cancels every needle-derived order and clears the posteriors; it trusts the needle again after this many
+# healthy messages in a row.
 heartbeat_timeout_s = 10
 resume_after_healthy = 5
+# Posteriors are published only after an accepted county batch (CA regenerates about every 5 min, GA caches
+# 60 s), so a posterior stays tradeable for this long while the heartbeat keeps the needle healthy. Must be
+# at least heartbeat_timeout_s; a silent needle still clears everything at heartbeat_timeout_s.
+posterior_max_age_s = 600
 
 [paths]
 journal = "journal"

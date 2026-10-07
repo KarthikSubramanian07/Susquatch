@@ -53,22 +53,28 @@ Every piece is in the repo: [`ops/cloud-init.yaml`](../ops/cloud-init.yaml), [`o
 
 | Service | Image | Profile | CPU weight | Memory | Health | Notes |
 |---|---|---|---|---|---|---|
-| `nats` | `nats:2.12-alpine` | always | 3072 | 256 MB | `:8222/healthz` | the bus; not published anywhere |
-| `rust-live` | `ops/docker/rust.Dockerfile` | `rust` | 4096 | 1 GB | `127.0.0.1:9101/healthz` (in-container) | `susq-live run $SUSQ_LIVE_FLAGS` (`--election` on Nov 3–4); needs `SUSQ_API_KEY` or it exits and Docker backs off; 30 s stop grace for cancel-all; OOM score −800 |
-| `bridge` | python | `bridge` | 4096 | 768 MB | `python -m susq.ops.healthcheck bridge` | `susq-bridge open` ([bridge_py/README.md](../bridge_py/README.md)); healthy while waiting for the key or the open, then status/journal must move within 10 min; retired after the cutover |
-| `needle` | `ops/docker/cpp.Dockerfile` | `election` | 3072 | 2 GB | none: rust-live's needle watchdog (heartbeat on NATS) | `susq-needle --prior state/needle/prior.json` (`SUSQ_NEEDLE_PRIOR`); cnats via `cpp/cmake/deps.cmake`; a missing prior makes it exit and Compose back off |
-| `python-scheduler` | python (with the `susq_models` C++ extension) | always | 256, **capped 1.5 CPU** | 4 GB | `state/research/scheduler.json` < 180 s old | `susq research run`; never trades; OOM score +500 (dies first) |
-| `status-pusher` | python | always | 1024 | 192 MB | loop | [`status_push.py`](../py/susq/ops/status_push.py) |
-| `kill-poller` | python | always | 2048 | 128 MB | loop | [`kill_poller.py`](../py/susq/ops/kill_poller.py) |
-| `watchdog` | python | always | 1024 | 128 MB | heartbeat file | [`watchdog.py`](../py/susq/ops/watchdog.py) |
-| `docker-proxy` | `wollomatic/socket-proxy:1` | always | 512 | 64 MB | n/a | allows `GET /containers/json` and `POST /containers/{id}/restart`, nothing else |
+| `nats` | `nats:2.12-alpine` | always | 3072 | 96 MB | `:8222/healthz` | the bus; not published anywhere |
+| `rust-live` | `ops/docker/rust.Dockerfile` | `rust` | 4096 | 640 MB | `127.0.0.1:9101/healthz` (in-container) | `susq-live run $SUSQ_LIVE_FLAGS` (`--election` on Nov 3–4); needs `SUSQ_API_KEY` or it exits and Docker backs off; 30 s stop grace for cancel-all; OOM score −800 |
+| `bridge` | python | `bridge` | 4096 | 512 MB | `python -m susq.ops.healthcheck bridge` | `susq-bridge open` ([bridge_py/README.md](../bridge_py/README.md)); healthy while waiting for the key or the open, then status/journal must move within 10 min; retired after the cutover |
+| `needle` | `ops/docker/cpp.Dockerfile` | `election` | 3072 | 256 MB | none: rust-live's needle watchdog (heartbeat on NATS) | `susq-needle --prior state/needle/prior.json` (`SUSQ_NEEDLE_PRIOR`); cnats via `cpp/cmake/deps.cmake`; a missing prior makes it exit and Compose back off |
+| `python-scheduler` | python (with the `susq_models` C++ extension) | always | 256, **capped 1.5 CPU** | 1.5 GB | `state/research/scheduler.json` < 600 s old | `susq research run`; never trades; OOM score +500 (dies first) |
+| `status-pusher` | python | always | 1024 | 96 MB | loop | [`status_push.py`](../py/susq/ops/status_push.py) |
+| `kill-poller` | python | always | 2048 | 96 MB | loop | [`kill_poller.py`](../py/susq/ops/kill_poller.py) |
+| `watchdog` | python | always | 1024 | 96 MB | heartbeat file | [`watchdog.py`](../py/susq/ops/watchdog.py) |
+| `docker-proxy` | `wollomatic/socket-proxy:1` | always | 512 | 32 MB | n/a | allows `GET /containers/json` and `POST /containers/{id}/restart`, nothing else |
 
 Pick profiles with `COMPOSE_PROFILES` in `.env` (`bridge` on Oct 1; `rust` after the cutover; add `election` for Nov 3–4).
 The research scheduler always runs.
 
-The memory column is a ceiling per container, not a reservation, so it can add up to more than the server has. On the
-4 GB B2pls_v2 the whole stack measures about 400 MB and near-zero CPU, which also suits a burstable VM (30 % baseline,
-credits banked while idle). install.sh adds 4 GB of swap for the first native image builds.
+The memory column is a ceiling per container, not a reservation. The caps sum to 3,360 MiB on purpose, so that every
+service, the `bridge` and `election` profiles included, fits on the 4 GB B2pls_v2 together with about 700 MB for the
+kernel, Docker and a co-tenant; the budget is spelled out at the top of [`ops/compose.yaml`](../ops/compose.yaml).
+Measured so far: the scheduler's telemetry job peaked at 1.3 GB on Oct 6 (the Oct 5 OOM incident), which is why it gets
+1.5 GB rather than 2 GB; the needle's model is tiny; the bridge and rust-live resident sizes have **not** been measured
+under load, so check `docker stats` and `free -m` (and the kernel's OOM count in `dmesg`) in the Oct 8 needle smoke and
+in both rehearsals before trusting the split, and raise one cap only by lowering another. The stack idles near zero
+CPU, which suits a burstable VM (30 % baseline, credits banked while idle). install.sh adds 4 GB of swap for the first
+native image builds.
 
 **The bridge reads `.env` itself** (a read-only mount, not `env_file`), so it starts the moment `SUSQ_API_KEY` lands
 there: no restart needed. Edit `.env` in place (`nano` does); an editor that saves by replacing the file isn't seen

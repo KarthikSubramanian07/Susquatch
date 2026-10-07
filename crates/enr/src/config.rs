@@ -1,7 +1,7 @@
 //! `config/enr_sources.toml`: which results sources to poll, how often, and how source contest
 //! names map to our race ids.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::Path;
 use std::time::Duration;
 
@@ -93,6 +93,27 @@ impl EnrConfig {
             timeout: Duration::from_millis(s.timeout_ms.unwrap_or(self.defaults.timeout_ms)),
             max_backoff: Duration::from_secs_f64(self.defaults.max_backoff_s.max(1.0)),
         }
+    }
+
+    /// Which enabled sources can report each race id: `[[races]]` rows (wildcard rows apply to
+    /// every enabled source) plus the `contests` of enhanced-voting sources. A race absent from
+    /// the map has no feed at all.
+    pub fn race_sources(&self) -> BTreeMap<String, BTreeSet<String>> {
+        let enabled: Vec<&SourceConfig> = self.sources.iter().filter(|s| s.enabled).collect();
+        let mut out: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        for r in &self.races {
+            for s in enabled.iter().filter(|s| r.source == "*" || r.source == s.id) {
+                out.entry(r.race_id.clone()).or_default().insert(s.id.clone());
+            }
+        }
+        for s in &enabled {
+            if let SourceKind::EnhancedVoting { contests, .. } = &s.kind {
+                for c in contests {
+                    out.entry(c.race_id.clone()).or_default().insert(s.id.clone());
+                }
+            }
+        }
+        out
     }
 
     /// Contest-name → race-id lookup for one source.
@@ -394,6 +415,23 @@ race_id = "2026-SEN-GA-override"
         );
         assert_eq!(cfg.timing(&cfg.sources[0]).interval, Duration::from_secs(10));
         assert_eq!(cfg.timing(&cfg.sources[1]).interval, Duration::from_secs(5));
+    }
+
+    #[test]
+    fn race_sources_follow_enabled_sources_and_contests() {
+        let cfg = EnrConfig::parse(SAMPLE).expect("parse");
+        let rs = cfg.race_sources();
+        let ids = |race: &str| -> Vec<&str> { rs[race].iter().map(String::as_str).collect() };
+        assert_eq!(ids("2026-SEN-GA"), vec!["ca_sos", "clarity:GA"], "wildcard row");
+        assert_eq!(ids("2026-SEN-GA-override"), vec!["clarity:GA"], "source row");
+        // A disabled source feeds nothing.
+        let off = SAMPLE.replace("poll_interval_s = 5", "poll_interval_s = 5\nenabled = false");
+        let rs = EnrConfig::parse(&off).expect("parse").race_sources();
+        assert_eq!(rs["2026-SEN-GA"].iter().collect::<Vec<_>>(), vec!["ca_sos"]);
+        assert!(!rs.contains_key("2026-SEN-GA-override"));
+        // Enhanced-voting contests count as that source's races.
+        let rs = EnrConfig::parse(EV).expect("parse").race_sources();
+        assert_eq!(rs["2026-SEN-GA"].iter().collect::<Vec<_>>(), vec!["ga_sos"]);
     }
 
     #[test]

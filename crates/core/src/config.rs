@@ -339,6 +339,15 @@ pub struct EnCfg {
     pub roll_within_pts: f64,
     pub max_order_frac: f64,
     pub order_ttl_s: u64,
+    /// A needle-derived order this many points (or more) through its own posterior counts as a
+    /// "glitch trade" under `[risk] glitch_max_frac`, instead of the general
+    /// `[risk] glitch_through_fair_pts`. A big post-batch edge is exactly a 15+ point buy, so the
+    /// general cap would stop the best election-night trades after 2 % of equity.
+    pub en_glitch_pts: f64,
+    /// With `--election`, a race's results feed is stale once every enabled source mapped to it
+    /// has had no successful poll for this long (or failed three polls in a row, or never polled);
+    /// the executor then places no new buys on that race (rolls of held legs still happen).
+    pub feed_stale_s: u64,
 }
 
 impl Default for EnCfg {
@@ -351,6 +360,8 @@ impl Default for EnCfg {
             roll_within_pts: 2.0,
             max_order_frac: 0.02,
             order_ttl_s: 20,
+            en_glitch_pts: 40.0,
+            feed_stale_s: 180,
         }
     }
 }
@@ -417,6 +428,16 @@ pub struct TargetsCfg {
 pub struct NeedleCfg {
     pub heartbeat_timeout_s: u64,
     pub resume_after_healthy: u32,
+    /// How long a published race posterior stays tradeable while the needle keeps heartbeating.
+    /// The needle publishes posteriors only after an accepted county batch (minutes apart between
+    /// SoS refreshes), so this is deliberately much longer than the heartbeat timeout; a silent
+    /// needle still clears every posterior through the watchdog.
+    #[serde(default = "default_posterior_max_age_s")]
+    pub posterior_max_age_s: u64,
+}
+
+fn default_posterior_max_age_s() -> u64 {
+    600
 }
 
 /// `[paths]`
@@ -575,6 +596,7 @@ impl Config {
                 "strategies.farquote.max_market_frac",
                 self.strategies.farquote.max_market_frac,
             ),
+            ("strategies.en.max_order_frac", self.strategies.en.max_order_frac),
         ];
         for (name, v) in fracs
             .into_iter()
@@ -597,6 +619,9 @@ impl Config {
         if self.needle.heartbeat_timeout_s == 0 || self.needle.resume_after_healthy == 0 {
             return bad("needle timeouts must be > 0".into());
         }
+        if self.needle.posterior_max_age_s < self.needle.heartbeat_timeout_s {
+            return bad("needle.posterior_max_age_s must be at least needle.heartbeat_timeout_s".into());
+        }
         if self.targets.max_age_h.is_nan() || self.targets.max_age_h <= 0.0 {
             return bad("targets.max_age_h must be > 0".into());
         }
@@ -611,6 +636,25 @@ impl Config {
         }
         if fq.order_ttl_s == 0 || fq.interval_s == 0 {
             return bad("strategies.farquote.order_ttl_s and interval_s must be > 0".into());
+        }
+        let en = &self.strategies.en;
+        for (name, v) in [
+            ("strategies.en.min_edge_pts", en.min_edge_pts),
+            ("strategies.en.se_mult", en.se_mult),
+            ("strategies.en.roll_within_pts", en.roll_within_pts),
+        ] {
+            if !(v.is_finite() && v >= 0.0) {
+                return bad(format!("{name} = {v} must be a finite non-negative number"));
+            }
+        }
+        if !(en.en_glitch_pts.is_finite() && en.en_glitch_pts > 0.0 && en.en_glitch_pts <= 100.0) {
+            return bad(format!(
+                "strategies.en.en_glitch_pts = {} must be in (0, 100]",
+                en.en_glitch_pts
+            ));
+        }
+        if en.order_ttl_s == 0 || en.feed_stale_s == 0 {
+            return bad("strategies.en.order_ttl_s and feed_stale_s must be > 0".into());
         }
         Ok(())
     }
@@ -693,6 +737,8 @@ mod tests {
         assert_eq!(fq.order_ttl_s, 86_400);
         assert_eq!(fq.interval_s, 600);
         assert_eq!(cfg.needle.resume_after_healthy, 5);
+        assert_eq!(cfg.needle.heartbeat_timeout_s, 10);
+        assert_eq!(cfg.needle.posterior_max_age_s, 600);
         // Rust-only sections fall back to defaults.
         assert_eq!(cfg.bus.nats_url, "nats://127.0.0.1:4222");
         assert_eq!(cfg.paths.fair_live, PathBuf::from("state/fair_live.json"));
@@ -734,12 +780,71 @@ mod tests {
             Config::from_toml_str(&text),
             Err(ConfigError::Invalid(_))
         ));
+        // A posterior that may be traded on for less time than the heartbeat timeout is a typo.
+        let text = shared_toml().replace("posterior_max_age_s = 600", "posterior_max_age_s = 5");
+        assert!(matches!(
+            Config::from_toml_str(&text),
+            Err(ConfigError::Invalid(_))
+        ));
         // A far-quote level off the 0.005 tick could never be sent.
         let text = shared_toml().replace("levels = [0.01, 0.03, 0.05, 0.10]", "levels = [0.012]");
         assert!(matches!(
             Config::from_toml_str(&text),
             Err(ConfigError::Invalid(_))
         ));
+    }
+
+    /// The shipped file carries an explicit `[strategies.en]` (election-night executor) that is
+    /// off, with every knob spelled out so the Nov 3 pre-flight flips exactly one line.
+    #[test]
+    fn election_night_executor_ships_off_with_every_knob_explicit() {
+        let text = shared_toml();
+        assert!(
+            text.contains("[strategies.en]"),
+            "the section must be present, not defaulted"
+        );
+        let cfg = Config::from_toml_str(&text).expect("valid shared config");
+        let en = &cfg.strategies.en;
+        assert!(!en.enabled, "off until the Nov 3 pre-flight (docs/RUNBOOK.md §2)");
+        assert_eq!(en.min_edge_pts, 8.0);
+        assert_eq!(en.se_mult, 3.0);
+        assert_eq!(en.roll_within_pts, 2.0);
+        assert!(en.require_corroboration);
+        assert_eq!(en.max_order_frac, 0.02);
+        assert_eq!(en.order_ttl_s, 20);
+        assert_eq!(en.en_glitch_pts, 40.0);
+        assert_eq!(en.feed_stale_s, 180);
+        assert_eq!(*en, EnCfg::default(), "the file documents the Rust defaults");
+        // The one line the runbook flips.
+        let armed = text.replacen("enabled = false\nmin_edge_pts", "enabled = true\nmin_edge_pts", 1);
+        assert_ne!(
+            armed, text,
+            "the `enabled = false` line sits right above min_edge_pts"
+        );
+        assert!(
+            Config::from_toml_str(&armed)
+                .expect("valid")
+                .strategies
+                .en
+                .enabled
+        );
+        // Values that would make the executor unsafe are refused.
+        for (from, to) in [
+            ("max_order_frac = 0.02", "max_order_frac = 1.5"),
+            ("min_edge_pts = 8.0", "min_edge_pts = -1.0"),
+            ("se_mult = 3.0", "se_mult = nan"),
+            ("order_ttl_s = 20 ", "order_ttl_s = 0 "),
+            ("en_glitch_pts = 40.0", "en_glitch_pts = 0.0"),
+            ("en_glitch_pts = 40.0", "en_glitch_pts = 150.0"),
+            ("feed_stale_s = 180", "feed_stale_s = 0"),
+        ] {
+            let bad = text.replacen(from, to, 1);
+            assert_ne!(bad, text, "{from} not found");
+            assert!(
+                matches!(Config::from_toml_str(&bad), Err(ConfigError::Invalid(_))),
+                "{to} should be rejected"
+            );
+        }
     }
 
     #[test]
@@ -753,6 +858,17 @@ mod tests {
         assert_eq!(cfg.strategies.farquote.max_fair, 0.05);
         assert_eq!(cfg.strategies.farquote.levels, vec![0.01, 0.03, 0.05, 0.10]);
         assert!(!FarQuoteCfg::default().enabled, "off unless the TOML says so");
+    }
+
+    #[test]
+    fn posterior_max_age_defaults_when_absent() {
+        let text = shared_toml()
+            .lines()
+            .filter(|l| !l.starts_with("posterior_max_age_s"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let cfg = Config::from_toml_str(&text).expect("valid without the key");
+        assert_eq!(cfg.needle.posterior_max_age_s, 600);
     }
 
     #[test]

@@ -3,6 +3,12 @@
 //! Acts only when enabled **and** the needle watchdog reports healthy. With the needle missing or
 //! unhealthy it cancels every live needle-derived intent (from any strategy) and sends nothing.
 //!
+//! The results pollers' health gates races individually (`NeedleView::disputed_races`,
+//! `NeedleView::stale_feed_races`, filled by rust-live from `EnrHealth` with `--election`): a
+//! **disputed** race (sources disagree beyond tolerance) is refused outright and this strategy's
+//! resting orders on it are cancelled; a race whose **feed is stale** gets no new buys, though a
+//! held leg is still rolled (that reduces exposure on a posterior the needle still stands by).
+//!
 //! For each posterior, every verified market rule on that race maps to a win probability `q` by party
 //! (`DEM` → `p_dem`, `REP` → `p_rep`; other rules are skipped). Then, per exchange, at most one action:
 //!
@@ -67,7 +73,14 @@ impl EnExecutor {
         (self.cfg.min_edge_pts / 100.0).max(self.cfg.se_mult * model_se(q, n_batches))
     }
 
-    fn act(&self, snap: &Snapshot<'_>, post: &RacePosterior, ex: &ExchangeId, d: &mut Decision) {
+    fn act(
+        &self,
+        snap: &Snapshot<'_>,
+        post: &RacePosterior,
+        ex: &ExchangeId,
+        feed_stale: bool,
+        d: &mut Decision,
+    ) {
         let Some(rule) = snap.markets.rule(ex).filter(|r| r.verified) else {
             return;
         };
@@ -100,6 +113,10 @@ impl EnExecutor {
             if self.roll(snap, ex, book, side, held.abs(), q, locked, d) {
                 return;
             }
+        }
+        if feed_stale {
+            d.note(format!("en {ex}: results feed stale, no new buys"));
+            return;
         }
         self.buy(snap, post, ex, book, q, held_side.filter(|_| locked), d);
     }
@@ -240,8 +257,23 @@ impl Strategy for EnExecutor {
         let mut races: Vec<&RacePosterior> = needle.posteriors.values().collect();
         races.sort_by(|a, b| a.race_id.cmp(&b.race_id));
         for post in races {
-            for ex in snap.markets.exchanges_for_race(&post.race_id) {
-                self.act(snap, post, ex, &mut d);
+            let exchanges = snap.markets.exchanges_for_race(&post.race_id);
+            if needle.disputed_races.contains(&post.race_id) {
+                for i in snap
+                    .live_intents(NAME)
+                    .filter(|i| exchanges.contains(&i.exchange_id))
+                {
+                    d.cancel(&i.intent_id, "race disputed");
+                }
+                d.note(format!(
+                    "en {}: results sources disagree, race disputed, not acting",
+                    post.race_id
+                ));
+                continue;
+            }
+            let feed_stale = needle.stale_feed_races.contains(&post.race_id);
+            for ex in exchanges {
+                self.act(snap, post, ex, feed_stale, &mut d);
             }
         }
         d
@@ -428,6 +460,54 @@ mod tests {
         w.book("1", &[(6000, 100)], &[(6100, 100)]);
         let d = EnExecutor::new(cfg()).decide(&w.snap());
         assert!(d.bundles.is_empty(), "{:?}", legs(&d));
+    }
+
+    /// Gap 8 of the readiness audit: "the election-night executor must refuse to act on disputed
+    /// races" (docs/ELECTION_NIGHT.md §4), including what it already has resting on them.
+    #[test]
+    fn disputed_races_are_refused_and_their_orders_cancelled() {
+        let mut w = world(0.90, 9_999);
+        w.book("1", &[(5000, 100)], &[(5500, 100)]); // a 35 pt edge
+        w.rule("9", "m9", "2026-GOV-OH", "DEM", true);
+        let mut on_race = intent("en:1:yes:1", NAME, "1", Side::Yes, Action::Buy, 5000);
+        on_race.needle_derived = true;
+        let mut elsewhere = intent("en:9:yes:1", NAME, "9", Side::Yes, Action::Buy, 5000);
+        elsewhere.needle_derived = true;
+        w.intents.extend([on_race, elsewhere]);
+        w.dispute(RACE);
+        let d = EnExecutor::new(cfg()).decide(&w.snap());
+        assert!(d.bundles.is_empty(), "{:?}", legs(&d));
+        let ids: Vec<&str> = d.cancels.iter().map(|c| c.intent_id.as_str()).collect();
+        assert_eq!(ids, vec!["en:1:yes:1"], "only the disputed race's orders go");
+        assert_eq!(d.cancels[0].reason, "race disputed");
+        assert!(d.notes.iter().any(|n| n.contains("disputed")));
+        // The dispute clears: trading resumes (the worked exchange still has its live intent).
+        w.needle.as_mut().expect("needle").disputed_races.clear();
+        w.intents.clear();
+        assert_eq!(EnExecutor::new(cfg()).decide(&w.snap()).bundles.len(), 1);
+    }
+
+    #[test]
+    fn stale_feed_skips_buys_but_still_rolls() {
+        let mut w = world(0.70, 9_999);
+        w.stale_feed(RACE);
+        w.book("1", &[(5000, 100)], &[(6150, 100)]); // edge 0.085 ≥ 8 pts: would buy
+        let d = EnExecutor::new(cfg()).decide(&w.snap());
+        assert!(d.bundles.is_empty(), "{:?}", legs(&d));
+        assert!(d.cancels.is_empty());
+        assert!(d.notes.iter().any(|n| n.contains("feed stale")));
+        // A held leg whose bid is near q is still rolled: that only reduces exposure.
+        w.position("1", 40);
+        w.book("1", &[(6900, 100)], &[(7100, 100)]);
+        assert_eq!(
+            legs(&EnExecutor::new(cfg()).decide(&w.snap())),
+            vec![("1".into(), Side::Yes, Action::Sell, 6800, 40)]
+        );
+        // Once the feed is back, the buy goes through.
+        w.position("1", 0);
+        w.book("1", &[(5000, 100)], &[(6150, 100)]);
+        w.needle.as_mut().expect("needle").stale_feed_races.clear();
+        assert_eq!(EnExecutor::new(cfg()).decide(&w.snap()).bundles.len(), 1);
     }
 
     #[test]

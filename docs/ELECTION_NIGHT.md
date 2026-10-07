@@ -314,7 +314,7 @@ AZ, western TX/KS, MI UP, …), 03:00Z (NV, MT, UT), 04:00Z (CA, WA, OR), 05:00Z
 6. **Cross-source consistency.** Per (race, county), each source's latest results are summed over vote types and compared pairwise on DEM/REP/other.
    - A lagging source is fine as long as it is a plausible *earlier snapshot*: no party may have more votes in it than in the leading source (within tolerance).
    - When totals match within 2 % (with a 50-vote floor), the D two-party shares must agree within 1 pt.
-   - A violation marks the race **disputed** in `EnrHealth.disputed_races` until it resolves. **The election-night executor must refuse to act on disputed races.**
+   - A violation marks the race **disputed** in `EnrHealth.disputed_races` until it resolves. **The election-night executor refuses disputed races**: rust-live reads the health channel every tick (`crates/live/src/enr_health.rs`), the `EnExecutor` places nothing on a disputed race and cancels its own resting orders there, and the dispute appears in *events* and the `enr` health tile.
 7. **Emit.** `CountyResultsBatch` has header producer `rust-live/enr`, a strictly increasing `seq` (assigned by the single pipeline task, so it
    is ordered on the channel), and at most 500 results per batch so a bus message stays under NATS' 1 MB default.
    - Output goes on a `tokio::sync::mpsc` channel. Health goes on a `watch` channel.
@@ -328,7 +328,10 @@ AZ, western TX/KS, MI UP, …), 03:00Z (NV, MT, UT), 04:00Z (CA, WA, OR), 05:00Z
 - Per-source health tracks:
   - polls, failures and consecutive failures;
   - 304s, malformed payloads, unresolved counties and version regressions;
-  - `last_ok_ns` and `last_new_data_ns`, which the executor can use for staleness;
+  - `last_ok_ns` and `last_new_data_ns`. rust-live turns these into one `enr:<source>` health tile per source and the executor's
+    stale-feed gate: a source is stale once `last_ok_ns` is older than `[strategies.en] feed_stale_s` (180 s), it has failed three polls
+    in a row, or it has never polled; a race whose mapped sources (`[[races]]` rows and enhanced-voting `contests`) are all stale gets
+    no new buys, while held legs are still rolled;
   - for `enhanced_voting` sources, a `discovery` block: phase, election id and name, contest to ballot-item ids, the site's
     `isProduction` / `isOfficialResults` flags, `production_verified`, and discovery counters.
 
@@ -455,7 +458,14 @@ The first sample drill on 2026-09-28 used the reference backend, all three chaos
 - **Poll-closing table:** 33 states are unverified (GA and NH are the important ones).
 - **Reporting conventions** are assumptions to calibrate from captures and from any timestamped archives we can find.
 - **Cross-source tolerances** (2 %, 50 votes, 1 pt) are untuned. The CA bulk-versus-REST pair gives a free first calibration on the test days.
-- **C++ needle binding:** not built yet (feat/cpp-models). The drill uses the reference backend until `susq_models.needle.Needle` exists with the contract above.
+- **C++ needle binding:** built (`cpp/bindings/needle_bindings.cpp`, in the python image through the `models` dependency group) and
+  used by the drill whenever `susq_models.needle.Needle` imports, with the reference backend as the fallback and cross-check. What a
+  binding drill does **not** exercise is the `susq-needle` service itself (NATS, headers, seq, heartbeats, the rust-live watchdog); the
+  service image has not yet been built or run on the VM, which the Oct 8 smoke and both rehearsals must cover.
+- **Posterior cadence and the executor's gates:** the needle publishes posteriors only after an accepted batch; rust-live keeps acting on
+  the last one for `[needle] posterior_max_age_s` (600 s) while heartbeats keep the needle healthy. With `--election` the executor also
+  refuses disputed races and places no new buys where every mapped source is stale (`[strategies.en] feed_stale_s`); without the pollers
+  (a replay published straight onto the bus) neither gate applies. Both gates are unit-tested and have not yet run against the real stack.
 
 ## Sources (all accessed 2026-09-28)
 

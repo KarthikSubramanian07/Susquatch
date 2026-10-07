@@ -37,6 +37,7 @@ use susq_targets::{FairOutcome, FairReader, ReaderConfig, RefreshOutcome, Target
 use tokio::{sync::watch, task::JoinHandle};
 
 use crate::{
+    enr_health::{self, EnrFeed},
     realtime::RealtimeFeed,
     world::{World, intent_views, live_orders},
 };
@@ -71,6 +72,8 @@ pub struct EngineDeps {
     pub tournament: susq_core::TournamentId,
     pub realtime: Option<RealtimeFeed>,
     pub needle: Option<watch::Receiver<NeedleSnapshot>>,
+    /// The results pollers' health (`--election`), for the disputed / stale-feed gates.
+    pub enr: Option<EnrFeed>,
 }
 
 #[derive(Debug, Default)]
@@ -175,7 +178,8 @@ impl Engine {
         };
         Self {
             risk: PreTrade {
-                limits: RiskLimits::from_cfg(&cfg.risk),
+                limits: RiskLimits::from_cfg(&cfg.risk)
+                    .with_needle_glitch_pts(cfg.strategies.en.en_glitch_pts),
             },
             breakers: Breakers::new(BreakerConfig::from_cfg(&cfg.risk)),
             targets: TargetsReader::new(ReaderConfig::from_core(cfg, &d.home)),
@@ -493,6 +497,7 @@ impl Engine {
         }
         self.refresh_targets(now);
         self.refresh_fair(now);
+        self.refresh_enr(now);
         self.refresh_needle(now);
         if now >= self.due.realtime {
             self.refresh_realtime_markets(now);
@@ -671,6 +676,32 @@ impl Engine {
         self.world.put_health(self.fair.health(now));
     }
 
+    /// The results pollers' health (`--election`): per-source tiles, disputed races and which
+    /// races still have a live feed (see [`enr_health`]).
+    fn refresh_enr(&mut self, now: i64) {
+        let Some(feed) = self.d.enr.as_ref() else { return };
+        let health = feed.health.borrow().clone();
+        let stale_after = i64::try_from(self.d.cfg.strategies.en.feed_stale_s)
+            .unwrap_or(180)
+            .saturating_mul(S);
+        let view = enr_health::assess(&health, &feed.race_sources, now, stale_after);
+        for item in &view.health {
+            self.world.put_health(item.clone());
+        }
+        if let Some(prev) = self.world.enr.replace(view) {
+            let now_disputed = &self.world.enr.as_ref().expect("just set").disputed_races;
+            let opened: Vec<String> = now_disputed.difference(&prev.disputed_races).cloned().collect();
+            let resolved: Vec<String> = prev.disputed_races.difference(now_disputed).cloned().collect();
+            for race in opened {
+                self.world
+                    .event(format!("results sources disagree on {race}: race disputed"));
+            }
+            for race in resolved {
+                self.world.event(format!("dispute on {race} resolved"));
+            }
+        }
+    }
+
     fn refresh_needle(&mut self, now: i64) {
         let Some(rx) = self.d.needle.as_ref() else { return };
         let snap = rx.borrow().clone();
@@ -684,10 +715,26 @@ impl Engine {
             })
             .unwrap_or_default();
         let healthy = snap.actionable_posteriors(now).is_some();
+        // Without the pollers (a drill replaying straight onto the bus) nothing gates races;
+        // with them, a race whose mapped sources are all stale gets no new buys and a disputed
+        // race is refused (the executor does both).
+        let (disputed_races, stale_feed_races) = match self.world.enr.as_ref() {
+            Some(enr) => (
+                enr.disputed_races.clone(),
+                posteriors
+                    .keys()
+                    .filter(|race| !enr.live_feed_races.contains(*race))
+                    .cloned()
+                    .collect(),
+            ),
+            None => (HashSet::new(), HashSet::new()),
+        };
         self.world.needle = Some(NeedleView {
             healthy,
             epoch: snap.epoch,
             posteriors,
+            disputed_races,
+            stale_feed_races,
         });
         self.world.put_health(snap.health.clone());
     }

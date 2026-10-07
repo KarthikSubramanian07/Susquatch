@@ -10,7 +10,6 @@ use serde_json::json;
 use susq_bus::{
     Bus,
     monitor::{MonitorCfg, NeedleMonitor, NeedleSnapshot},
-    watchdog::WatchdogCfg,
 };
 use susq_contracts::v1::MarketMap;
 use susq_core::{
@@ -26,6 +25,7 @@ use crate::{
     cli::{Cli, RunArgs},
     election,
     engine::Engine,
+    enr_health::EnrFeed,
     http::{self, Liveness},
     realtime::{RealtimeFeed, Spawner},
     runtime::{Runtime, connect},
@@ -38,6 +38,7 @@ fn build_engine(
     mode: Mode,
     realtime: Option<RealtimeFeed>,
     needle: Option<watch::Receiver<NeedleSnapshot>>,
+    enr: Option<EnrFeed>,
     kill: Option<KillSwitch>,
 ) -> anyhow::Result<Engine> {
     build(BuildOpts {
@@ -51,6 +52,7 @@ fn build_engine(
         paper_balance: rt.tournament.my_balance,
         realtime,
         needle,
+        enr,
         host: host_name(),
         pid: std::process::id(),
         kill,
@@ -143,7 +145,7 @@ async fn start_bus(
     let monitor = NeedleMonitor::spawn(
         messages,
         known_races(rt),
-        MonitorCfg::new(WatchdogCfg::from_config(&rt.cfg.needle)),
+        MonitorCfg::from_config(&rt.cfg.needle),
         rt.clock.clone(),
         shutdown.clone(),
     );
@@ -198,7 +200,8 @@ pub async fn run(cli: &Cli, args: &RunArgs, force_paper: bool) -> anyhow::Result
         }
     };
     // The same switch (shared flag) is wired to NATS ops.kill and handed to the gateway.
-    let mut engine = build_engine(&rt, mode, realtime, needle, Some(kill))?;
+    let enr_feed = enr.as_ref().map(|e| e.feed.clone());
+    let mut engine = build_engine(&rt, mode, realtime, needle, enr_feed, Some(kill))?;
 
     // /healthz is up before first contact: under the per-account rate budget the bootstrap reads
     // can take minutes, and a health check that cannot connect gets the container restarted (watchdog)
@@ -259,7 +262,7 @@ pub async fn run(cli: &Cli, args: &RunArgs, force_paper: bool) -> anyhow::Result
     let _ = status::write(&status_path, &status::snapshot(&engine, now, seq + 1));
     shutdown.cancel();
     if let Some(enr) = enr {
-        enr.shutdown().await;
+        enr.handle.shutdown().await;
     }
     let _ = server.await;
     drop(engine);
@@ -314,7 +317,7 @@ fn smoke_price(book: &susq_platform::OrderBook) -> Pips {
 /// `smoke`: place one contract and cancel it, through every gate. Prints a JSON result.
 pub async fn smoke(cli: &Cli, exchange: &str) -> anyhow::Result<()> {
     let rt = connect(&cli.home, &cli.config_path()).await?;
-    let mut engine = build_engine(&rt, rt.mode(false), None, None, None)?;
+    let mut engine = build_engine(&rt, rt.mode(false), None, None, None, None)?;
     engine.bootstrap().await;
     let ex = ExchangeId::new(exchange);
     let book = engine.platform().orderbook(&rt.tid(), &ex, 5).await?;
@@ -373,7 +376,7 @@ pub async fn smoke(cli: &Cli, exchange: &str) -> anyhow::Result<()> {
 /// `cancel-all`: needs the lease (refuses while another process trades).
 pub async fn cancel_all(cli: &Cli, reason: &str) -> anyhow::Result<()> {
     let rt = connect(&cli.home, &cli.config_path()).await?;
-    let mut engine = build_engine(&rt, rt.mode(false), None, None, None)?;
+    let mut engine = build_engine(&rt, rt.mode(false), None, None, None, None)?;
     engine.bootstrap().await;
     let resp = engine
         .gateway()
