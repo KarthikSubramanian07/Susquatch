@@ -292,6 +292,9 @@ fn utc() -> chrono_tz::Tz {
 pub enum SourceKind {
     /// California Secretary of State JSON API: one URL per contest, county breakdown included.
     CaSos { urls: Vec<String> },
+    /// Nevada Secretary of State `USandNV.xml`: county votes as `<County>Votes` attributes on
+    /// each candidate (see [`crate::adapters::nv_sos`]).
+    NvSos { urls: Vec<String> },
     /// Clarity/Scytl ENR: `base_url` is the election root, e.g.
     /// `https://results.enr.clarityelections.com/GA/122512`.
     Clarity {

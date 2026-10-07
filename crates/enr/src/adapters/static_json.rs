@@ -161,6 +161,16 @@ pub fn parse(
     observed_at_ns: i64,
 ) -> Result<Parsed, ParseError> {
     let root: Value = serde_json::from_slice(body)?;
+    if let Some(p) = &m.unwrap_json {
+        let text = select_one(p, &root, &[], &root)
+            .and_then(Value::as_str)
+            .ok_or_else(|| ParseError("unwrap_json: no string at the configured path".into()))?;
+        if text.trim().is_empty() {
+            return Ok(Parsed::default());
+        }
+        let inner: Value = serde_json::from_str(text)?;
+        return parse_value(&inner, m, ctx, observed_at_ns);
+    }
     match &m.unwrap_base64 {
         None => parse_value(&root, m, ctx, observed_at_ns),
         Some(p) => {
@@ -226,8 +236,13 @@ pub fn parse_value(
 
     for (row, binds) in expand_rows(root, &m.rows) {
         let text = |p: &super::json_map::Path| select_one(p, root, &binds, row).and_then(as_text);
-        let Some(contest) = text(&m.race) else {
-            return Err(ParseError("row without a contest name".into()));
+        let contest = match (&m.contest, &m.race) {
+            (Some(fixed), _) => fixed.clone(),
+            (None, Some(p)) => match text(p) {
+                Some(c) => c,
+                None => return Err(ParseError("row without a contest name".into())),
+            },
+            (None, None) => return Err(ParseError("mapping has no contest name".into())),
         };
         let Some(race_id) = ctx.races.get(&contest) else {
             continue;
@@ -284,6 +299,32 @@ pub fn parse_value(
                 }
             };
             match &m.breakdown {
+                None if !m.vote_fields.is_empty() => {
+                    // One scalar per method; the part of the candidate's total the fields do not
+                    // cover (a null field, or a county publishing totals only) is MIXED.
+                    let total = select_one(&m.candidate_votes, root, &binds, cand)
+                        .and_then(parse_count)
+                        .ok_or_else(bad_votes)?;
+                    let mut split = 0u64;
+                    for (label, p) in &m.vote_fields {
+                        match select_one(p, root, &binds, cand) {
+                            None | Some(Value::Null) => {}
+                            Some(v) => {
+                                let v = parse_count(v).ok_or_else(bad_votes)?;
+                                split = split.saturating_add(v);
+                                add(classify_vote_type(Some(label)), v);
+                            }
+                        }
+                    }
+                    let rest = total.checked_sub(split).ok_or_else(|| {
+                        ParseError(format!(
+                            "{contest}/{county_raw}: {name}'s methods exceed the total"
+                        ))
+                    })?;
+                    if rest > 0 {
+                        add(VoteType::Mixed, rest);
+                    }
+                }
                 None => {
                     let v = select_one(&m.candidate_votes, root, &binds, cand)
                         .and_then(parse_count)
@@ -323,7 +364,7 @@ pub fn parse_value(
                 }
             }
         }
-        let total = if m.breakdown.is_some() {
+        let total = if m.breakdown.is_some() || !m.vote_fields.is_empty() {
             0
         } else {
             count(&m.total_votes, "total")?
@@ -404,6 +445,7 @@ mod tests {
         JsonMapping {
             rows: "contests[*].counties[*]".into(),
             race: "^0.title".into(),
+            contest: None,
             county: "county".into(),
             candidates: "results[*]".into(),
             candidate_name: "name".into(),
@@ -413,11 +455,13 @@ mod tests {
             candidate_breakdown: None,
             breakdown_label: None,
             breakdown_votes: None,
+            candidate_vote_fields: Default::default(),
             total_votes: None,
             precincts_reporting: Some("reporting".into()),
             precincts_total: Some("precincts".into()),
             source_ts: Some("$.updated".into()),
             unwrap_base64: None,
+            unwrap_json: None,
             merge_rows: false,
             party_from_name: false,
         }
@@ -466,6 +510,7 @@ mod tests {
         let m = JsonMapping {
             rows: "counties[*]".into(),
             race: "$.title".into(),
+            contest: None,
             county: "county".into(),
             candidates: "results[*]".into(),
             candidate_name: "name".into(),
@@ -475,11 +520,13 @@ mod tests {
             candidate_breakdown: Some("groups[*]".into()),
             breakdown_label: Some("label".into()),
             breakdown_votes: Some("votes".into()),
+            candidate_vote_fields: Default::default(),
             total_votes: None,
             precincts_reporting: None,
             precincts_total: None,
             source_ts: None,
             unwrap_base64: None,
+            unwrap_json: None,
             merge_rows: false,
             party_from_name: false,
         }

@@ -220,7 +220,7 @@ Live verification (2026-09-28):
 
 ### 1.4 Battleground results sites (re-checked 2026-10-06)
 
-Every endpoint below was fetched on 2026-10-06 with a browser User-Agent from a laptop, unless the row says otherwise.
+Every endpoint below was fetched on 2026-10-06 with a browser User-Agent from a laptop, unless the row says otherwise (the PA and NV rows were checked on 2026-10-07).
 "Wayback" means the payload came from a web.archive.org capture because the live site refused scripted requests.
 The source ids are the `[[sources]]` entries in `config/enr_sources.toml`, where each one carries a dated comment listing what was tried.
 
@@ -230,16 +230,17 @@ The source ids are the `[[sources]]` entries in `config/enr_sources.toml`, where
 | GA | `ga_sos` | results.sos.ga.gov API, discovered by date (§1.3) | `enhanced_voting` | yes | yes | SEN, GOV |
 | NC | `nc_sbe` | `s3.amazonaws.com/dl.ncsbe.gov/ENRS/2026_11_03/results_pct_20261103.zip` (live, already posted with zeros) | `csv` | yes (2024 general, 2026 file) | yes | SEN |
 | TX | `tx_sos` | Civix `goelect.txelections.civixapps.com/api-ivis-system/api/s3/enr/election/countyInfo/53815` (live) | `static_json` + `unwrap_base64` | yes (2024 legacy site, 2026 primary on Civix) | yes | SEN, GOV |
+| PA | `pa_sos` | `www.electionreturns.pa.gov/api/ElectionReturn/GetCountyBreak?officeId=3&districtId=1&...&electionid=117&electiontype=G&isactive=1` (live, no challenge; returns `""` until the general is loaded) | `static_json` + `unwrap_json`, `contest`, `candidate_vote_fields` | yes (2024 general US Senator, final) | yes | GOV |
 | AZ | `az_sos` | `cdn1.arizona.vote/data/69/0/election_69_0.json` gives the upload id for `all_county_races_69_0_en_{version}.json` (live, no challenge) | `static_json` + `version_url` | yes (2024 general) | no: `election_69_0.json` is 404 until the first upload | GOV |
 | MI | `mi_sos` | MVIC `mvic.sos.state.mi.us/VoteHistory/GetElectionResultFile?electionId=<id>` (Cloudflare challenge; Wayback) | `csv` | yes (Aug 2024 primary) | no: challenge, and no 2026 general id | SEN, GOV |
 | OH | `oh_sos` | `liveresults.ohiosos.gov/Api/v1/Contest/GetContestDetailsObject?...&resultsLevel=County` (Cloudflare error 1006; Wayback) | `static_json` | yes (2024 President, captured mid-count) | no: refused, and no 2026 contest ids | SEN, GOV (no markets) |
 | SC | `clarity:SC` | `enr-scvotes.org/SC/<id>` | `clarity` | yes (2024) | no: the 2026 general id is not published | none yet |
 | IA | `clarity:IA` | `electionresults.iowa.gov/IA/<id>` | `clarity` | no (2026 primary id only) | no: the 2026 general id is not published | none yet |
 | NE | none | `electionresults.nebraska.gov/resultsCSV.aspx` is statewide and per district only | none | no | no | none |
-| NV | none | `silverstateelection.nv.gov/_xml/USandNV.xml` (Incapsula challenge; Wayback) | none | no | no | none |
+| NV | `nv_sos` | `silverstateelection.nv.gov/_xml/USandNV.xml` (Imperva challenge; Wayback). Clark's host is closed by robots.txt; Washoe's dashboard has no data endpoint | `nv_sos` (new) | yes (2024 general, final) | no: challenge | GOV |
 | KS | none | `ent.sos.ks.gov/kssos_ent.html`, HTML only (Cloudflare challenge; Wayback) | none | no | no | none |
 | AK | none | `elections.alaska.gov/enr26/results/GA_ENR_Precinct_State_of_Alaska.csv` (live), but by house district | none | no | no | none |
-| ME, NH, PA, WI | none | no statewide live feed found | none | no | no | none |
+| ME, NH, WI | none | no statewide live feed found | none | no | no | none |
 
 **What each state's feed looks like:**
 
@@ -257,6 +258,15 @@ The source ids are the `[[sources]]` entries in `config/enr_sources.toml`, where
   - `EV` (early in-person plus mail) is published per candidate, but results are tagged `MIXED` because the mapper cannot yet split one total into two scalars.
   - Precincts come from `Summary.PRR` and `Summary.PRP`. Their meaning is inferred, not documented.
   - A live capture made 2 polls, both successful, with 0 results.
+- **Pennsylvania.**
+  - electionreturns.pa.gov is an AngularJS site over its own JSON API (`Scripts/AppScripts/Service.js` lists every call). It has no robots.txt (404); Imperva sets cookies but did not challenge scripted GETs.
+  - Every response is double-encoded: the body is one JSON string holding the document. `unwrap_json = "$"` parses it, and an empty string (`""`) is a document with no rows.
+  - `GetCountyBreak` returns one office for all 67 counties as `{Election: {Statewide: [{<COUNTY>: [candidate rows]}]}}`. A candidate row has `Votes` plus `ElectionDayVotes`, `MailInVotes` and `ProvisionalVotes`, so `candidate_vote_fields` pivots each county into ELECTION_DAY, MAIL and PROVISIONAL results. Any part of `Votes` the three fields do not cover is MIXED.
+  - The payload never names the contest, so the mapping fixes it (`contest = "Governor"`) and the url fixes the office (`officeId=3`; 1 is President and 2 is US Senator). Governor = 3 was checked on the 2022 general.
+  - There are no precinct counts (only the RSS feed's HTML prints "N Out of M Districts" per county), and no ETag: about 210 KB and 0.7 s per poll.
+  - A general shares its primary's election id (2022 = 94, 2024 = 105). `GetAllElections` lists 117 as the 2026 General Primary, so the url uses 117/G. That id is inferred: an unknown id also returns `""`. Before Nov 3, check `GetAllElections?methodName=GetAllElections` for a 2026 General Election row.
+  - Wayback holds election-night captures of `GetCountyBreak` for the 2024 President (officeId=1, `isactive=1`, from 8:45 pm ET), which confirms the site publishes county method splits live. Archive.org was offline on 2026-10-07, so the fixture is the live final 2024 US Senator break.
+  - A 70 s `enr-capture` run against the 2024 Senate url emitted 201 results (67 counties × 3 methods) and then only duplicates.
 - **Arizona.**
   - The Cloudflare-protected results.arizona.vote reads from Azure blob storage on `cdn1.arizona.vote`, which has no challenge and sends an ETag.
   - The county file is a flat array with one row per (county, contest, candidate). The party is inside the name (`"Gallego, Ruben (DEM)"`), so the mapping uses `merge_rows` and `party_from_name`.
@@ -266,7 +276,13 @@ The source ids are the `[[sources]]` entries in `config/enr_sources.toml`, where
 - **Michigan.** MVIC's result file is county-level and tab-separated, with a trailer line (`RECORDS: n<TAB>RESULTS: ...`). It has no precinct counts and no method split.
 - **Ohio.** The contest API returns county rows with precinct counts but no method split. A candidate's `totalVotes` field is the county's contest total; the candidate's own votes are in `vCount`.
 - **Nebraska.** County numbers exist only as HTML county pages (`resultsSW.aspx?type=CTYALL&map=CTY&cty=NN`) and as an xlsx export behind an ASP.NET postback. The 2024 general's final CSV (Wayback, 2025-01-19) has no county rows either.
-- **Nevada.** The XML puts one `<County>Votes` attribute per county on each candidate. It has no method split, and the 2026 general is not posted.
+- **Nevada** (checked 2026-10-07; nothing is enabled).
+  - **SoS.** The XML puts one `<County>Votes` attribute per county on each candidate (`ClarkVotes="514,662"`). Precincts are per race only, and there is no method split or timestamp. The new `nv_sos` kind (`adapters/nv_sos.rs`) reads it into MIXED county results; `RaceTopTwo` repeats the leaders and is skipped.
+    - It is fixture-tested on the 2024 final document (Wayback 2025-07-17). Wayback has no election-night copy. The 2026-09-23 capture still shows the June primary ("Governor (Democratic)"), so the general's "Governor" is assumed from the 2024 general's style.
+    - Every live request, robots.txt included, gets Imperva's "Pardon Our Interruption" JavaScript challenge, so `nv_sos` is disabled. A challenge page fails the parse and is counted as malformed.
+  - **Clark County** (about 69% of the 2024 vote). Election-night results live only on `elections.clarkcountynv.gov`: the 2026 ENR app at `ElectionResults_NV/EnrEng/EnrMain`, the older `ElectionResultsTV` pages, and the CVR exports. That host's robots.txt is `User-agent: *` / `Disallow: /`, so it is not configured. `www.clarkcountynv.gov` (robots allows all) only links there.
+  - **Washoe County** (about 18%). `electionresults.washoecounty.gov` was a Blazor Server app in 2024 (Common Crawl capture 2024-11-08). It renders over a SignalR websocket and has no JSON or file endpoint. Today it is a 503 placeholder. Each election-night upload is also posted as a PDF summary (`washoecounty.gov/voters/results/datafiles/WASHOE2026PRIMARYSummaryNN.pdf`). The xlsx and CVR files appear only after the canvass. Not configured.
+  - The other 15 counties (about 13%) were not searched one by one. The SoS feed is the only statewide county breakdown found.
 - **Kansas.** County numbers are inside `<area title=...>` HTML. There is no machine-readable feed.
 - **Alaska.** The precinct CSV splits by method but has no borough, so it cannot produce FIPS-keyed results until Alaska is modelled by district.
 
@@ -361,6 +377,10 @@ next baseline instead of producing a −100 prior.
      - `unwrap_base64` maps a base64 JSON document nested in the payload (TX Civix).
      - `merge_rows` sums flat one-candidate-per-row feeds per county (AZ).
      - `party_from_name` reads a trailing `(DEM)` from the candidate name (AZ).
+     Options added on 2026-10-07 for Pennsylvania:
+     - `unwrap_json` parses a JSON document serialised as a JSON string; an empty string means no rows.
+     - `contest` fixes the contest name when the payload does not print it (it replaces `race`).
+     - `candidate_vote_fields` maps vote-type labels to per-candidate scalar fields (`ElectionDayVotes`, `MailInVotes`). Each county is pivoted into one result per method, and any uncovered part of the candidate total is MIXED.
    - `csv`: CSV or TSV, plain or zipped (zip is detected by magic bytes), mapped by header name.
      - Rows are summed to (contest, county). Vote methods come from one column per method (`vote_type_columns`) or from a label column.
      - Precincts come from explicit columns or a distinct-precinct proxy (`precinct`, `precinct_flag`).
@@ -418,9 +438,10 @@ next baseline instead of producing a −100 prior.
     (`2026-SEN-GA`) and "Governor" (`2026-GOV-GA`) and discovers the election and its ballot items itself (§1.3).
     A commented `ga_sos_runoff` block is ready for the Dec 1 general runoff.
   - **North Carolina** (`nc_sbe`, `csv`) and **Texas** (`tx_sos`, `static_json` on Civix), both enabled, for 2026-SEN-NC, 2026-SEN-TX and 2026-GOV-TX.
-  - **Arizona** (`az_sos`), **Michigan** (`mi_sos`) and **Ohio** (`oh_sos`), configured and fixture-tested but disabled. Each has a dated
+  - **Pennsylvania** (`pa_sos`, `static_json` on the DoS API), enabled, for 2026-GOV-PA, with a per-method split.
+  - **Arizona** (`az_sos`), **Michigan** (`mi_sos`), **Ohio** (`oh_sos`) and **Nevada** (`nv_sos`, its own `nv_sos` kind), configured and fixture-tested but disabled. Each has a dated
     comment saying what has to change before it can be enabled.
-  - Nebraska, Nevada, Kansas and Alaska have no source yet. Their comment blocks record what was tried (§1.4).
+  - Nebraska, Kansas and Alaska have no source yet. Their comment blocks record what was tried (§1.4).
 - The race map covers CA governor and all 52 CA House districts under both spellings.
 - **Before election night:** swap in 2026 election ids and contest names as each state publishes them, and add race rows for every
   market we trade. Contests that aren't mapped are ignored. Georgia is the exception: its ids are discovered, so only its
@@ -638,16 +659,17 @@ stale until then; that is expected. `enr-capture` ignores the schedule.
   - **Live and enabled:**
     - NC (`csv`).
     - TX (`static_json` on Civix). Contest names come from the 2026 primary, and the precinct fields are inferred.
+    - PA (`static_json` on the DoS API, checked 2026-10-07). The 2026 general id (117/G) is inferred from the 2022 and 2024 pattern and serves `""` today. Verify it in `GetAllElections` before Nov 3. There are no precinct counts, and the House markets (PA-01, 07, 08, 10) split counties, so only the governor is mapped. Imperva fronts the host, so a challenge on the night is possible; it did not challenge on 2026-10-07.
   - **Mapped and fixture-tested but disabled:**
     - AZ: enable once `cdn1.arizona.vote/data/69/0/election_69_0.json` returns 200. The contest name "Governor" is assumed.
     - MI: needs a Cloudflare clearance and a 2026 general election id.
     - OH: Cloudflare 1006 refuses scripted clients, and the 2026 contest ids are not published.
+    - NV (`nv_sos`, checked 2026-10-07): the SoS host answers every request with an Imperva JavaScript challenge. The contest name "Governor" is assumed. Clark County's results host forbids all crawling in robots.txt, and Washoe's dashboard has no machine-readable endpoint, so neither county is configured. Nevada therefore has no live feed, so the needle gets no county data for 2026-GOV-NV, a race with one of the largest registered lock-time drifts (−2 pts, §7). Options that need a decision: running a real browser on the host to pass the challenge, or asking Clark County Elections for permission to poll its results export.
   - **Not buildable as things stand:**
     - NE: no county-level machine-readable feed.
-    - NV: Incapsula challenge plus an XML attribute layout.
     - KS: HTML only, behind a challenge.
     - AK: house districts, not counties.
-  - Feeds without a vote-method split (AZ, TX, MI, OH) are tagged `MIXED`. TX's `EV` early-vote figure could be split out with a small mapper
+  - Feeds without a vote-method split (AZ, TX, MI, OH, NV) are tagged `MIXED`. PA splits election day, mail and provisional per county. TX's `EV` early-vote figure could be split out with a small mapper
     extension.
   - A host that is refused by Cloudflare or Incapsula would need a browser-issued cookie, which this crate does not do.
 - The **Clarity `istestmode` flag** is not read. Captured test data should be labelled by date rather than trusted.

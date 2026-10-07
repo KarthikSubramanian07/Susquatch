@@ -1,0 +1,48 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<USNVResults>
+  <UIPage Title="USPresident">
+    <Race RaceID="1" RaceTitle="President and Vice President of the United States" PrecinctsReported="1671" TotalPrecincts="1671" RaceTerm="4.00" VoteFor="1">
+      <Candidate CandidateID="12174" CandidateName="Trump, Donald J. and Vance, JD" IsIncumbent="False" Party="REP" Votes="751,205" Percent="50.59" WinMargin="3.10" CarsonCityVotes="16,873" ChurchillVotes="9,962" ClarkVotes="493,052" DouglasVotes="23,237" ElkoVotes="17,352" EsmeraldaVotes="376" EurekaVotes="910" HumboldtVotes="6,141" LanderVotes="2,180" LincolnVotes="2,108" LyonVotes="23,861" MineralVotes="1,528" NyeVotes="18,946" PershingVotes="1,764" StoreyVotes="2,108" WashoeVotes="127,443" WhitePineVotes="3,364" IsWinner="Yes" />
+      <Candidate CandidateID="12171" CandidateName="Harris, Kamala D. and Walz, Tim" IsIncumbent="False" Party="DEM" Votes="705,197" Percent="47.49" WinMargin="0.00" CarsonCityVotes="13,375" ChurchillVotes="3,179" ClarkVotes="520,187" DouglasVotes="11,553" ElkoVotes="4,632" EsmeraldaVotes="73" EurekaVotes="104" HumboldtVotes="1,711" LanderVotes="482" LincolnVotes="314" LyonVotes="8,954" MineralVotes="711" NyeVotes="7,559" PershingVotes="496" StoreyVotes="913" WashoeVotes="130,071" WhitePineVotes="883" IsWinner="No" />
+      <Candidate CandidateID="-1" CandidateName="None of these Candidates" IsIncumbent="False" Party="NP" Votes="19,625" Percent="1.32" WinMargin="0.00" CarsonCityVotes="517" ChurchillVotes="219" ClarkVotes="12,657" DouglasVotes="558" ElkoVotes="294" EsmeraldaVotes="7" EurekaVotes="11" HumboldtVotes="126" LanderVotes="37" LincolnVotes="33" LyonVotes="442" MineralVotes="37" NyeVotes="290" PershingVotes="32" StoreyVotes="30" WashoeVotes="4,267" WhitePineVotes="68" IsWinner="No" />
+      <Candidate CandidateID="12172" CandidateName="Oliver, Chase and ter Maat, Michael" IsIncumbent="False" Party="LPN" Votes="6,059" Percent="0.41" WinMargin="0.00" CarsonCityVotes="210" ChurchillVotes="94" ClarkVotes="3,728" DouglasVotes="142" ElkoVotes="113" EsmeraldaVotes="5" EurekaVotes="9" HumboldtVotes="30" LanderVotes="18" LincolnVotes="9" LyonVotes="172" MineralVotes="9" NyeVotes="93" PershingVotes="10" StoreyVotes="18" WashoeVotes="1,382" WhitePineVotes="17" IsWinner="No" />
+      <Candidate CandidateID="12173" CandidateName="Skousen, Joel and Combs, Rik" IsIncumbent="False" Party="IAP" Votes="2,754" Percent="0.19" WinMargin="0.00" CarsonCityVotes="93" ChurchillVotes="49" ClarkVotes="1,599" DouglasVotes="66" ElkoVotes="74" EsmeraldaVotes="0" EurekaVotes="2" HumboldtVotes="22" LanderVotes="8" LincolnVotes="8" LyonVotes="112" MineralVotes="10" NyeVotes="109" PershingVotes="6" StoreyVotes="6" WashoeVotes="571" WhitePineVotes="19" IsWinner="No" />
+    </Race>
+    <RaceTopTwo RaceID="1" RaceTitle="President and Vice President of the United States" PrecinctsReported="1671" TotalPrecincts="1671" RaceTerm="4.00" VoteFor="1" UIPageTitle="USPresident">
+      <CandidateTopTwo CandidateID="12174" CandidateName="Trump, Donald J. and Vance, JD" IsIncumbent="False" Party="REP" Votes="751,205" Percent="50.59" WinMargin="3.10" CarsonCityVotes="16,873" ChurchillVotes="9,962" ClarkVotes="493,052" DouglasVotes="23,237" ElkoVotes="17,352" EsmeraldaVotes="376" EurekaVotes="910" HumboldtVotes="6,141" LanderVotes="2,180" LincolnVotes="2,108" LyonVotes="23,861" MineralVotes="1,528" NyeVotes="18,946" PershingVotes="1,764" StoreyVotes="2,108" WashoeVotes="127,443" WhitePineVotes="3,364" IsWinner="Yes" />
+      <CandidateTopTwo CandidateID="12171" CandidateName="Harris, Kamala D. and Walz, Tim" IsIncumbent="False" Party="DEM" Votes="705,197" Percent="47.49" WinMargin="0.00" CarsonCityVotes="13,375" ChurchillVotes="3,179" ClarkVotes="520,187" DouglasVotes="11,553" ElkoVotes="4,632" EsmeraldaVotes="73" EurekaVotes="104" HumboldtVotes="1,711" LanderVotes="482" LincolnVotes="314" LyonVotes="8,954" MineralVotes="711" NyeVotes="7,559" PershingVotes="496" StoreyVotes="913" WashoeVotes="130,071" WhitePineVotes="883" IsWinner="No" />
+    </RaceTopTwo>
+  </UIPage>
+  <UIPage Title="USSenate">
+    <NVMap>
+      <NVCounty Name="Carson City" Party="REP" />
+      <NVCounty Name="Churchill" Party="REP" />
+      <NVCounty Name="Clark" Party="DEM" />
+      <NVCounty Name="Douglas" Party="REP" />
+      <NVCounty Name="Elko" Party="REP" />
+      <NVCounty Name="Esmeralda" Party="REP" />
+      <NVCounty Name="Eureka" Party="REP" />
+      <NVCounty Name="Humboldt" Party="REP" />
+      <NVCounty Name="Lander" Party="REP" />
+      <NVCounty Name="Lincoln" Party="REP" />
+      <NVCounty Name="Lyon" Party="REP" />
+      <NVCounty Name="Mineral" Party="REP" />
+      <NVCounty Name="Nye" Party="REP" />
+      <NVCounty Name="Pershing" Party="REP" />
+      <NVCounty Name="Storey" Party="REP" />
+      <NVCounty Name="Washoe" Party="DEM" />
+      <NVCounty Name="White Pine" Party="REP" />
+    </NVMap>
+    <Race RaceID="2" RaceTitle="United States Senator" PrecinctsReported="1641" TotalPrecincts="1641" RaceTerm="6.00" VoteFor="1">
+      <Candidate CandidateID="8102" CandidateName="ROSEN, JACKY S." IsIncumbent="True" Party="DEM" Votes="701,105" Percent="47.87" WinMargin="1.65" CarsonCityVotes="13,454" ChurchillVotes="3,278" ClarkVotes="514,662" DouglasVotes="11,675" ElkoVotes="4,439" EsmeraldaVotes="72" EurekaVotes="107" HumboldtVotes="1,838" LanderVotes="538" LincolnVotes="353" LyonVotes="9,182" MineralVotes="737" NyeVotes="7,645" PershingVotes="519" StoreyVotes="919" WashoeVotes="130,841" WhitePineVotes="846" IsWinner="Yes" />
+      <Candidate CandidateID="12175" CandidateName="BROWN, SAM" IsIncumbent="False" Party="REP" Votes="677,046" Percent="46.22" WinMargin="0.00" CarsonCityVotes="15,389" ChurchillVotes="9,179" ClarkVotes="441,057" DouglasVotes="22,125" ElkoVotes="15,850" EsmeraldaVotes="345" EurekaVotes="825" HumboldtVotes="5,500" LanderVotes="1,924" LincolnVotes="1,959" LyonVotes="21,892" MineralVotes="1,326" NyeVotes="17,220" PershingVotes="1,618" StoreyVotes="1,964" WashoeVotes="115,713" WhitePineVotes="3,160" IsWinner="No" />
+      <Candidate CandidateID="-1" CandidateName="None of these Candidates" IsIncumbent="False" Party="NP" Votes="44,380" Percent="3.03" WinMargin="0.00" CarsonCityVotes="834" ChurchillVotes="436" ClarkVotes="31,627" DouglasVotes="692" ElkoVotes="764" EsmeraldaVotes="14" EurekaVotes="37" HumboldtVotes="280" LanderVotes="110" LincolnVotes="73" LyonVotes="953" MineralVotes="109" NyeVotes="954" PershingVotes="69" StoreyVotes="61" WashoeVotes="7,235" WhitePineVotes="132" IsWinner="No" />
+      <Candidate CandidateID="12177" CandidateName="Hansen, JANINE" IsIncumbent="False" Party="IAP" Votes="21,316" Percent="1.46" WinMargin="0.00" CarsonCityVotes="618" ChurchillVotes="256" ClarkVotes="13,837" DouglasVotes="374" ElkoVotes="677" EsmeraldaVotes="9" EurekaVotes="23" HumboldtVotes="190" LanderVotes="78" LincolnVotes="40" LyonVotes="608" MineralVotes="56" NyeVotes="587" PershingVotes="53" StoreyVotes="50" WashoeVotes="3,743" WhitePineVotes="117" IsWinner="No" />
+      <Candidate CandidateID="12176" CandidateName="Cunningham, Chris" IsIncumbent="False" Party="LPN" Votes="20,881" Percent="1.43" WinMargin="0.00" CarsonCityVotes="504" ChurchillVotes="257" ClarkVotes="13,654" DouglasVotes="389" ElkoVotes="515" EsmeraldaVotes="18" EurekaVotes="28" HumboldtVotes="160" LanderVotes="61" LincolnVotes="29" LyonVotes="652" MineralVotes="59" NyeVotes="437" PershingVotes="32" StoreyVotes="64" WashoeVotes="3,943" WhitePineVotes="79" IsWinner="No" />
+    </Race>
+    <RaceTopTwo RaceID="2" RaceTitle="United States Senator" PrecinctsReported="1641" TotalPrecincts="1641" RaceTerm="6.00" VoteFor="1" UIPageTitle="USSenate">
+      <CandidateTopTwo CandidateID="8102" CandidateName="ROSEN, JACKY S." IsIncumbent="True" Party="DEM" Votes="701,105" Percent="47.87" WinMargin="1.65" CarsonCityVotes="13,454" ChurchillVotes="3,278" ClarkVotes="514,662" DouglasVotes="11,675" ElkoVotes="4,439" EsmeraldaVotes="72" EurekaVotes="107" HumboldtVotes="1,838" LanderVotes="538" LincolnVotes="353" LyonVotes="9,182" MineralVotes="737" NyeVotes="7,645" PershingVotes="519" StoreyVotes="919" WashoeVotes="130,841" WhitePineVotes="846" IsWinner="Yes" />
+      <CandidateTopTwo CandidateID="12175" CandidateName="BROWN, SAM" IsIncumbent="False" Party="REP" Votes="677,046" Percent="46.22" WinMargin="0.00" CarsonCityVotes="15,389" ChurchillVotes="9,179" ClarkVotes="441,057" DouglasVotes="22,125" ElkoVotes="15,850" EsmeraldaVotes="345" EurekaVotes="825" HumboldtVotes="5,500" LanderVotes="1,924" LincolnVotes="1,959" LyonVotes="21,892" MineralVotes="1,326" NyeVotes="17,220" PershingVotes="1,618" StoreyVotes="1,964" WashoeVotes="115,713" WhitePineVotes="3,160" IsWinner="No" />
+    </RaceTopTwo>
+  </UIPage>
+</USNVResults>

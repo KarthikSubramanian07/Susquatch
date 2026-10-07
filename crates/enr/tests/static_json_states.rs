@@ -7,13 +7,16 @@
 //! * `tx_civix_2026_primary_countyinfo_trimmed.json`: TX Civix countyInfo for the 2026 Republican
 //!   primary (Mitchell, Harris), re-wrapped as `{"upload": "<base64>"}` after trimming;
 //! * `oh_sos_2024_president_by_county_election_night_trimmed.json`: OH SoS API, 2024 President by
-//!   county at 11:09 pm ET on election night (Wayback), Adams, Franklin and Van Wert.
+//!   county at 11:09 pm ET on election night (Wayback), Adams, Franklin and Van Wert;
+//! * `pa_sos_2024_us_senator_county_break_trimmed.json`: PA DoS `GetCountyBreak`, 2024 general US
+//!   Senator (final), Adams, McKean and Philadelphia, still double-encoded as the site serves it.
 
 use chrono_tz::Tz;
 use susq_contracts::v1::{CountyResult, VoteType};
 use susq_enr::adapters::json_map::JsonMapping;
 use susq_enr::adapters::{AdapterContext, build_source, static_json};
 use susq_enr::config::{EnrConfig, RaceMap, SourceKind};
+use susq_enr::pipeline::{Pipeline, PipelineConfig};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -341,7 +344,7 @@ candidate_votes = "v"
 #[test]
 fn repo_sources_build() {
     let cfg = repo_config();
-    for id in ["az_sos", "tx_sos", "oh_sos"] {
+    for id in ["az_sos", "tx_sos", "oh_sos", "pa_sos"] {
         let s = cfg.sources.iter().find(|s| s.id == id).expect(id);
         assert!(build_source(&cfg, s).is_ok(), "{id}");
     }
@@ -381,4 +384,116 @@ fn oh_election_night_capture_maps_partial_counts() {
     let van_wert = find(&parsed.results, "2024-PRES-OH", "39161");
     assert_eq!(votes(van_wert, "REP"), 11_535);
     assert_eq!(van_wert.votes.len(), 14, "every ticket and write-in");
+}
+
+#[test]
+fn pa_double_encoded_county_break_splits_methods_per_candidate() {
+    let cfg = repo_config();
+    let mut mapping = repo_mapping(&cfg, "pa_sos");
+    assert_eq!(
+        mapping.contest.as_deref(),
+        Some("Governor"),
+        "shipped for officeId=3"
+    );
+    // The fixture is the 2024 US Senator break (officeId=2); same shape, another fixed name.
+    mapping.contest = Some("United States Senator".into());
+    let m = mapping.compile().expect("compile");
+    let c = ctx(
+        "pa_sos",
+        "PA",
+        &[("United States Senator", "2024-SEN-PA")],
+        Tz::America__New_York,
+    );
+    let parsed = static_json::parse(
+        &fixture("pa_sos_2024_us_senator_county_break_trimmed.json"),
+        &m,
+        &c,
+        1,
+    )
+    .expect("parse");
+    assert_eq!(
+        parsed.unresolved_counties, 0,
+        "McKean resolves despite the casing"
+    );
+    assert_eq!(
+        parsed.results.len(),
+        3 * 3,
+        "three counties x election day, mail, provisional"
+    );
+    let of = |fips: &str, vt: VoteType| {
+        parsed
+            .results
+            .iter()
+            .find(|r| r.county_fips == fips && r.vote_type == vt as i32)
+            .unwrap_or_else(|| panic!("no {fips} {vt:?}"))
+    };
+    let philly_eday = of("42101", VoteType::ElectionDay);
+    assert_eq!(
+        (votes(philly_eday, "DEM"), votes(philly_eday, "REP")),
+        (366_221, 104_849)
+    );
+    let philly_mail = of("42101", VoteType::Mail);
+    assert_eq!(
+        (votes(philly_mail, "DEM"), votes(philly_mail, "REP")),
+        (166_272, 22_601)
+    );
+    let philly_prov = of("42101", VoteType::Provisional);
+    assert_eq!(
+        (votes(philly_prov, "DEM"), votes(philly_prov, "REP")),
+        (9_074, 1_648)
+    );
+    // Methods add up to the published candidate totals (Casey 541,567 in Philadelphia).
+    let casey: u64 = parsed
+        .results
+        .iter()
+        .filter(|r| r.county_fips == "42101")
+        .flat_map(|r| r.votes.iter())
+        .filter(|v| v.candidate == "ROBERT P CASEY JR")
+        .map(|v| v.votes)
+        .sum();
+    assert_eq!(casey, 541_567);
+    let adams_eday = of("42001", VoteType::ElectionDay);
+    assert_eq!(
+        adams_eday.votes.len(),
+        5,
+        "DEM, REP, LIB, GRN and the Constitution party"
+    );
+    assert_eq!(votes(adams_eday, "OTH"), 223, "CST is not a major code");
+    let mckean_mail = of("42083", VoteType::Mail);
+    assert_eq!(votes(mckean_mail, "REP"), 1_960);
+    assert!(parsed.results.iter().all(|r| r.race_id == "2024-SEN-PA"));
+
+    // The pipeline accepts every result (validation recomputes the zero totals).
+    let mut pipe = Pipeline::new(PipelineConfig::default());
+    let out = pipe.ingest(parsed.results.clone());
+    assert_eq!(out.accepted.len(), 9, "{:?}", out.events);
+}
+
+#[test]
+fn pa_empty_string_is_no_results_and_garbage_fails() {
+    let cfg = repo_config();
+    let m = repo_mapping(&cfg, "pa_sos").compile().expect("compile");
+    let c = AdapterContext {
+        races: cfg.race_map("pa_sos"),
+        ..ctx("pa_sos", "PA", &[], Tz::America__New_York)
+    };
+    assert_eq!(c.races.get("Governor"), Some("2026-GOV-PA"));
+    // What the 2026 general id (117/G) serves before the election is loaded (2026-10-07).
+    let empty = static_json::parse(br#""""#, &m, &c, 1).expect("empty string");
+    assert!(empty.results.is_empty());
+    // The same document shape as the fixture, mapped through the shipped Governor mapping.
+    let gov = br#""{\"Election\":{\"Statewide\":[{\"YORK\":[{\"CountyName\":\"YORK\",\"PartyName\":\"DEM\",\"CandidateName\":\"JOSH SHAPIRO\",\"Votes\":\"12\",\"ElectionDayVotes\":\"10\",\"MailInVotes\":\"2\",\"ProvisionalVotes\":\"0\"}]}]}}""#;
+    let parsed = static_json::parse(gov, &m, &c, 1).expect("parse");
+    assert_eq!(parsed.results.len(), 3);
+    assert!(
+        parsed
+            .results
+            .iter()
+            .all(|r| r.race_id == "2026-GOV-PA" && r.county_fips == "42133")
+    );
+    // Not a string, a string that is not JSON, or methods above the total: payload fails.
+    assert!(static_json::parse(br#"{"Election":{}}"#, &m, &c, 1).is_err());
+    assert!(static_json::parse(br#""not json""#, &m, &c, 1).is_err());
+    let over = br#""{\"Election\":{\"Statewide\":[{\"YORK\":[{\"CountyName\":\"YORK\",\"PartyName\":\"DEM\",\"CandidateName\":\"X\",\"Votes\":\"1\",\"ElectionDayVotes\":\"10\"}]}]}}""#;
+    assert!(static_json::parse(over, &m, &c, 1).is_err());
 }

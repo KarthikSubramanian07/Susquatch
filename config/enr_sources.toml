@@ -7,6 +7,7 @@
 #   static_json any JSON document, mapped with the path language in adapters/json_map.rs
 #   csv         a delimited file (CSV/TSV, plain or zipped), mapped by header name and summed
 #               to counties (adapters/csv.rs)
+#   nv_sos      Nevada SoS USandNV.xml: county votes as <County>Votes attributes (adapters/nv_sos.rs)
 #   enhanced_voting  Enhanced Voting sites (Georgia): finds the election by date and its ballot
 #               items by contest name at runtime, then maps each item like static_json
 # [[races]] maps a contest name exactly as the source prints it (case/whitespace-insensitive) to
@@ -212,16 +213,80 @@ candidate_votes = "V"
 precincts_reporting = "^0.Summary.PRR"
 precincts_total = "^0.Summary.PRP"
 
-# ── Nevada Secretary of State: behind an Incapsula bot wall (2026-10-06) ──────────────────
-# Not configured. silverstateelection.nv.gov serves XML, not JSON: /_xml/USandNV.xml has every
-# statewide race with one `<County>Votes` attribute per county (e.g. ClarkVotes="493,052"),
-# /_xml/<County>.xml has per-county precincts, /_xml/Homepage.xml the ReportedTime. Every live
-# request (browser User-Agent, Accept, Referer and Sec-Fetch headers) gets Incapsula's "Pardon
-# Our Interruption" page, which needs a JavaScript challenge cookie. Wayback has the 2024 final
-# (2025-07-17 capture) and the 2026 primary, but no election-night copies of USandNV.xml. No
-# vote-method split anywhere. The 2026 general is not posted yet (2026-09-23 capture still shows
-# the June primary). Needs an XML attribute mapper plus a way past the challenge (a browser on
-# the host) before it can be polled. Nevada has no 2026 Senate race; Governor is 2026-GOV-NV.
+# ── Pennsylvania Department of State (static_json over a double-encoded JSON API) ─────────
+# electionreturns.pa.gov is an AngularJS site over its own JSON API (Scripts/AppScripts/
+# Service.js). Plain GETs answer 200 with no challenge (Imperva sets cookies but did not
+# challenge; no robots.txt, 404; verified 2026-10-07). Every response is a JSON *string* holding
+# the JSON document, hence `unwrap_json`. GetCountyBreak?officeId=<o>&districtId=1&electionid=
+# <id>&electiontype=G&isactive=1 returns one contest for all 67 counties: {Election: {Statewide:
+# [{<COUNTY>: [{CountyName, CandidateName, PartyName, Votes, ElectionDayVotes, MailInVotes,
+# ProvisionalVotes, ...}]}]}}. The contest name is not in the payload, so the mapping fixes it
+# (`contest`) and the url fixes the office. Office ids: 1 President, 2 US Senator, 3 Governor
+# (Governor = 3 verified on the 2022 general, id 94). Vote methods are split per candidate, so
+# results are ELECTION_DAY / MAIL / PROVISIONAL. No precinct counts (the RSS feed prints "53
+# Out of 53 Districts" per county only inside HTML). No ETag and `cache-control: no-cache`:
+# about 210 KB per poll, 0.7 s. Election ids: a general shares its primary's id (2022 = 94,
+# 2024 = 105, both type G); GetAllElections lists 117 = "2026 General Primary", so the general
+# should be 117/G. Today it returns "" (no rows), which is also what an unknown id returns, so
+# the id is inferred, not verified: check GetAllElections?methodName=GetAllElections for a
+# "2026 General Election" row before Nov 3. Enabled because "" is harmless.
+# Fixture: the 2024 general US Senator break (105/G, final), Adams, McKean and Philadelphia.
+[[sources]]
+id = "pa_sos"
+state = "PA"
+kind = "static_json"
+tz = "America/New_York"
+poll_interval_s = 30.0
+timeout_ms = 20000
+urls = ["https://www.electionreturns.pa.gov/api/ElectionReturn/GetCountyBreak?officeId=3&districtId=1&methodName=GetCountyBreak&electionid=117&electiontype=G&isactive=1"]
+
+[sources.mapping]
+unwrap_json = "$"
+contest = "Governor"            # officeId=3 in the url; the payload does not name the contest
+rows = "Election.Statewide[*].*"
+county = "[0].CountyName"
+candidates = "[*]"
+candidate_name = "CandidateName"
+candidate_party = "PartyName"
+candidate_votes = "Votes"
+candidate_vote_fields = { "Election Day" = "ElectionDayVotes", Mail = "MailInVotes", Provisional = "ProvisionalVotes" }
+
+# ── Nevada: Secretary of State behind Imperva, county sites closed to scripts (2026-10-07) ──
+# nv_sos is configured and fixture-tested but disabled. silverstateelection.nv.gov/_xml/USandNV.xml
+# holds every federal and statewide race: one <Race RaceTitle=...> per contest, one <Candidate>
+# per candidate with Party, Votes and a `<County>Votes` attribute per county (ClarkVotes="514,662",
+# CarsonCityVotes=...); <RaceTopTwo> repeats the leaders and is skipped. Precincts are per race
+# only, with no vote-method split and no timestamp, so results are MIXED with zero precinct
+# counts (adapters/nv_sos.rs). Fixture: the 2024 general's final document (Wayback capture
+# 20250717072406, USSenate and USPresident pages). Wayback has no election-night copy of it;
+# the 2026-09-23 capture still shows the June primary ("Governor (Democratic)", "Governor
+# (Republican)"), so the general's "Governor" is assumed from the 2024 general, which printed
+# "United States Senator" without a party. Nevada has no 2026 Senate race.
+# Why disabled, as tried on 2026-10-07 with a browser User-Agent:
+# * silverstateelection.nv.gov: every request, robots.txt included, gets Imperva's "Pardon Our
+#   Interruption" JavaScript challenge (200, text/html); www.nvsos.gov answers 403 Access Denied.
+#   The adapter fails a challenge page as malformed, so enabling it is safe but useless until a
+#   request gets the XML. Re-check from the host before Nov 3 and on the night.
+# * Clark County (about 70% of the vote): election-night results are only on
+#   elections.clarkcountynv.gov (ElectionResults_NV/EnrEng/EnrMain for 2026, the older
+#   ElectionResultsTV pages, and the CVR exports), and that host's robots.txt is
+#   "User-agent: * / Disallow: /". www.clarkcountynv.gov only links there. Not configured.
+# * Washoe County: electionresults.washoecounty.gov is a Blazor Server app (2024 general,
+#   Common Crawl capture 2024-11-08) that renders over a SignalR websocket, with no JSON or file
+#   endpoint; today it is a placeholder ("General Election results will be displayed here after
+#   the election", HTTP 503). Each election-night upload is published as a PDF
+#   (washoecounty.gov/voters/results/datafiles/WASHOE2026PRIMARYSummaryNN.pdf); the xlsx and
+#   CVR files appear only after canvass. Not configured.
+# * The other 15 counties (about 13% of the 2024 vote) were not searched one by one; the SoS
+#   feed is the only statewide county breakdown found.
+[[sources]]
+id = "nv_sos"
+state = "NV"
+kind = "nv_sos"
+tz = "America/Los_Angeles"
+enabled = false
+poll_interval_s = 30.0
+urls = ["https://silverstateelection.nv.gov/_xml/USandNV.xml"]
 
 # ── Michigan Secretary of State (csv; behind a Cloudflare challenge, 2026-10-06) ───────────
 # Unofficial results are on MVIC, not mielections.us (that host times out and holds certified
@@ -412,6 +477,19 @@ race_id = "2026-SEN-TX"
 source = "tx_sos"
 contest = "GOVERNOR"
 race_id = "2026-GOV-TX"
+
+# Nevada: governor only (no Senate race in 2026); the name is assumed (see nv_sos).
+[[races]]
+source = "nv_sos"
+contest = "Governor"
+race_id = "2026-GOV-NV"
+
+# Pennsylvania: the contest name is fixed by pa_sos's mapping (officeId=3), not printed. The
+# House markets (PA-01, 07, 08, 10) split counties, so they wait on a county x district feed.
+[[races]]
+source = "pa_sos"
+contest = "Governor"
+race_id = "2026-GOV-PA"
 
 # Michigan: see mi_sos for which name is verified.
 [[races]]
