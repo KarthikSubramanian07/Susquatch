@@ -22,10 +22,15 @@
 //!   `floor(max_order_frac × equity / limit)`, capped by depth within the limit. A buy that would
 //!   reduce a locked holding (buying its opposite side) is skipped.
 //!
-//! Model SE (heuristic). `RacePosterior` carries no standard error for the win probability, so we use
-//! the binomial-style proxy [`model_se`] `= sqrt(q (1 − q) / (1 + n_batches))`: widest at q = 0.5 with
-//! no reported batches, shrinking as county batches accumulate and as q approaches 0 or 1. It is a
-//! deliberately conservative placeholder to be replaced by a needle-published SE.
+//! Model SE. The posterior carries the margin it rests on (`margin_mean` ± `margin_sd`, points of
+//! two-party vote) and `q` is a normal tail of it, so the standard error of `q` follows by the delta
+//! method ([`margin_se`]): `SE(q) = phi(margin_mean / margin_sd) × se_margin_err_pts / margin_sd`,
+//! the move in `q` for a model error of `se_margin_err_pts` points in the margin. A race whose
+//! margin sits within a point or two of zero at a tight sd is fragile (a small error flips it, SE is
+//! large) while a race called by several sd is not, whatever `n_batches` says. When the posterior
+//! carries no `margin_sd` (0, as from an older needle) or `se_margin_err_pts = 0`, the binomial-style
+//! proxy [`model_se`] `= sqrt(q (1 − q) / (1 + n_batches))` stands in: widest at q = 0.5 with no
+//! reported batches, shrinking as batches accumulate.
 //!
 //! Every order is `needle_derived` with `fair_yes = q`.
 
@@ -42,10 +47,31 @@ use crate::{
 /// Strategy name (intent id prefix).
 pub const NAME: &str = "en";
 
-/// Heuristic standard error of a posterior win probability: `sqrt(q (1 − q) / (1 + n_batches))`.
+/// Proxy standard error of a posterior win probability: `sqrt(q (1 − q) / (1 + n_batches))`.
+/// The fallback when the posterior carries no margin uncertainty.
 pub fn model_se(q: f64, n_batches: u32) -> f64 {
     let q = q.clamp(0.0, 1.0);
     (q * (1.0 - q) / (1.0 + f64::from(n_batches))).sqrt()
+}
+
+/// Standard-normal density.
+fn phi(z: f64) -> f64 {
+    (-0.5 * z * z).exp() / (2.0 * std::f64::consts::PI).sqrt()
+}
+
+/// Standard error of the win probability from the posterior's margin, by the delta method:
+/// `phi(margin_mean / margin_sd) × err_pts / margin_sd`, the change in `q = Phi(margin / sd)` for
+/// a model error of `err_pts` points in the margin. The same for either party (the density is
+/// symmetric). `None` when the posterior carries no usable `margin_sd` or `err_pts` is 0, so the
+/// caller falls back to [`model_se`].
+pub fn margin_se(margin_mean: f64, margin_sd: f64, err_pts: f64) -> Option<f64> {
+    if !(margin_sd.is_finite() && margin_sd > 0.0 && margin_mean.is_finite()) {
+        return None;
+    }
+    if !(err_pts.is_finite() && err_pts > 0.0) {
+        return None;
+    }
+    Some(phi(margin_mean / margin_sd) * err_pts / margin_sd)
 }
 
 /// The election-night executor.
@@ -68,9 +94,16 @@ impl EnExecutor {
         Self { cfg }
     }
 
+    /// Model standard error of `q` for a posterior: from its margin when it carries one
+    /// ([`margin_se`]), else the batch-count proxy ([`model_se`]).
+    pub fn posterior_se(&self, post: &RacePosterior, q: f64) -> f64 {
+        margin_se(post.margin_mean, post.margin_sd, self.cfg.se_margin_err_pts)
+            .unwrap_or_else(|| model_se(q, post.n_batches))
+    }
+
     /// Edge a buy must clear: `max(min_edge_pts / 100, se_mult × SE)`.
-    pub fn threshold(&self, q: f64, n_batches: u32) -> f64 {
-        (self.cfg.min_edge_pts / 100.0).max(self.cfg.se_mult * model_se(q, n_batches))
+    pub fn threshold(&self, post: &RacePosterior, q: f64) -> f64 {
+        (self.cfg.min_edge_pts / 100.0).max(self.cfg.se_mult * self.posterior_se(post, q))
     }
 
     fn act(
@@ -175,7 +208,7 @@ impl EnExecutor {
         locked_side: Option<Side>,
         d: &mut Decision,
     ) {
-        let threshold = self.threshold(q, post.n_batches);
+        let threshold = self.threshold(post, q);
         for side in [Side::Yes, Side::No] {
             let p = side_prob(side, q);
             let Some(ask) = book.touch(side, Action::Buy) else {
@@ -366,7 +399,11 @@ mod tests {
     fn buy_threshold_is_the_larger_of_min_edge_and_three_se() {
         // q = 0.70 with 99 batches: SE 0.0458, 3×SE = 0.137 > 0.08.
         let en = EnExecutor::new(cfg());
-        assert!((en.threshold(0.70, 99) - 3.0 * (0.0021f64).sqrt()).abs() < 1e-12);
+        let no_margin = RacePosterior {
+            n_batches: 99,
+            ..Default::default()
+        };
+        assert!((en.threshold(&no_margin, 0.70) - 3.0 * (0.0021f64).sqrt()).abs() < 1e-12);
         let mut w = world(0.70, 99);
         w.book("1", &[(5000, 100)], &[(5700, 100)]); // edge 0.13: above 8 pts, below 3 SE
         assert!(legs(&en.decide(&w.snap())).is_empty());
@@ -520,5 +557,58 @@ mod tests {
         live.needle_derived = true;
         w.intents.push(live);
         assert!(EnExecutor::new(cfg()).decide(&w.snap()).bundles.is_empty());
+    }
+
+    /// Gap 11 of the readiness audit: SE from the posterior's margin, by the delta method.
+    #[test]
+    fn margin_se_follows_the_normal_density() {
+        // Toss-up at sd 2: phi(0) × 1 / 2 = 0.1995.
+        let toss = margin_se(0.0, 2.0, 1.0).expect("se");
+        assert!((toss - 0.398_942_280_4 / 2.0).abs() < 1e-9);
+        // Same margin error, called by 3 sd: tiny SE.
+        let called = margin_se(6.0, 2.0, 1.0).expect("se");
+        assert!(called < 0.01 && called > 0.0);
+        // Symmetric in the sign of the margin (either party's side has the same SE).
+        assert_eq!(margin_se(-6.0, 2.0, 1.0), Some(called));
+        // Twice the assumed model error, twice the SE.
+        assert!(
+            (margin_se(1.0, 3.0, 2.0).expect("se") - 2.0 * margin_se(1.0, 3.0, 1.0).expect("se")).abs()
+                < 1e-12
+        );
+        // No usable sd or a zero error: fall back.
+        assert_eq!(margin_se(1.0, 0.0, 1.0), None);
+        assert_eq!(margin_se(1.0, f64::NAN, 1.0), None);
+        assert_eq!(margin_se(f64::INFINITY, 2.0, 1.0), None);
+        assert_eq!(margin_se(1.0, 2.0, 0.0), None);
+    }
+
+    #[test]
+    fn threshold_uses_the_margin_when_the_posterior_carries_one() {
+        let en = EnExecutor::new(cfg());
+        // q = 0.69 from margin 1 at sd 2: a fragile lead (SE 0.176, 3×SE = 0.53) though 99 batches
+        // would make the proxy small. No buy can clear that.
+        let fragile = RacePosterior {
+            margin_mean: 1.0,
+            margin_sd: 2.0,
+            n_batches: 99,
+            ..Default::default()
+        };
+        let se = en.posterior_se(&fragile, 0.69);
+        assert!((se - margin_se(1.0, 2.0, 1.0).expect("se")).abs() < 1e-12);
+        assert!(en.threshold(&fragile, 0.69) > 0.5);
+        // Margin 8 at sd 2 (q ≈ 1): SE is negligible and the 8-point floor binds.
+        let safe = RacePosterior {
+            margin_mean: 8.0,
+            margin_sd: 2.0,
+            n_batches: 3,
+            ..Default::default()
+        };
+        assert!((en.threshold(&safe, 0.99997) - 0.08).abs() < 1e-12);
+        // se_margin_err_pts = 0 keeps the batch-count proxy even when the margin is there.
+        let proxy = EnExecutor::new(EnCfg {
+            se_margin_err_pts: 0.0,
+            ..cfg()
+        });
+        assert!((proxy.posterior_se(&fragile, 0.69) - model_se(0.69, 99)).abs() < 1e-12);
     }
 }

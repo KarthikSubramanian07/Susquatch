@@ -348,6 +348,18 @@ pub struct EnCfg {
     /// has had no successful poll for this long (or failed three polls in a row, or never polled);
     /// the executor then places no new buys on that race (rolls of held legs still happen).
     pub feed_stale_s: u64,
+    // ── Model SE and the night budget (readiness audit gaps #10 and #11) ──────────────────
+    /// Model error in margin points assumed when the executor derives its standard error of the
+    /// win probability from the posterior's `margin_mean` / `margin_sd` (delta method:
+    /// `SE(q) = phi(margin_mean / margin_sd) × se_margin_err_pts / margin_sd`). `0` keeps the
+    /// batch-count proxy `sqrt(q (1 − q) / (1 + n_batches))`, which is also the fallback for a
+    /// posterior that carries no `margin_sd`.
+    pub se_margin_err_pts: f64,
+    /// Share of equity the executor may have deployed in needle-derived orders at any time
+    /// across the night (buys at their limit, filled or resting, net of what rolls sold back).
+    /// Enforced by risk, not by the strategy: a buy that would push the executor past it is
+    /// refused like any other cap.
+    pub night_budget_frac: f64,
 }
 
 impl Default for EnCfg {
@@ -362,6 +374,8 @@ impl Default for EnCfg {
             order_ttl_s: 20,
             en_glitch_pts: 40.0,
             feed_stale_s: 180,
+            se_margin_err_pts: 1.0,
+            night_budget_frac: 0.25,
         }
     }
 }
@@ -597,6 +611,10 @@ impl Config {
                 self.strategies.farquote.max_market_frac,
             ),
             ("strategies.en.max_order_frac", self.strategies.en.max_order_frac),
+            (
+                "strategies.en.night_budget_frac",
+                self.strategies.en.night_budget_frac,
+            ),
         ];
         for (name, v) in fracs
             .into_iter()
@@ -642,6 +660,7 @@ impl Config {
             ("strategies.en.min_edge_pts", en.min_edge_pts),
             ("strategies.en.se_mult", en.se_mult),
             ("strategies.en.roll_within_pts", en.roll_within_pts),
+            ("strategies.en.se_margin_err_pts", en.se_margin_err_pts),
         ] {
             if !(v.is_finite() && v >= 0.0) {
                 return bad(format!("{name} = {v} must be a finite non-negative number"));
@@ -814,6 +833,8 @@ mod tests {
         assert_eq!(en.order_ttl_s, 20);
         assert_eq!(en.en_glitch_pts, 40.0);
         assert_eq!(en.feed_stale_s, 180);
+        assert_eq!(en.se_margin_err_pts, 1.0);
+        assert_eq!(en.night_budget_frac, 0.25);
         assert_eq!(*en, EnCfg::default(), "the file documents the Rust defaults");
         // The one line the runbook flips.
         let armed = text.replacen("enabled = false\nmin_edge_pts", "enabled = true\nmin_edge_pts", 1);
