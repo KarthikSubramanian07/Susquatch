@@ -90,6 +90,21 @@ impl NeedleSnapshot {
             .filter(|p| self.posterior_fresh(p.produced_at_ns, now_ns))
     }
 
+    /// Race posteriors the needle has gone **quiet** on: past the posterior TTL at `now_ns` but
+    /// still the last word of a needle that is trusted (healthy, recent snapshot, same epoch: an
+    /// outage clears them). `None` when the needle is not trusted. Only the election-night
+    /// executor's lock-time rule reads these, under its own age limit
+    /// (`[strategies.en] lock_posterior_max_age_s`); nothing else may act on them.
+    pub fn quiet_posteriors(&self, now_ns: i64) -> Option<HashMap<&str, &Stamped<v1::RacePosterior>>> {
+        self.trusted(now_ns).then(|| {
+            self.posteriors
+                .iter()
+                .filter(|(_, p)| !self.posterior_fresh(p.produced_at_ns, now_ns))
+                .map(|(race, p)| (race.as_str(), p))
+                .collect()
+        })
+    }
+
     /// The national shift if it may be acted on at `now_ns`.
     pub fn actionable_shift(&self, now_ns: i64) -> Option<&Stamped<v1::NationalShift>> {
         if !self.trusted(now_ns) {
@@ -633,9 +648,36 @@ mod tests {
             }
         }
         assert!(aged_out_at.is_some(), "the posterior must age out past the TTL");
+        // Past the TTL the posterior is quiet, not gone: the lock-time rule may still read it.
+        let snap = s.snapshot(t);
+        let quiet = snap.quiet_posteriors(t).expect("healthy");
+        assert_eq!(quiet.keys().copied().collect::<Vec<_>>(), vec![OH]);
+        assert_eq!(quiet[OH].produced_at_ns, T0);
         // A fresh batch (seq 2 on the posteriors stream) makes the race actionable again.
         s.on_message(post(2, t, vec![race(OH, 0.6)]), t);
         assert!(s.snapshot(t).actionable_posterior(OH, t).is_some());
+        assert_eq!(s.snapshot(t).quiet_posteriors(t).map(|m| m.len()), Some(0));
+    }
+
+    /// Quiet posteriors never survive an outage and are never offered by an untrusted needle.
+    #[test]
+    fn quiet_posteriors_need_a_trusted_needle() {
+        let mut s = healthy_state().with_posterior_ttl(Duration::from_secs(2));
+        let t = T0 + 900 * MS;
+        s.on_message(hb(2, t), t);
+        let t = T0 + 1_800 * MS;
+        s.on_message(hb(3, t), t);
+        let t = T0 + 2_700 * MS;
+        s.on_message(hb(4, t), t);
+        assert_eq!(s.snapshot(t).quiet_posteriors(t).map(|m| m.len()), Some(1));
+        assert_eq!(s.snapshot(t).actionable_posteriors(t).map(|m| m.len()), Some(0));
+        // Silence trips the watchdog: nothing quiet is offered, and recovery starts empty.
+        let t = t + 1_001 * MS;
+        s.on_tick(t);
+        assert!(s.snapshot(t).quiet_posteriors(t).is_none());
+        s.on_message(hb(5, t), t);
+        s.on_message(hb(6, t), t);
+        assert_eq!(s.snapshot(t).quiet_posteriors(t).map(|m| m.len()), Some(0));
     }
 
     #[test]
