@@ -1,0 +1,147 @@
+{
+  "about": "EXP-003 parity fixture: the bridge (bridge_py/tests/test_sniper_unwind.py) and rust-live (crates/strategies/src/sniper.rs) must turn each case into exactly these unwind sells. Prices are side-relative pips (1 = 0.0001); books are YES-space [best bid, best ask] pips (null = empty side); every fair here is fresh, verified and within the mapping-error gate; hourly_used is SUSQies of unwind proceeds already sent this hour.",
+  "config": {
+    "enabled": true,
+    "min_edge_pts": 3.5,
+    "max_mistake_frac": 0.01,
+    "order_ttl_s": 30,
+    "max_total_gross_frac": 0.35,
+    "unwind_from_utc": "2026-10-24T16:00:00Z",
+    "unwind_max_haircut_pts": 2.0,
+    "unwind_target_cash_frac": 0.6,
+    "unwind_max_hourly_frac": 0.1
+  },
+  "cases": [
+    {
+      "name": "nothing_before_the_start",
+      "now_s": 1792857599,
+      "equity": 100000.0,
+      "cash": 20000.0,
+      "hourly_used": 0.0,
+      "positions": {"10": 500},
+      "fair": {"10": 0.95},
+      "books": {"10": [9400, 9600]},
+      "locked": [],
+      "intents": [],
+      "expect": []
+    },
+    {
+      "name": "takes_the_bid_when_it_is_within_the_haircut",
+      "now_s": 1792857600,
+      "equity": 100000.0,
+      "cash": 20000.0,
+      "hourly_used": 0.0,
+      "positions": {"10": 500},
+      "fair": {"10": 0.95},
+      "books": {"10": [9400, 9600]},
+      "locked": [],
+      "intents": [],
+      "expect": [{"exchange": "10", "side": "yes", "quantity": 500, "price": 9400}]
+    },
+    {
+      "name": "rests_at_the_floor_rounded_toward_fair_and_sells_no_holdings",
+      "now_s": 1792860000,
+      "equity": 100000.0,
+      "cash": 20000.0,
+      "hourly_used": 0.0,
+      "positions": {"10": 300, "16": 100, "20": -400},
+      "fair": {"10": 0.9537, "16": 0.93, "20": 0.04},
+      "books": {"10": [9200, 9600], "16": [null, 9500], "20": [300, 500]},
+      "locked": [],
+      "intents": [],
+      "expect": [
+        {"exchange": "10", "side": "yes", "quantity": 300, "price": 9350},
+        {"exchange": "16", "side": "yes", "quantity": 100, "price": 9100},
+        {"exchange": "20", "side": "no", "quantity": 400, "price": 9500}
+      ]
+    },
+    {
+      "name": "a_big_holding_is_sold_one_per_order_cap_at_a_time",
+      "now_s": 1792860000,
+      "equity": 100000.0,
+      "cash": 20000.0,
+      "hourly_used": 0.0,
+      "positions": {"30": 5000},
+      "fair": {"30": 0.97},
+      "books": {"30": [9650, 9750]},
+      "locked": [],
+      "intents": [],
+      "expect": [{"exchange": "30", "side": "yes", "quantity": 1036, "price": 9650}]
+    },
+    {
+      "name": "skips_locked_legs_other_strategies_its_own_orders_and_longshot_holdings",
+      "now_s": 1792860000,
+      "equity": 100000.0,
+      "cash": 20000.0,
+      "hourly_used": 0.0,
+      "positions": {"10": 500, "11": 500, "12": 500, "13": 500, "14": -500, "15": 200},
+      "fair": {"10": 0.95, "11": 0.95, "12": 0.95, "13": 0.6, "14": 0.95, "15": 0.92},
+      "books": {
+        "10": [9400, 9600],
+        "11": [9400, 9600],
+        "12": [9400, 9600],
+        "13": [5900, 6100],
+        "14": [9400, 9600],
+        "15": [9100, 9300]
+      },
+      "locked": ["10"],
+      "intents": [{"exchange": "11", "strategy": "farquote"}, {"exchange": "12", "strategy": "sniper"}],
+      "expect": [{"exchange": "15", "side": "yes", "quantity": 200, "price": 9100}]
+    },
+    {
+      "name": "stops_once_cash_reaches_the_target",
+      "now_s": 1792860000,
+      "equity": 100000.0,
+      "cash": 60000.0,
+      "hourly_used": 0.0,
+      "positions": {"10": 500},
+      "fair": {"10": 0.95},
+      "books": {"10": [9400, 9600]},
+      "locked": [],
+      "intents": [],
+      "expect": []
+    },
+    {
+      "name": "sizes_the_last_sell_to_the_cash_gap",
+      "now_s": 1792860000,
+      "equity": 100000.0,
+      "cash": 59500.0,
+      "hourly_used": 0.0,
+      "positions": {"10": 500, "15": 300},
+      "fair": {"10": 0.95, "15": 0.92},
+      "books": {"10": [9400, 9600], "15": [9100, 9300]},
+      "locked": [],
+      "intents": [],
+      "expect": [
+        {"exchange": "10", "side": "yes", "quantity": 500, "price": 9400},
+        {"exchange": "15", "side": "yes", "quantity": 33, "price": 9100}
+      ]
+    },
+    {
+      "name": "stops_at_the_hourly_cap",
+      "now_s": 1792860000,
+      "equity": 100000.0,
+      "cash": 20000.0,
+      "hourly_used": 9900.0,
+      "positions": {"10": 500, "15": 300},
+      "fair": {"10": 0.95, "15": 0.92},
+      "books": {"10": [9400, 9600], "15": [9100, 9300]},
+      "locked": [],
+      "intents": [],
+      "expect": [{"exchange": "10", "side": "yes", "quantity": 106, "price": 9400}]
+    },
+    {
+      "name": "nothing_until_cash_is_known",
+      "now_s": 1792860000,
+      "equity": 100000.0,
+      "cash": null,
+      "hourly_used": 0.0,
+      "positions": {"10": 500},
+      "fair": {"10": 0.95},
+      "books": {"10": [9400, 9600]},
+      "locked": [],
+      "intents": [],
+      "expect": []
+    }
+  ]
+}
