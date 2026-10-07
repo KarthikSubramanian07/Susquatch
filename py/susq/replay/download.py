@@ -11,10 +11,13 @@ doi:10.7910/DVN/NYTPDU for 2024). Output goes to `data/replay/` (gitignored).
 
 Statewide contests (Senate, Governor, President) are aggregated by county with `district =
 "STATEWIDE"`. With `house=True`, US House rows are kept too and aggregated by county x district
-(`district = "07"`, ...). That is a *history* convenience only: the needle keys priors by county
-FIPS, so a county split across districts cannot be modelled as one unit, and the 2026 spec builder
-does not emit House races. Each state is cached as its own CSV under `<out dir>/medsl/<year>/` so a
-failed state never loses the others; `download()` reports failures instead of raising.
+(`district = "07"`, ...); `house_only=True` keeps *only* those rows, for a House history file that
+sits next to the statewide one without duplicating its contests. The 2026 spec builder uses a
+district's total (summed over its counties) for California House seats, which the SoS feed reports
+as one unit per district; elsewhere a county split across districts cannot be modelled. Each state
+is cached as its own CSV under `<out dir>/medsl/<year>/` (`<ST>.csv`, `<ST>.house.csv` for
+house-only, `<ST>.with-house.csv` for both) so a failed state never loses the others and a cached
+file is never reused for another selection; `download()` reports failures instead of raising.
 """
 
 from __future__ import annotations
@@ -104,7 +107,11 @@ def normalize_district(d: str) -> str:
 
 
 def aggregate_precincts(
-    rows: Iterable[dict[str, str]], offices: set[str] = OFFICES, *, house: bool = False
+    rows: Iterable[dict[str, str]],
+    offices: set[str] = OFFICES,
+    *,
+    house: bool = False,
+    house_only: bool = False,
 ) -> list[dict[str, str | int]]:
     """Precinct rows (MEDSL schema) → county rows in `HEADER` order.
 
@@ -112,9 +119,9 @@ def aggregate_precincts(
     ("STATE FLOATING" etc.), sums votes by county × candidate × mode, and sets `totalvotes` to the
     county's sum over kept rows (MEDSL's county-file definition). Statewide offices carry
     `district = "STATEWIDE"`; with `house=True`, `US HOUSE` rows are kept and keyed by district
-    as well, with `totalvotes` per county × district.
+    as well, with `totalvotes` per county × district; `house_only=True` keeps only those.
     """
-    keep = set(offices) | ({HOUSE_OFFICE} if house else set())
+    keep = {HOUSE_OFFICE} if house_only else set(offices) | ({HOUSE_OFFICE} if house else set())
     votes: dict[tuple[str, ...], int] = defaultdict(int)
     for r in rows:
         office = r.get("office", "").upper()
@@ -175,13 +182,13 @@ def _csv_rows_from_zip(data: bytes) -> Iterator[dict[str, str]]:
 
 
 def download_state(
-    year: int, state: str, client: httpx.Client, *, house: bool = False
+    year: int, state: str, client: httpx.Client, *, house: bool = False, house_only: bool = False
 ) -> list[dict[str, str | int]]:
     """Fetch one state's precinct zip and aggregate it."""
     url = URLS[year].format(st=state.lower())
     resp = client.get(url, follow_redirects=True, timeout=300)
     resp.raise_for_status()
-    return aggregate_precincts(_csv_rows_from_zip(resp.content), house=house)
+    return aggregate_precincts(_csv_rows_from_zip(resp.content), house=house, house_only=house_only)
 
 
 Fetcher = Callable[[int, str, httpx.Client], list[dict[str, str | int]]]
@@ -196,8 +203,9 @@ class DownloadResult:
     empty: list[str] = field(default_factory=list)  # fetched, but no Senate/Governor/President rows
 
 
-def cache_path(out: Path, year: int, state: str) -> Path:
-    return out.parent / "medsl" / str(year) / f"{state.upper()}.csv"
+def cache_path(out: Path, year: int, state: str, *, house: bool = False, house_only: bool = False) -> Path:
+    variant = ".house" if house_only else ".with-house" if house else ""
+    return out.parent / "medsl" / str(year) / f"{state.upper()}{variant}.csv"
 
 
 def _write_rows(path: Path, rows: Iterable[dict[str, str | int]]) -> None:
@@ -221,6 +229,7 @@ def download(
     out: Path,
     *,
     house: bool = False,
+    house_only: bool = False,
     refresh: bool = False,
     fetch: Fetcher | None = None,
 ) -> DownloadResult:
@@ -233,10 +242,10 @@ def download(
     """
     result = DownloadResult(out)
     merged: list[dict[str, str | int]] = []
-    fetcher: Fetcher = fetch or partial(download_state, house=house)
+    fetcher: Fetcher = fetch or partial(download_state, house=house, house_only=house_only)
     with httpx.Client(headers={"User-Agent": "susquatch-replay/0.1"}) as client:
         for st in [s.upper() for s in states]:
-            cached = cache_path(out, year, st)
+            cached = cache_path(out, year, st, house=house, house_only=house_only)
             if cached.exists() and not refresh:
                 merged.extend(_read_rows(cached))
                 result.done.append(st)

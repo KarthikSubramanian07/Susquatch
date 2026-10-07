@@ -167,11 +167,15 @@ def download(
         typer.Option(help="state/market_map.json: add every state with a Senate or Governor market"),
     ] = None,
     house: Annotated[bool, typer.Option(help="also keep US House rows, by county x district")] = False,
+    house_only: Annotated[
+        bool, typer.Option(help="keep only US House rows (a House history file for spec2026)")
+    ] = False,
     refresh: Annotated[bool, typer.Option(help="ignore the per-state cache under data/replay/medsl")] = False,
 ) -> None:
     """Download MEDSL precinct returns for `states` and aggregate them to county CSV.
 
-    Each state is cached under `<out dir>/medsl/<year>/<ST>.csv`; failures are reported, not fatal.
+    Each state is cached under `<out dir>/medsl/<year>/<ST>[.house|.with-house].csv`; failures are
+    reported, not fatal.
     """
     from susq.replay.download import download as fetch
     from susq.replay.spec2026 import cup_states
@@ -179,7 +183,7 @@ def download(
     wanted = sorted({s.upper() for s in states or []} | (cup_states(market_map) if market_map else set()))
     if not wanted:
         raise typer.BadParameter("give states or --market-map")
-    res = fetch(year, wanted, out, house=house, refresh=refresh)
+    res = fetch(year, wanted, out, house=house, house_only=house_only, refresh=refresh)
     typer.echo(f"wrote {res.out}: {len(res.done)} states ({len(res.cached)} cached)")
     if res.empty:
         typer.echo(f"  no Senate/Governor/President rows: {' '.join(res.empty)}")
