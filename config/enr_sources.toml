@@ -106,6 +106,23 @@ vote_type_columns = ["Election Day", "Early Voting", "Absentee by Mail", "Provis
 precinct = "Precinct"
 precinct_flag = "Real Precinct"
 
+# ── Nebraska Secretary of State: no county-level machine-readable feed (2026-10-06) ───────
+# Not configured. What was tried on 2026-10-06, with a browser User-Agent:
+# * https://electionresults.nebraska.gov/resultsCSV.aspx?text=All&type={All,SW,CG,...}&map={CTY,DIST}
+#   (200, comma CSV, already the 2026 general: "For United States Senator - 6  Year Term",
+#   "For Governor and Lt. Governor"). Every row is statewide (AreaType SW) or per district
+#   (CG); `map=CTY`, `cty=NN`, `text=<county>` and `eid=<old election>` do not change that. The
+#   Wayback capture of `resultsCSV.aspx?text=All` from 2025-01-19 (the 2024 general, final) has
+#   no county rows either, so the csv kind cannot produce CountyResults from it.
+# * County numbers exist only as HTML (resultsSW.aspx?type=CTYALL&map=CTY&cty=NN&name=<County>,
+#   one page per county, NN = the site's county number, Douglas = 01) and as an .xlsx returned by
+#   an ASP.NET __doPostBack of the "County Level" export button (needs __VIEWSTATE).
+# * neresultswebservice.azurewebsites.us/ResultsAjax.svc has GetVoterTurnoutData (per-county
+#   precincts reporting, JSON) and GetMapData(Type, Category, RaceID, OSN, County, Party), which
+#   returned {"d":null} for every parameter guess.
+# Next step: an HTML adapter over the 93 county pages, or capture GetMapData's real parameters
+# from the browser's network tab on the live site. Re-check resultsCSV.aspx on election night.
+
 # ── Georgia (Enhanced Voting; not Clarity since 2024), discovered at runtime ──────────────
 # Election slugs and ballot-item ids are minted per election and published late, so this source
 # names *what* to follow and finds *where* itself: it polls the jurisdiction's election list until
