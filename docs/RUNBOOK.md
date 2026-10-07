@@ -107,7 +107,10 @@ anything odd has 24 hours to surface.
 **Preconditions (all must hold).**
 - The rust-live paper run (`SUSQ_LIVE_CMD=paper-run`, `SUSQ_LIVE_FLAGS=--election`, beside the bridge) has run at least
   72 hours with no OOM kills (`sudo journalctl -k | grep -c "Killed process"` unchanged), no sustained 429s in either
-  trader, and its paper equity tracking the bridge's live equity within the drift you can explain from fills.
+  trader, and its paper **profit since start** in line with the bridge's over the same days. Compare profit, not
+  equity: the paper account starts from the live account's cash (`myBalance`, 27,254 on Oct 7) with none of the
+  live positions, so its equity sits far below the bridge's by design (the "drift to 72.9k" that stopped the Oct 3
+  run was this, not a loss).
 - Both dress rehearsals (§2b) passed, and the needle tile was green throughout the paper run.
 - `make backup` succeeded today; `make selfcheck` is 7/7.
 
