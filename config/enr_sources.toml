@@ -249,6 +249,44 @@ party = "PartyDescription"
 votes = "CandidateVotes"
 skip_rows_starting_with = ["RECORDS:"]
 
+# ── Ohio Secretary of State (static_json; API refuses scripted clients, 2026-10-06) ──────────
+# liveresults.ohiosos.gov is an SPA over a JSON API:
+# /Api/v1/Contest/GetContestDetailsObject?contestName=<name>&contestObjectId=<id>&resultsLevel=County&countyId=
+# returns {contestName, contestList: [{name: county, reportedPrecincts, totalPrecincts,
+# candidatesRunning: [{primaryCandidate, candidateParty: "R"/"D", vCount}]}]} (careful: a
+# candidate's `totalVotes` is the county's contest total). The statewide call (empty id and
+# level) yields the contest's objectId; getTabs lists contests. No vote-method split and no
+# timestamp. Every live request gets Cloudflare "error code: 1006" (access denied, not a
+# challenge), and the site root redirects to ohiosos.gov/data off-season. The fixture is the
+# Wayback capture from 2024-11-06 04:09Z (11:09 pm ET, 7,613 of 8,878 precincts in). The 2026
+# general is not listed (getTabs still showed the primary on 2026-05-27); the 2026 primary's
+# U.S. Senator id was _4AA30560E4BC0E39E0633390EE0A3B39. Disabled: replace CONTEST_OBJECT_ID
+# with the general's ids (one url per contest) and enable only if the host is not refused.
+# Contest names "U.S. Senator" and "Governor and Lieutenant Governor" are verified from the
+# 2026 primary. Neither race has a market in state/market_map.json today.
+[[sources]]
+id = "oh_sos"
+state = "OH"
+kind = "static_json"
+tz = "America/New_York"
+enabled = false
+poll_interval_s = 30.0
+urls = [
+  "https://liveresults.ohiosos.gov/Api/v1/Contest/GetContestDetailsObject?contestName=U.S.%20Senator&contestObjectId=CONTEST_OBJECT_ID&resultsLevel=County&countyId=",
+  "https://liveresults.ohiosos.gov/Api/v1/Contest/GetContestDetailsObject?contestName=Governor%20and%20Lieutenant%20Governor&contestObjectId=CONTEST_OBJECT_ID&resultsLevel=County&countyId=",
+]
+
+[sources.mapping]
+rows = "contestList[*]"
+race = "$.contestName"
+county = "name"
+candidates = "candidatesRunning[*]"
+candidate_name = "primaryCandidate"
+candidate_party = "candidateParty"
+candidate_votes = "vCount"
+precincts_reporting = "reportedPrecincts"
+precincts_total = "totalPrecincts"
+
 # ── Georgia (Enhanced Voting; not Clarity since 2024), discovered at runtime ──────────────
 # Election slugs and ballot-item ids are minted per election and published late, so this source
 # names *what* to follow and finds *where* itself: it polls the jurisdiction's election list until
@@ -354,6 +392,17 @@ race_id = "2026-SEN-MI"
 source = "mi_sos"
 contest = "GOVERNOR 4 YEAR TERM (1) POSITION"
 race_id = "2026-GOV-MI"
+
+# Ohio (names from the 2026 primary; see oh_sos).
+[[races]]
+source = "oh_sos"
+contest = "U.S. Senator"
+race_id = "2026-SEN-OH"
+
+[[races]]
+source = "oh_sos"
+contest = "Governor and Lieutenant Governor"
+race_id = "2026-GOV-OH"
 
 # California House: the bulk files say "United States Representative District N", the REST API
 # says "U.S. House of Representatives District N". Both map to the same race id.

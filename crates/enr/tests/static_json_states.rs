@@ -5,7 +5,9 @@
 //! * `tx_sos_2024_county_trimmed.json`: TX SoS legacy site, 2024 general County.json (Anderson,
 //!   Harris, El Paso);
 //! * `tx_civix_2026_primary_countyinfo_trimmed.json`: TX Civix countyInfo for the 2026 Republican
-//!   primary (Mitchell, Harris), re-wrapped as `{"upload": "<base64>"}` after trimming.
+//!   primary (Mitchell, Harris), re-wrapped as `{"upload": "<base64>"}` after trimming;
+//! * `oh_sos_2024_president_by_county_election_night_trimmed.json`: OH SoS API, 2024 President by
+//!   county at 11:09 pm ET on election night (Wayback), Adams, Franklin and Van Wert.
 
 use chrono_tz::Tz;
 use susq_contracts::v1::{CountyResult, VoteType};
@@ -339,8 +341,44 @@ candidate_votes = "v"
 #[test]
 fn repo_sources_build() {
     let cfg = repo_config();
-    for id in ["az_sos", "tx_sos"] {
+    for id in ["az_sos", "tx_sos", "oh_sos"] {
         let s = cfg.sources.iter().find(|s| s.id == id).expect(id);
         assert!(build_source(&cfg, s).is_ok(), "{id}");
     }
+}
+
+#[test]
+fn oh_election_night_capture_maps_partial_counts() {
+    let cfg = repo_config();
+    let m = repo_mapping(&cfg, "oh_sos").compile().expect("compile");
+    let c = ctx(
+        "oh_sos",
+        "OH",
+        &[("President and Vice President", "2024-PRES-OH")],
+        Tz::America__New_York,
+    );
+    let parsed = static_json::parse(
+        &fixture("oh_sos_2024_president_by_county_election_night_trimmed.json"),
+        &m,
+        &c,
+        1,
+    )
+    .expect("parse");
+    assert_eq!(parsed.unresolved_counties, 0);
+    assert_eq!(parsed.results.len(), 3);
+    let franklin = find(&parsed.results, "2024-PRES-OH", "39049");
+    assert_eq!(
+        (votes(franklin, "DEM"), votes(franklin, "REP")),
+        (364_702, 200_818)
+    );
+    assert_eq!(
+        (franklin.precincts_reporting, franklin.precincts_total),
+        (868, 888),
+        "mid-count"
+    );
+    let adams = find(&parsed.results, "2024-PRES-OH", "39001");
+    assert_eq!((votes(adams, "REP"), votes(adams, "DEM")), (10_056, 2_073));
+    let van_wert = find(&parsed.results, "2024-PRES-OH", "39161");
+    assert_eq!(votes(van_wert, "REP"), 11_535);
+    assert_eq!(van_wert.votes.len(), 14, "every ticket and write-in");
 }
