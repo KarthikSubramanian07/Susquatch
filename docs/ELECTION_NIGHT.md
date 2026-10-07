@@ -41,8 +41,11 @@ uv run python -m susq.replay publish data/replay/sample.jsonl --nats nats://127.
 # The 2026 prior: history for every Cup state, the spec from the fair file, then the NeedlePrior (§5)
 uv run python -m susq.replay download 2022 --market-map state/market_map.json --out data/replay/county_results_2022.csv
 uv run python -m susq.replay download 2024 --market-map state/market_map.json --out data/replay/county_results_2024.csv
+uv run python -m susq.replay download 2022 CA --house-only --out data/replay/house_results_2022.csv   # CA House seats
+uv run python -m susq.replay download 2024 CA --house-only --out data/replay/house_results_2024.csv
 uv run python -m susq.replay spec2026 --market-map state/market_map.json --fair state/fair_live.json \
     --history data/replay/county_results_2022.csv --history data/replay/county_results_2024.csv \
+    --history data/replay/house_results_2022.csv --history data/replay/house_results_2024.csv \
     --out py/susq/replay/specs/general_2026.toml
 uv run python -m susq.replay prior py/susq/replay/specs/general_2026.toml --out state/needle/prior.json
 ```
@@ -86,11 +89,26 @@ The endpoint lists for the June 2026 primary are `media.sos.ca.gov/media/json-en
 ```
 
 - Counts are strings with thousands separators.
-- `Reporting` is free text, and we parse `(n of m)` out of it.
+- `Reporting` is free text ("1.5% (335 of 23,095) precincts reporting"). **The adapter does not pass it on as progress**
+  (`precincts_reporting = precincts_total = 0` on every CA result). The needle reads precinct progress as the share of a
+  unit's ballots counted (MODELS §3.2). California's precinct share measures something else: most ballots are mailed,
+  and a precinct counts as reporting once its semi-official tally is in. So the share runs far ahead of the ballot
+  count, and near 100% the needle would treat a race as finished while 40 to 50% of its ballots are still out at the
+  lock (§7). Without progress the needle estimates the remainder as expected total minus reported. (That the share
+  reaches 100% by Wednesday morning is the SoS's semi-official canvass convention; no 2024 Wednesday-morning capture
+  was found to confirm it. The Dec 3 2024 CA-42 capture shows 100%.)
 - `ReportingTime` is Pacific wall-clock time in AP style ("p.m.", "noon"). It is PDT in October and PST on election night, so the adapter uses the IANA zone `America/Los_Angeles`, not a fixed offset.
 - The feed gives **no vote-type split**, so CA results are tagged `MIXED`.
-- Contest names differ by path: the bulk files say "United States Representative District 13" and the REST API says "U.S. House of Representatives District 13". `config/enr_sources.toml` maps both.
-- Every House district, including single-county ones, has per-county rows.
+- Contest names differ by path: the bulk files say "United States Representative District 13" and the REST API says "U.S. House of Representatives District 13". `config/enr_sources.toml` maps both, for all 52 districts, to two-digit race ids (`2026-HOUSE-CA-01`); the loader refuses any other House id.
+- **House districts are single reporting units.** The bulk `us-rep.json` has one "Districtwide Results" row per district
+  plus a row per county piece; `/returns/us-rep/district/<n>` and `/district/all` return the districtwide rows only
+  (checked 2026-10-07). For a House race the adapter emits only the districtwide row, keyed by the pseudo-unit id
+  `CA-HD22` (`crates/enr/src/units.rs`), and skips the county pieces, which would count the district twice. Why this
+  key: most competitive districts split counties (CA-22 spans Fresno, Kern, Kings, Madera and Tulare), so a district
+  cannot be modelled from county history, while the district's own total needs no geography. The id has a letter and
+  a hyphen, so it cannot collide with a FIPS code. The pipeline accepts a 5-digit FIPS or a House unit of the
+  result's own state, and the needle treats it as an opaque county key (§5 builds the matching prior). Fixture:
+  `crates/enr/tests/fixtures/ca_sos_us_rep_district_42_2024-12-03.json`, the verbatim 2024 general CA-42 payload.
 
 **Status endpoint gotcha.** `/returns/status` and any unknown status slug fall back to a **stale Sept 16 2024 dataset**.
 Use `/returns/status/gubernatorial-general`. Its fields are `precinctsReporting`, `precinctsTotal`, `voterTurnout`,
@@ -331,7 +349,14 @@ AZ, western TX/KS, MI UP, …), 03:00Z (NV, MT, UT), 04:00Z (CA, WA, OR), 05:00Z
   - Suppressed vote cells (`*`, in 2024 CA, KS, NM, NV) count as 0.
   - Special elections are kept apart (`US SENATE SPECIAL`: OK 2022 ran two Senate races).
   - Party: `party_simplified`, falling back to `party_detailed` where MEDSL simplified a major party to OTHER (MN DFL, NE 2024 President). The loader also counts fusion lines (NY Working Families, Conservative) for the candidate's major party.
-  - Statewide offices by default. `--house` also keeps US House rows by county × district (`district = "07"`); the needle cannot use them yet (§6).
+  - Statewide offices by default. `--house` also keeps US House rows by county × district (`district = "07"`); `--house-only`
+    keeps only those, for a House file next to the statewide one (`download 2022 CA --house-only --out
+    data/replay/house_results_2022.csv`, 52 districts, under 50 KB). The cache file depends on the selection
+    (`CA.csv`, `CA.house.csv`, `CA.with-house.csv`), so a statewide cache is never reused for House rows. spec2026 uses
+    the California files for the single-unit House races (§5); other states' House rows have no use yet (§6).
+  - MEDSL's California modes are `ABSENTEE` and `NOT ABSENTEE`, and `classify_mode` reads both as MAIL (it matches
+    "absentee"), so every CA county's history is one MAIL type. With a MIXED feed this behaves like one MIXED type,
+    but it is a mislabel (see §6).
 - **Which states split by method:**
   - 2022 Senate: AK AR AZ GA HI IA ID LA MD NC NY OK SC (WA only has write-in rows).
   - 2024 president: AK AL AR AZ CT DE HI IA IN MD NC NJ NY OK RI SC (WV has one label only).
@@ -496,7 +521,7 @@ The per-state conventions in `conventions.py` are **modeling assumptions (low co
 ### The 2026 spec (`spec2026.py`, `specs/general_2026.toml`)
 
 `python -m susq.replay spec2026` writes a spec that `load_spec` reads, one race per Cup Senate or Governor race id in the market
-map (69 on Oct 6). It never copies anything from the map except race ids. The generated file is committed with a header naming
+map (69 on Oct 6) and one per Cup California House seat (CA-22 and CA-48: 71 races). It never copies anything from the map except race ids. The generated file is committed with a header naming
 the command, the run date and the fair file's timestamp. The pre-flight regenerates it on the VM.
 
 - **Prior margin from the fair file.** The left side is the Democrat, or the independent where the independent out-prices the
@@ -577,7 +602,24 @@ the command, the run date and the fair file's timestamp. The pre-flight regenera
 | WV | - | GOV PRES SEN | SEN: 2024 SEN |
 | WY | GOV | PRES SEN | GOV: 2024 PRES; SEN: 2024 SEN |
 
-**Not covered:** every House race (46 on Oct 6), for the reason in §6. Every Senate and Governor race in the map has a prior.
+**California House seats (single reporting units).** The CA SoS feed reports each district as one unit `CA-HD22` (§1.1),
+so a Cup CA House race is one `CountyPrior` under that key (`single_unit = true`, `history.collapse_to_unit`):
+
+- **Prior margin** from the fair file, exactly as for a statewide race: the same `_spec_for` race SD (5.34 with the sim's `house`
+  cluster), the same saturated-price rule.
+- **Expected total votes** = the district's 2022 US House total, or its 2024 total where 2022 was one-sided (a top-two D vs D or
+  R vs R general fails the 15% rule) or missing, times the turnout ratio chosen as for statewide races. The history comes from
+  `download <year> CA --house-only`. Proposition 50 redrew California's lines for 2026, so the 2022 district with the same number
+  is a different area; only its total is used, and the unit's turnout SD is widened to 0.15 (`prior.DISTRICT_TURNOUT_SD_FRAC`).
+- **Margin SD of the unit** is 2 pts (`prior.DISTRICT_UNIT_SD_PTS`), not the statewide county `hypot(race sd, 4)`. With one unit
+  the needle's prior variance is `beta² national² + delta + unit_sd² + type_sd²`; the county formula alone would exceed the race
+  SD and floor `delta`. With 2 pts the race SD is honoured exactly (tested in C++: `SingleUnitRace`), and delta's SD is 2.6.
+- **Report order:** the district's history is folded into one MIXED type (the feed is untyped, and MEDSL's CA modes are
+  mislabelled, §3), so it takes California's MIXED convention like every CA county.
+
+On the Oct 1 fair file: CA-22 is D +7.45 (p 0.918) on a 2022 total of 102,852; CA-48 is D +7.23 (p 0.912) on 256,742.
+
+**Not covered:** every other House race (44 on Oct 6), for the reason in §6. Every Senate and Governor race in the map has a prior.
 
 ### Needle backends
 
@@ -594,7 +636,7 @@ the command, the run date and the fair file's timestamp. The pre-flight regenera
 ### Runner and chaos
 
 - The runner streams at N× speed (0 = as fast as possible) either in process through a backend, or to NATS `enr.county_results` (`nats-py`), with timestamps
-  re-anchored. Payloads are validated: decoding, header and schema version, FIPS format. `seq` gaps and resets are tracked.
+  re-anchored. Payloads are validated: decoding, header and schema version, the unit key (a FIPS code or a House unit of the result's state). `seq` gaps and resets are tracked.
 - **Feed drop** `start:duration`:
   - Batches are withheld and heartbeats say `feed_ok = False`.
   - On recovery, the first batch carries every change made meanwhile, because the poller's next successful poll does exactly that. The final estimate is unaffected (tested).
@@ -631,11 +673,25 @@ stale until then; that is expected. `enr-capture` ignores the schedule.
 
 ## 6. Open issues and what is not verified
 
-- **House races have no needle prior.** The needle keys county priors by (race, county FIPS), and most competitive districts
-  split counties (CA-22 and CA-48 both do), so a district cannot be modelled from county history: the feed's county totals
-  would mix two districts. `download --house` already keeps MEDSL House rows by county × district. What is missing is a
-  county × district key in the ENR feed (`CountyResult`), in `CountyPrior` and in the needle. Until then `spec2026` lists the
-  46 House races as uncovered and the executor gets no House posteriors.
+- **House races outside California have no needle prior.** The needle keys priors by (race, unit), and most competitive districts
+  split counties, so a district cannot be modelled from county history: a feed's county totals would mix districts. California
+  works because its feed reports district totals, which are modelled as one unit each (§1.1, §5). No other built feed reports
+  district totals, so `spec2026` lists the other 44 House races as uncovered and the executor gets no posteriors for them. A
+  state whose feed does would need a `[[races]]` mapping, adapter support for its district rows (as in `ca_sos`) and its state
+  added to `spec2026.HOUSE_UNIT_STATES`.
+- **California House units: what is not verified.**
+  - Expected totals come from 2022 lines (Prop 50 redrew them). If 2026 turnout in a district runs well above its 2022 total,
+    the needle understates the remaining vote: `reported_frac` reads high and the projection leans toward the print. Compare
+    the unit's `reported_frac` with the SoS unprocessed-ballots report on the morning of Nov 4 before trusting a lock-rule buy.
+  - The precinct-progress drop (§1.1) rests on the SoS canvass convention, not on a captured Wednesday-morning payload.
+  - The district rows have run only against the 2026 test data (all zeros on Oct 7) and the Dec 2024 CA-42 capture, never
+    against a mid-count night.
+  - Each CA House race informs the shared national shift like any race. All of them carry California's R-leaning partial count,
+    so many CA House races in one prior would over-weight California in that shift. With two Cup seats this is small.
+  - MEDSL's California `NOT ABSENTEE` mode is classified as mail (`history.classify_mode` matches "absentee"), so CA history is
+    never split by method. Fixing that would give CA counties a mail / in-person split, and California's convention would then
+    send the uncounted remainder to Election Day (R-leaning), the opposite of the late-mail blue shift (§7). Left as is on purpose
+    until the convention is revisited.
 - **Baselines are a different candidate pair.** A 2026 Senate race often uses the 2022 Governor or the 2024 Senate race as its
   county pattern (see the table in §5). The race-level shift absorbs the statewide gap but not a home-county or incumbency
   pattern (VT Governor uses Welch's 2022 Senate map for a Scott race).
@@ -802,6 +858,11 @@ only while the lock rule is on, and keeps those races' books fresh. `crates/live
 (`lock_rule_buys_a_trailing_nevada_democrat_on_a_quiet_needle_only_when_on`) shows the whole rule end to end. Nevada is 60% counted with
 the Democrat trailing on the print and projected D +3 ± 1.2. The needle stays quiet for two hours, then the Cup offers the Democrat at
 0.40. A buy fills with the rule on, and nothing is sent with it off.
+`lock_rule_buys_a_trailing_california_house_democrat_only_when_on` runs the same session on CA-22, which the needle can model
+since the district is one reporting unit (§1.1, §5): 55% counted, the Democrat trailing on the print and projected D +2.5 ± 1.0,
+bought at 0.40 through the `2026-HOUSE-CA-*` override (−3 ± 1.5) with the rule on, and nothing sent with it off. The executor
+needed no change: it, the count-order table and the needle monitor all key on race ids, and `2026-HOUSE-CA-22` is in the
+market map, so its posteriors pass the monitor's known-race check.
 
 ### Leader/contender switch (`contender_hedge_multiple`, default 0 = off)
 
