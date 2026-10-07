@@ -164,6 +164,28 @@ def test_run_checks_end_to_end_offline(paths, home) -> None:
         tls_days=lambda _h: 60.0,
     )
     by_name = {c.name: c for c in checks}
-    assert set(by_name) == {"disk", "clock", "expiry", "tls", "lease", "backup", "quotas"}
+    assert set(by_name) == {"disk", "clock", "expiry", "tls", "lease", "backup", "needle-prior", "quotas"}
     assert by_name["lease"].state == "down"  # T0 is after open and no lease exists
     assert selfcheck.SEVERITY[by_name["clock"].state] == 0
+
+
+def test_needle_prior_check(tmp_path) -> None:
+    from datetime import UTC, datetime
+
+    from susq.ops.selfcheck import check_needle_prior
+
+    prior = tmp_path / "prior.json"
+    early = datetime(2026, 10, 10, tzinfo=UTC)
+    late = datetime(2026, 10, 25, tzinfo=UTC)
+    assert check_needle_prior(prior, now=early).state == "ok"  # not needed yet
+    missing = check_needle_prior(prior, now=late)
+    assert missing.state == "degraded"
+    assert "ops/needle-prior.sh" in (missing.action or "")
+    prior.write_text(json.dumps({"races": [{"raceId": f"r{i}"} for i in range(69)]}))
+    ok = check_needle_prior(prior, now=datetime.fromtimestamp(prior.stat().st_mtime, tz=UTC))
+    assert (ok.state, ok.detail.split(",")[0]) == ("ok", "69 races")
+    os.utime(prior, (late.timestamp() - 10 * 86_400,) * 2)  # built 10 days before Oct 25
+    stale = check_needle_prior(prior, now=late)
+    assert stale.state == "degraded"
+    prior.write_text(json.dumps({"races": [{"raceId": "r"}] * 3}))
+    assert check_needle_prior(prior, now=late).state == "degraded"

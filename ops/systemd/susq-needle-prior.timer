@@ -1,0 +1,12 @@
+# Oct 31 (the final pre-night prior, after the last CA test window) and Nov 3 16:15 ET (21:15Z; EST from
+# Nov 1), before the first polls close at 18:00 ET. The 17:00 ET pre-flight checks the result.
+[Unit]
+Description=Needle prior refresh: Sat Oct 31 and Tue Nov 3 2026
+
+[Timer]
+OnCalendar=2026-10-31 16:00:00 UTC
+OnCalendar=2026-11-03 21:15:00 UTC
+Persistent=true
+
+[Install]
+WantedBy=timers.target
