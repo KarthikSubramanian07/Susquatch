@@ -5,6 +5,7 @@ Examples (from the repo root)::
     uv run python -m susq.replay build py/susq/replay/specs/sample_2022.toml --out data/replay/s.jsonl
     uv run python -m susq.replay prior py/susq/replay/specs/sample_2022.toml --out data/replay/s.prior.json
     uv run python -m susq.replay drill py/susq/replay/specs/sample_2022.toml --chaos-drop 1800:600
+    uv run python -m susq.replay drill-compare py/susq/replay/specs/sample_2022.toml
     uv run python -m susq.replay publish data/replay/s.jsonl --nats nats://127.0.0.1:4222 --speed 120
     uv run python -m susq.replay download 2022 GA NH ME --out data/replay/county_results_2022.csv
     uv run python -m susq.replay download 2024 --market-map state/market_map.json \
@@ -27,7 +28,16 @@ from susq.contracts import to_json
 from susq.replay.backends import select_backend
 from susq.replay.closing import DEFAULT_PATH as CLOSING_PATH
 from susq.replay.closing import REPO_ROOT
-from susq.replay.drill import ExecutorConfig, render_report, simulate_executor, write_report
+from susq.replay.count_order import DEFAULT_PATH as COUNT_ORDER_PATH
+from susq.replay.count_order import CountOrderTable
+from susq.replay.drill import (
+    ExecutorConfig,
+    compare_count_order,
+    render_comparison,
+    render_report,
+    simulate_executor,
+    write_report,
+)
 from susq.replay.records import read_replay, write_replay
 from susq.replay.runner import ChaosConfig, replay_in_process, replay_to_nats
 from susq.replay.spec import load_spec, materialize, materialize_prior
@@ -119,6 +129,31 @@ def drill(
     path = write_report(text, out_dir)
     typer.echo(
         f"{path}: {len(result.trades)} trades, P&L {result.pnl:+.1f}, false triggers {result.false_triggers}"
+    )
+
+
+@app.command("drill-compare")
+def drill_compare(
+    spec: Path,
+    backend: Annotated[str, typer.Option(help="cpp (falls back to reference) or reference")] = "cpp",
+    market_delay_s: Annotated[float, typer.Option(help="how far the Cup book lags our posterior")] = 600.0,
+    table: Annotated[Path, typer.Option(help="count-order table")] = COUNT_ORDER_PATH,
+    out_dir: Annotated[Path, typer.Option()] = REPO_ROOT / "reports" / "drills",
+) -> None:
+    """EXP-006: replay a spec once, run the executor with the count-order gate off and on, and write
+    reports/drills/<date>-count-order.md."""
+    batches, meta, p = materialize(load_spec(spec))
+    needle, note = select_backend(backend)
+    needle.load_prior(p)
+    record = replay_in_process(batches, needle, speed=0.0, chaos=ChaosConfig())
+    cfg = ExecutorConfig(market_delay_s=market_delay_s)
+    co = CountOrderTable.load(table)
+    cmp = compare_count_order(record, p, meta.races, cfg, co)
+    text = render_comparison(cmp, title=spec.stem, replay=str(spec), backend_note=note, cfg=cfg, table=co)
+    path = write_report(text, out_dir, date=datetime.now(UTC).strftime("%Y-%m-%d") + "-count-order")
+    typer.echo(
+        f"{path}: gate off {len(cmp.off.trades)} trades P&L {cmp.off.pnl:+.1f}; "
+        f"gate on {len(cmp.on.trades)} trades P&L {cmp.on.pnl:+.1f}"
     )
 
 

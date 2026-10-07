@@ -17,6 +17,14 @@ Executor rule (SPEC §3 Phase 3): buy side s when q_s − ask_s ≥ max(min_edge
 with at least `min_counties` counties reporting (corroboration). SE is the standard deviation of q
 over the last `se_window` posteriors, a direct measure of how settled the estimate is. One
 position per race and side, held to resolution.
+
+Count-order gate (EXP-006, optional): with a `CountOrderTable`, a buy against the registered
+direction of the count still to come (or in a race with no registered direction) also needs the
+band converted to probability through the posterior's margin and sd, as in
+`crates/strategies/src/en_executor.rs`. `compare_count_order` runs the same replay with the gate
+off and on. The drill's market is our own lagged posterior, not a book that extrapolates the
+partial count, so a drill can show what the gate costs; it cannot show the mispricing the gate is
+meant to exploit.
 """
 
 from __future__ import annotations
@@ -30,7 +38,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from statistics import NormalDist
 
-from susq.contracts import needle_pb2
+from susq.contracts import bus_pb2, needle_pb2
+from susq.replay.count_order import CountOrderTable, band_prob
 from susq.replay.records import RaceTruth
 from susq.replay.runner import ReplayRecord
 
@@ -81,6 +90,9 @@ class DrillResult:
     suppressed_orders: int = 0
     unhealthy_s: float = 0.0
     decision_latencies_s: list[float] = field(default_factory=list)
+    gate: str = "off"
+    # Race-sides whose first qualifying buy the count-order gate refused (it may buy them later).
+    gate_blocked: set[tuple[str, str]] = field(default_factory=set)
 
     @property
     def pnl(self) -> float:
@@ -114,10 +126,11 @@ def simulate_executor(
     prior: needle_pb2.NeedlePrior,
     truths: dict[str, RaceTruth],
     cfg: ExecutorConfig | None = None,
+    count_order: CountOrderTable | None = None,
 ) -> DrillResult:
-    """Run the executor over a replay record."""
+    """Run the executor over a replay record (with the count-order gate when a table is given)."""
     cfg = cfg or ExecutorConfig()
-    result = DrillResult(record=record, truths=truths)
+    result = DrillResult(record=record, truths=truths, gate="on" if count_order is not None else "off")
     race_priors = {r.race_id: r for r in prior.races}
     paths = {rid: _price_path(record, rid, rp) for rid, rp in race_priors.items()}
     history: dict[tuple[str, str], deque[float]] = {}
@@ -153,6 +166,11 @@ def simulate_executor(
                     edge >= max(cfg.min_edge_pts / 100.0, cfg.se_mult * se)
                     and post.n_counties_reporting >= cfg.min_counties
                 )
+                if wants and count_order is not None:
+                    extra = _gate_extra(count_order, truths.get(race_id), race_id, side, post, sample.t_s)
+                    if edge < max(cfg.min_edge_pts / 100.0, cfg.se_mult * se) + extra:
+                        result.gate_blocked.add(key)
+                        wants = False
                 decision = time.perf_counter() - t0
                 if not wants:
                     continue
@@ -177,6 +195,113 @@ def simulate_executor(
             trig.false = True
             trig.reason = "side lost in truth"
     return result
+
+
+def _gate_extra(
+    table: CountOrderTable,
+    truth: RaceTruth | None,
+    race_id: str,
+    side: str,
+    post: bus_pb2.RacePosterior,
+    t_s: float,
+) -> float:
+    """Extra edge the count-order gate asks of a buy of `side` ('DEM'/'REP'): 0 when it agrees with
+    the registered direction or the race is unregistered, the band in probability otherwise, and
+    infinity when the band cannot be priced (no margin sd), which refuses the buy."""
+    if truth is None:
+        return 0.0
+    profile = table.profile(race_id, truth.state)
+    if profile is None:
+        return 0.0
+    reg = profile.at_hour((t_s - truth.poll_close_offset_s) / 3600.0)
+    if reg is None or reg.favours() == side:
+        return 0.0
+    bp = band_prob(post.margin_mean, post.margin_sd, reg.band_pts, side)
+    return float("inf") if bp is None else bp
+
+
+@dataclass
+class Comparison:
+    off: DrillResult
+    on: DrillResult
+
+
+def compare_count_order(
+    record: ReplayRecord,
+    prior: needle_pb2.NeedlePrior,
+    truths: dict[str, RaceTruth],
+    cfg: ExecutorConfig,
+    table: CountOrderTable,
+) -> Comparison:
+    """The same replay record through the executor with the count-order gate off and on."""
+    return Comparison(
+        off=simulate_executor(record, prior, truths, cfg),
+        on=simulate_executor(record, prior, truths, cfg, count_order=table),
+    )
+
+
+def render_comparison(
+    cmp: Comparison,
+    *,
+    title: str,
+    replay: str,
+    backend_note: str,
+    cfg: ExecutorConfig,
+    table: CountOrderTable,
+    generated: datetime | None = None,
+) -> str:
+    """Markdown comparison of gate-off versus gate-on (EXP-006)."""
+    when = (generated or datetime.now(UTC)).strftime("%Y-%m-%d %H:%M:%SZ")
+    rows = [("Gate off", cmp.off), ("Gate on", cmp.on)]
+    covered = sorted({t.state for t in cmp.on.truths.values() if table.profile(t.race_id, t.state)})
+    lines = [
+        f"# Count-order drill (EXP-006): {title}",
+        "",
+        f"Generated {when}. Replay `{replay}`, backend **{backend_note}**. Same replay record for both runs; "
+        f"market lags our posterior by {cfg.market_delay_s:g} s, half-spread {cfg.half_spread:g}, "
+        f"{cfg.qty} contracts per trade.",
+        f"Registered states in this replay: {', '.join(covered) or 'none'}.",
+        "",
+        "| Run | Trades | P&L vs truth | False triggers | Race-sides the gate refused at least once |",
+        "|---|---|---|---|---|",
+    ]
+    for name, r in rows:
+        lines.append(
+            f"| {name} | {len(r.trades)} | {r.pnl:+.1f} | {r.false_triggers} | {len(r.gate_blocked)} |"
+        )
+    lines += [
+        "",
+        "## Trades",
+        "",
+        "| Run | t (min) | Race | Side | q | Ask | P&L |",
+        "|---|---|---|---|---|---|---|",
+    ]
+    for name, r in rows:
+        for t in r.trades:
+            lines.append(
+                f"| {name} | {t.t_s / 60:.1f} | {t.race_id} | {t.side} | {t.q:.3f} | {t.price:.3f} "
+                f"| {t.pnl:+.1f} |"
+            )
+    if cmp.on.gate_blocked:
+        lines += [
+            "",
+            "Refused by the gate (first qualifying buy): "
+            + ", ".join(f"{race} {side}" for race, side in sorted(cmp.on.gate_blocked))
+            + ".",
+        ]
+    lines += [
+        "",
+        "## What this drill can and cannot show",
+        "",
+        "The simulated Cup book is our own posterior delayed by `market_delay_s`. It never extrapolates "
+        "the partial count, which is the mispricing EXP-006 registers, so this drill measures only what "
+        "the gate costs (trades it refuses against the registered direction) and whether those trades "
+        "would have won. It is not a test of the hypothesis. The bundled fixture is 2022 only (GA, NH, ME "
+        "county totals with synthetic timing from `conventions.py`); there is no 2024 fixture, so the "
+        "spec's 2022-and-2024 comparison is not possible with what is in the repo.",
+        "",
+    ]
+    return "\n".join(lines)
 
 
 class _HealthGate:
