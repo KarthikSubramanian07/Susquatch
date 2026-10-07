@@ -31,7 +31,7 @@ default = "paper"
 [risk]
 per_market_gross_frac = 0.05
 # Gross = positions at mark + resting orders. The sniper filled 72% with near-certain outcomes before it got
-# its own 35% budget (it never sells), so 0.90 is what leaves ~15% for the far quoter's cheap resting
+# its own 35% budget (it never sold before the EXP-003 unwind), so 0.90 is what leaves ~15% for the far quoter's cheap resting
 # ladders. The Oct 2 review decides how the sniper book is trimmed to fund the scenario book from Oct 7.
 total_gross_frac = 0.90
 glitch_through_fair_pts = 15.0     # an order this far through fair is a "glitch trade"...
@@ -106,6 +106,17 @@ min_edge_pts = 3.5                 # through fair, after ticks
 max_mistake_frac = 0.01            # size so a wrong fill costs < 1% of bankroll
 max_total_gross_frac = 0.35        # stop adding once positions + resting orders reach 35% of equity
 order_ttl_s = 30
+# EXP-003 (approved 2026-10-07): from unwind_from_utc the sniper stops buying and sells what it holds to free
+# cash for the 60% scenario book and the election-night budget. The unwind set is every held side whose fair
+# is >= 0.90 on a verified market with a fresh, sane fair, that is not a locked targets leg and has no other
+# strategy's order resting on it. Each sell is priced at max(bid, fair - unwind_max_haircut_pts) rounded up to
+# the tick (never below that floor), is at most the holding and max_mistake_frac of equity, and the unwind
+# stops once cash reaches unwind_target_cash_frac of equity or this hour's sells reach unwind_max_hourly_frac.
+# These values equal the defaults in both traders (bridge SniperConfig, Rust SniperCfg).
+unwind_from_utc = "2026-10-24T16:00:00Z"   # Oct 24 12:00 EDT
+unwind_max_haircut_pts = 2.0
+unwind_target_cash_frac = 0.60
+unwind_max_hourly_frac = 0.10      # proceeds of unwind sells sent in any trailing hour, as a share of equity
 
 [strategies.farquote]
 # Passive far quotes (bridge): on every verified market with fair <= max_fair rest BUY NO at these NO prices
@@ -162,8 +173,8 @@ feed_stale_s = 180
 se_margin_err_pts = 1.0
 # Share of equity the executor may have deployed in needle-derived orders at any time across the night
 # (buys at their limit, filled or resting, net of what rolls sold back). Enforced by risk: a buy that would
-# push past it is refused like any other cap. Cash for it has to be free at 19:00 ET (EXP-003 or a manual
-# Nov 2 trim decides how; this knob only makes the budget explicit).
+# push past it is refused like any other cap. Cash for it has to be free at 19:00 ET (the EXP-003 sniper unwind
+# from Oct 24 frees it; this knob only makes the budget explicit).
 night_budget_frac = 0.25
 
 [telemetry]
