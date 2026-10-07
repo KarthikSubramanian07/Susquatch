@@ -45,6 +45,43 @@ def classify_mode(mode: str) -> VoteType:
     return MIXED
 
 
+# Rows MEDSL files carry as "candidates" that are really ballot counts (NY's PUBLIC COUNTER is a
+# machine tally, 3.3M "votes" in 2022; MI, NJ and OR carry contest totals). Dropped on download and
+# again on load, so CSVs aggregated before a label was added are still read correctly.
+NON_CANDIDATE = frozenset(
+    {
+        "UNDERVOTES",
+        "UNDERVOTE",
+        "UNDER VOTES",
+        "OVERVOTES",
+        "OVERVOTE",
+        "OVER VOTES",
+        "UNDERVOTES-VOIDS",
+        "TOTAL",
+        "TOTAL BALLOTS CAST",
+        "TOTAL VOTES CAST",
+        "TOTAL VOTES",
+        "BALLOTS CAST",
+        "CAST VOTES",
+        "CONTEST TOTAL",
+        "BLANK",
+        "BLANKS",
+        "BLANK (2)",
+        "BLANK BALLOTS",
+        "BLANK VOTES",
+        "BLANK/VOID",
+        "VOID",
+        "SPOILED",
+        "REJECTED",
+        "REJECTED WRITE-INS",
+        "PUBLIC COUNTER",
+        "ABSENTEE / MILITARY",
+        "AFFIDAVIT",
+        "FEDERAL",
+        "SPECIAL VOTES",
+        "MANUALLY COUNTED EMERGENCY",
+    }
+)
 INDEPENDENT = "INDEPENDENT"  # the party label `pool_independent` gives the pooled candidate
 
 
@@ -147,20 +184,37 @@ class ContestKey:
     district: str = "STATEWIDE"
 
 
+def _major_party_by_candidate(rows: list[dict[str, str]]) -> dict[str, str]:
+    """Fusion voting (NY, CT): a candidate's minor-party lines count for their major party.
+
+    Hochul's Working Families votes are hers; left as OTHER they would skew every county's
+    two-party margin by that county's minor-line share (7 pts on the NY 2022 Governor prior).
+    """
+    out: dict[str, str] = {}
+    for r in rows:
+        party = r["party"].strip().upper()
+        if party in ("DEMOCRAT", "REPUBLICAN"):
+            out.setdefault(r["candidate"].strip(), party)
+    return out
+
+
 def _contest_from_rows(key: ContestKey, rows: list[dict[str, str]]) -> ContestHistory:
     split_counties = {r["county_fips"] for r in rows if r["mode"].strip().upper() != "TOTAL"}
+    major = _major_party_by_candidate(rows)
     counties: dict[str, CountyHistory] = {}
     for r in rows:
+        if r["candidate"].strip().upper() in NON_CANDIDATE:
+            continue
         fips = r["county_fips"].strip().zfill(5)
         mode = r["mode"].strip().upper()
         if mode == "TOTAL" and r["county_fips"] in split_counties:
             continue
         vt = MIXED if mode == "TOTAL" else classify_mode(mode)
         votes = int(float(r["candidatevotes"] or 0))
-        party = r["party"].strip().upper()
+        cand = r["candidate"].strip()
+        party = major.get(cand, r["party"].strip().upper())
         c = counties.setdefault(fips, CountyHistory(key.state, fips, r["county_name"].strip()))
         c.by_type.setdefault(vt, Tally()).add(party, votes)
-        cand = r["candidate"].strip()
         _, per_type = c.candidates.setdefault(cand, (party, defaultdict(int)))
         per_type[vt] += votes
     for c in counties.values():

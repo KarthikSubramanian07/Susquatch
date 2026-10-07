@@ -151,3 +151,33 @@ def test_pool_independent_joins_the_democrat(tmp_path: Path) -> None:
     assert c.tally.dem == 0, "the input contest is not mutated"
     plain = load_contest(SAMPLE_CSV, year=2022, state="NH", office="US SENATE")
     assert pool_independent(plain).tally.dem >= plain.tally.dem
+
+
+def test_fusion_lines_count_for_the_major_party(tmp_path: Path) -> None:
+    p = _csv(
+        tmp_path / "ny.csv",
+        [
+            "2022,NEW YORK,NY,A,36001,GOVERNOR,STATEWIDE,HOCHUL,DEMOCRAT,TOTAL,50,100",
+            "2022,NEW YORK,NY,A,36001,GOVERNOR,STATEWIDE,HOCHUL,OTHER,TOTAL,10,100",  # Working Families line
+            "2022,NEW YORK,NY,A,36001,GOVERNOR,STATEWIDE,ZELDIN,REPUBLICAN,TOTAL,30,100",
+            "2022,NEW YORK,NY,A,36001,GOVERNOR,STATEWIDE,ZELDIN,OTHER,TOTAL,8,100",  # Conservative line
+            "2022,NEW YORK,NY,A,36001,GOVERNOR,STATEWIDE,MINOR,OTHER,TOTAL,2,100",
+        ],
+    )
+    t = load_contest(p, year=2022, state="NY", office="GOVERNOR").tally
+    assert (t.dem, t.rep, t.other) == (60, 38, 2)
+
+
+def test_ballot_count_rows_are_not_candidates(tmp_path: Path) -> None:
+    p = _csv(
+        tmp_path / "ny.csv",
+        [
+            "2022,NEW YORK,NY,A,36001,GOVERNOR,STATEWIDE,HOCHUL,DEMOCRAT,TOTAL,50,100",
+            "2022,NEW YORK,NY,A,36001,GOVERNOR,STATEWIDE,ZELDIN,REPUBLICAN,TOTAL,30,100",
+            "2022,NEW YORK,NY,A,36001,GOVERNOR,STATEWIDE,PUBLIC COUNTER,OTHER,TOTAL,900,100",
+            "2022,NEW YORK,NY,A,36001,GOVERNOR,STATEWIDE,SCATTERING,OTHER,TOTAL,3,100",  # real write-ins
+        ],
+    )
+    c = load_contest(p, year=2022, state="NY", office="GOVERNOR")
+    assert c.tally.other == 3
+    assert "PUBLIC COUNTER" not in c.counties["36001"].candidates

@@ -31,6 +31,8 @@ from pathlib import Path
 
 import httpx
 
+from susq.replay.history import NON_CANDIDATE
+
 log = logging.getLogger(__name__)
 
 RAW = "https://raw.githubusercontent.com/MEDSL"
@@ -41,17 +43,6 @@ URLS = {
 OFFICES = {"US SENATE", "GOVERNOR", "US PRESIDENT"}
 HOUSE_OFFICE = "US HOUSE"
 STATEWIDE = "STATEWIDE"
-NON_CANDIDATE = {
-    "UNDERVOTES",
-    "OVERVOTES",
-    "TOTAL BALLOTS CAST",
-    "TOTAL VOTES CAST",  # VT 2024 carries a per-precinct total as a "candidate"
-    "TOTAL VOTES",
-    "BLANK",
-    "BLANKS",
-    "OVER VOTES",
-    "UNDER VOTES",
-}
 SPECIAL_SUFFIX = " SPECIAL"  # e.g. "US SENATE SPECIAL" (OK 2022 ran a regular and a special Senate race)
 HEADER = [
     "year",
