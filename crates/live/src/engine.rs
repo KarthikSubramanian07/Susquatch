@@ -899,6 +899,8 @@ impl Engine {
             let snap = Snapshot {
                 now_ns: now,
                 equity: self.world.equity,
+                // 0 until the first tournament read, as in `risk_ctx`.
+                cash: (self.world.cash > 0.0).then_some(self.world.cash),
                 books: &self.world.books,
                 book_max_age_ns: duration_ns(std::time::Duration::from_secs(self.d.cfg.live.book_max_age_s)),
                 positions: self.world.positions.map(),

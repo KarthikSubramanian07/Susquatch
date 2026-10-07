@@ -99,6 +99,8 @@ pub struct Snapshot<'a> {
     pub now_ns: i64,
     /// Account value (SUSQies).
     pub equity: f64,
+    /// Tournament cash (SUSQies), `None` until the first portfolio read.
+    pub cash: Option<f64>,
     pub books: &'a BookStore,
     pub book_max_age_ns: i64,
     /// Signed positions: +YES / -NO shares.
