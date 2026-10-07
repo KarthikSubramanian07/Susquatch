@@ -3,7 +3,9 @@
 //! * `ncsbe_2024_results_pct_trimmed.zip`: NC SBE 2024 general `results_pct_20241105.zip`, rows
 //!   for Hyde, New Hanover and Watauga (US PRESIDENT, NC GOVERNOR, plus a few other contests);
 //! * `ncsbe_2026_results_pct_template_trimmed.zip`: the 2026 general file NC SBE already serves
-//!   (all zeros), US SENATE for Hyde and New Hanover.
+//!   (all zeros), US SENATE for Hyde and New Hanover;
+//! * `mi_sos_2024_primary_resultfile_trimmed.txt`: MI SoS (MVIC) result file for the Aug 2024
+//!   primary, Alcona, Kent and St Joseph, with the file's trailer line.
 
 use chrono_tz::Tz;
 use susq_contracts::v1::{CountyResult, VoteType};
@@ -179,5 +181,56 @@ fn nc_source_builds_from_repo_config() {
             .get("2026-SEN-NC")
             .is_some_and(|s| s.contains("nc_sbe"))
             == src.enabled
+    );
+}
+
+#[test]
+fn mi_county_file_with_trailer_line() {
+    let cfg = repo_config();
+    let m = repo_mapping(&cfg, "mi_sos").compile().expect("compile");
+    // The primary prints the general's Senate contest name, so the shipped race map applies.
+    let c = AdapterContext {
+        source_id: "mi_sos".into(),
+        state: "MI".into(),
+        races: cfg.race_map("mi_sos"),
+        tz: Tz::America__Detroit,
+    };
+    let parsed =
+        csv::parse(&fixture("mi_sos_2024_primary_resultfile_trimmed.txt"), &m, &c, 1).expect("parse");
+    assert_eq!(parsed.unresolved_counties, 0);
+    assert_eq!(parsed.results.len(), 3, "one MIXED result per county");
+    let sen = "2026-SEN-MI";
+    let kent = find(&parsed.results, sen, "26081", VoteType::Mixed);
+    assert_eq!(
+        (votes(kent, "DEM"), votes(kent, "REP")),
+        (49_006 + 13_503, 22_007 + 5_768 + 4_279 + 31_795)
+    );
+    let rogers = kent
+        .votes
+        .iter()
+        .find(|v| v.candidate == "ROGERS")
+        .expect("Rogers");
+    assert_eq!((rogers.votes, rogers.party.as_str()), (31_795, "REP"));
+    let st_joseph = find(&parsed.results, sen, "26149", VoteType::Mixed);
+    assert_eq!(votes(st_joseph, "DEM"), 1_203 + 306);
+    let alcona = find(&parsed.results, sen, "26001", VoteType::Mixed);
+    assert_eq!(votes(alcona, "REP"), 185 + 198 + 287 + 1_329);
+    assert_eq!(
+        (alcona.precincts_reporting, alcona.precincts_total),
+        (0, 0),
+        "no precinct data"
+    );
+    // Without the skip rule the trailer is a short record and fails the payload.
+    let mut strict = repo_mapping(&cfg, "mi_sos");
+    strict.skip_rows_starting_with.clear();
+    let strict = strict.compile().expect("compile");
+    assert!(
+        csv::parse(
+            &fixture("mi_sos_2024_primary_resultfile_trimmed.txt"),
+            &strict,
+            &c,
+            1
+        )
+        .is_err()
     );
 }

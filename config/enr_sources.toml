@@ -218,6 +218,37 @@ precincts_total = "^0.Summary.PRP"
 # the June primary). Needs an XML attribute mapper plus a way past the challenge (a browser on
 # the host) before it can be polled. Nevada has no 2026 Senate race; Governor is 2026-GOV-NV.
 
+# ── Michigan Secretary of State (csv; behind a Cloudflare challenge, 2026-10-06) ───────────
+# Unofficial results are on MVIC, not mielections.us (that host times out and holds certified
+# files only). The page mvic.sos.state.mi.us/votehistory/Index?type=C&electionDate=<M-D-YYYY>
+# loads /VoteHistory/GetElectionResultFile?electionId=<id>: a tab-separated, CRLF file with one
+# row per (county, office, candidate) and a trailer line "RECORDS: n<TAB>RESULTS: OFFICIAL".
+# County level only, no precinct counts (the page reports "Counties: x/83"), no vote-method
+# split. Election ids: 699 = 2024 general, 698 = Aug 2024 primary, 705 = May 2026; the 2026
+# general has no id yet. Every live request (browser User-Agent too) gets a Cloudflare
+# challenge (403, "Just a moment..."), so it needs a browser-issued cf_clearance cookie; the
+# fixture is the Aug 2024 primary file from a Wayback capture (2024-08-29). Disabled: point the
+# url at the 2026 general id once listed, and enable only if the host can fetch it.
+# Contest names: "UNITED STATES SENATOR 6 YEAR TERM (1) POSITION" (2024 format, verified);
+# "GOVERNOR 4 YEAR TERM (1) POSITION" assumed from 2018's "Governor 4 Year Term (1) Position".
+[[sources]]
+id = "mi_sos"
+state = "MI"
+kind = "csv"
+tz = "America/Detroit"
+enabled = false
+poll_interval_s = 60.0
+urls = ["https://mvic.sos.state.mi.us/VoteHistory/GetElectionResultFile?electionId=699"]
+
+[sources.mapping]
+delimiter = "tab"
+race = "OfficeDescription"
+county = "CountyName"
+candidate = "CandidateLastName"
+party = "PartyDescription"
+votes = "CandidateVotes"
+skip_rows_starting_with = ["RECORDS:"]
+
 # ── Georgia (Enhanced Voting; not Clarity since 2024), discovered at runtime ──────────────
 # Election slugs and ballot-item ids are minted per election and published late, so this source
 # names *what* to follow and finds *where* itself: it polls the jurisdiction's election list until
@@ -312,6 +343,17 @@ race_id = "2026-SEN-TX"
 source = "tx_sos"
 contest = "GOVERNOR"
 race_id = "2026-GOV-TX"
+
+# Michigan: see mi_sos for which name is verified.
+[[races]]
+source = "mi_sos"
+contest = "UNITED STATES SENATOR 6 YEAR TERM (1) POSITION"
+race_id = "2026-SEN-MI"
+
+[[races]]
+source = "mi_sos"
+contest = "GOVERNOR 4 YEAR TERM (1) POSITION"
+race_id = "2026-GOV-MI"
 
 # California House: the bulk files say "United States Representative District N", the REST API
 # says "U.S. House of Representatives District N". Both map to the same race id.

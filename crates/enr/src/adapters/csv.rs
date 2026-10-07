@@ -84,6 +84,10 @@ pub struct CsvMapping {
     /// Row timestamp column (RFC 3339 or `M/D/YYYY h:mm:ss AM`, in the source's `tz`).
     #[serde(default)]
     pub source_ts: Option<String>,
+    /// Records whose first field starts with one of these are skipped, e.g. Michigan's trailer
+    /// line `RECORDS: 1541<TAB>RESULTS: OFFICIAL`.
+    #[serde(default)]
+    pub skip_rows_starting_with: Vec<String>,
 }
 
 fn default_delimiter() -> String {
@@ -148,9 +152,10 @@ impl CsvMapping {
             .into_iter()
             .flatten()
             .chain(&self.vote_type_columns)
+            .chain(&self.skip_rows_starting_with)
             .any(|n| n.trim().is_empty())
         {
-            return err("empty column name");
+            return err("empty column name or skip prefix");
         }
         Ok(CompiledCsv {
             delimiter,
@@ -322,6 +327,13 @@ pub fn parse(
     while let Some(rec) = records.next_record()? {
         line += 1;
         if rec.iter().all(|f| f.trim().is_empty()) {
+            continue;
+        }
+        if m.m
+            .skip_rows_starting_with
+            .iter()
+            .any(|p| rec[0].trim_start().starts_with(p.as_str()))
+        {
             continue;
         }
         if rec.len() < cols.width {
@@ -563,6 +575,7 @@ mod tests {
             precincts_reporting: Some("rep".into()),
             precincts_total: Some("tot".into()),
             source_ts: Some("updated".into()),
+            skip_rows_starting_with: Vec::new(),
         }
     }
 
