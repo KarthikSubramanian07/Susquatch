@@ -23,8 +23,8 @@ use std::{
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use susq_core::{
-    BookSide, Calendar, ExchangeId, MarketIndex, OrderBundle, OrderSpec, Pips, TournamentId, config::RiskCfg,
-    market_map::cluster_kind,
+    Action, BookSide, Calendar, ExchangeId, MarketIndex, OrderBundle, OrderSpec, Pips, TournamentId,
+    config::RiskCfg, market_map::cluster_kind,
 };
 
 /// Why an order was refused.
@@ -54,6 +54,8 @@ pub enum Rejection {
     NoEquity,
     #[error("buying power: bundle needs {need:.2}, {available:.2} available")]
     BuyingPower { need: f64, available: f64 },
+    #[error("election-night budget: {after:.2} > {cap:.2}")]
+    NightBudget { after: f64, cap: f64 },
 }
 
 /// Cash a bundle would consume under a collateral model, given signed positions (+YES / −NO).
@@ -77,6 +79,9 @@ pub struct RiskLimits {
     /// `fair_yes` is the needle posterior: a post-batch edge is a 15+ point buy by design, so
     /// the general threshold would spend the whole glitch cap on the first good trades.
     pub needle_glitch_through_fair: f64,
+    /// Most equity needle-derived buys may have deployed at once (`[strategies.en]
+    /// night_budget_frac`), counted by [`RiskContext::needle_used`]. `None`: no night budget.
+    pub needle_budget_frac: Option<f64>,
 }
 
 impl RiskLimits {
@@ -92,12 +97,19 @@ impl RiskLimits {
             glitch_through_fair: cfg.glitch_through_fair_pts / 100.0,
             glitch_max_frac: cfg.glitch_max_frac,
             needle_glitch_through_fair: cfg.glitch_through_fair_pts / 100.0,
+            needle_budget_frac: None,
         }
     }
 
     /// Glitch threshold (points) for needle-derived legs (`[strategies.en] en_glitch_pts`).
     pub fn with_needle_glitch_pts(mut self, pts: f64) -> Self {
         self.needle_glitch_through_fair = pts / 100.0;
+        self
+    }
+
+    /// Night budget for needle-derived buys (`[strategies.en] night_budget_frac`).
+    pub fn with_needle_budget_frac(mut self, frac: f64) -> Self {
+        self.needle_budget_frac = Some(frac);
         self
     }
 
@@ -140,6 +152,9 @@ pub struct RiskContext<'a> {
     pub locked: &'a HashSet<ExchangeId>,
     /// Glitch-trade notional already committed.
     pub glitch_used: f64,
+    /// SUSQies needle-derived orders have deployed: bought at cost plus resting buys at their
+    /// limit, less what rolls sold back (the live loop computes it from the OMS).
+    pub needle_used: f64,
     /// Tournament cash, when known (`None`: buying power is left to the platform).
     pub cash: Option<f64>,
     /// Collateral-aware bundle cost; `None` = full opening notional (the default, conservative).
@@ -298,6 +313,7 @@ impl PreTrade {
             return Ok(());
         }
         self.check_glitch(ctx, &bundle.legs)?;
+        self.check_night_budget(ctx, &bundle.legs)?;
         let mut exposure_after = committed(ctx, &mark);
         for (ex, add) in opening {
             *exposure_after.entry(ex).or_default() += add;
@@ -359,6 +375,28 @@ impl PreTrade {
             if after > cap + 1e-9 {
                 return Err(Rejection::GlitchCap { after, cap });
             }
+        }
+        Ok(())
+    }
+
+    /// Needle-derived buys may not take the night's deployment past `needle_budget_frac`.
+    /// Sells (rolls) only ever free budget, so they are never refused here.
+    fn check_night_budget(&self, ctx: &RiskContext<'_>, legs: &[OrderSpec]) -> Result<(), Rejection> {
+        let Some(frac) = self.limits.needle_budget_frac else {
+            return Ok(());
+        };
+        let add: f64 = legs
+            .iter()
+            .filter(|l| l.needle_derived && l.action == Action::Buy)
+            .map(OrderSpec::max_notional)
+            .sum();
+        if add <= 0.0 {
+            return Ok(());
+        }
+        let cap = frac * ctx.equity;
+        let after = ctx.needle_used.max(0.0) + add;
+        if after > cap + 1e-9 {
+            return Err(Rejection::NightBudget { after, cap });
         }
         Ok(())
     }
@@ -513,6 +551,7 @@ mod tests {
             glitch_through_fair: 0.15,
             glitch_max_frac: 0.02,
             needle_glitch_through_fair: 0.40,
+            needle_budget_frac: None,
         }
     }
 
@@ -593,6 +632,7 @@ mod tests {
                 markets: &self.markets,
                 locked: &self.locked,
                 glitch_used: 0.0,
+                needle_used: 0.0,
                 cash: None,
                 bundle_cost: None,
             }
@@ -917,5 +957,44 @@ mod tests {
             limits: plain.limits.clone().with_needle_glitch_pts(40.0),
         };
         assert!(!built.is_glitch(&leg));
+    }
+
+    /// Gap 10 of the readiness audit: the election-night executor deploys at most
+    /// `night_budget_frac` of equity; rolls (sells) always pass, other strategies are untouched.
+    #[test]
+    fn night_budget_caps_needle_buys_only() {
+        let w = World::new();
+        let pt = PreTrade {
+            limits: limits()
+                .with_needle_glitch_pts(40.0)
+                .with_needle_budget_frac(0.25),
+        };
+        let mut ctx = w.ctx(10_000.0);
+        let mut buy = spec("1", Side::Yes, Action::Buy, 300, 3000); // 90 SUSQies
+        buy.needle_derived = true;
+        buy.fair_yes = Some(0.45);
+        ctx.needle_used = 2_400.0;
+        assert_eq!(
+            pt.check_bundle(&ctx, &OrderBundle::single(buy.clone()), &w.tid),
+            Ok(())
+        );
+        ctx.needle_used = 2_450.0; // 2,450 + 90 > 2,500
+        assert!(matches!(
+            pt.check_bundle(&ctx, &OrderBundle::single(buy.clone()), &w.tid),
+            Err(Rejection::NightBudget { .. })
+        ));
+        // The same buy from a strategy that is not the needle's is not the night budget's business.
+        let mut sniper = buy.clone();
+        sniper.needle_derived = false;
+        sniper.fair_yes = None;
+        assert_eq!(
+            pt.check_bundle(&ctx, &OrderBundle::single(sniper), &w.tid),
+            Ok(())
+        );
+        // No night budget configured: needle buys pass on the other caps alone.
+        let open = PreTrade {
+            limits: limits().with_needle_glitch_pts(40.0),
+        };
+        assert_eq!(open.check_bundle(&ctx, &OrderBundle::single(buy), &w.tid), Ok(()));
     }
 }
