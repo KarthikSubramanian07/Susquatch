@@ -458,7 +458,14 @@ The first sample drill on 2026-09-28 used the reference backend, all three chaos
 - **Poll-closing table:** 33 states are unverified (GA and NH are the important ones).
 - **Reporting conventions** are assumptions to calibrate from captures and from any timestamped archives we can find.
 - **Cross-source tolerances** (2 %, 50 votes, 1 pt) are untuned. The CA bulk-versus-REST pair gives a free first calibration on the test days.
-- **C++ needle binding:** not built yet (feat/cpp-models). The drill uses the reference backend until `susq_models.needle.Needle` exists with the contract above.
+- **C++ needle binding:** built (`cpp/bindings/needle_bindings.cpp`, in the python image through the `models` dependency group) and
+  used by the drill whenever `susq_models.needle.Needle` imports, with the reference backend as the fallback and cross-check. What a
+  binding drill does **not** exercise is the `susq-needle` service itself (NATS, headers, seq, heartbeats, the rust-live watchdog); the
+  service image has not yet been built or run on the VM, which the Oct 8 smoke and both rehearsals must cover.
+- **Posterior cadence and the executor's gates:** the needle publishes posteriors only after an accepted batch; rust-live keeps acting on
+  the last one for `[needle] posterior_max_age_s` (600 s) while heartbeats keep the needle healthy. With `--election` the executor also
+  refuses disputed races and places no new buys where every mapped source is stale (`[strategies.en] feed_stale_s`); without the pollers
+  (a replay published straight onto the bus) neither gate applies. Both gates are unit-tested and have not yet run against the real stack.
 
 ## Sources (all accessed 2026-09-28)
 

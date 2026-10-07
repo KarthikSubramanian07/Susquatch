@@ -346,9 +346,11 @@ little above the prior (the golden fixture is one such case: prior 5.0, model 5.
   adapters' job.
 - `batch_id` dedupe: a seen id is ignored. Identical totals under a new id count as `unchanged`.
 - Regressions (any cumulative count going down) are ignored and counted **unless flagged as
-  corrections**. The `susq.v1.CountyResult` contract has no correction flag yet, so the bus path never
-  accepts one. The library call `Ingest(result, is_correction)` and the Python `ingest(...,
-  is_correction=True)` can.
+  corrections**. `susq.v1.CountyResult.is_correction` (field 13) is set by the Rust `enr` pipeline once a
+  decrease has repeated on `confirm_corrections_after` consecutive polls (`config/enr_sources.toml`), and
+  the model honours the flag on the bus path, so a confirmed correction is applied and a one-off dip is
+  not. The library call `Ingest(result, is_correction)` and the Python `ingest(..., is_correction=True)`
+  force it for replays.
 - Malformed results are rejected and counted: no candidate votes, a total below the candidate sum, any
   count above 5e7, or an unknown vote-type enum. Unknown races are counted too. Counties missing from the
   prior are counted toward reported votes but not modeled.
@@ -486,6 +488,8 @@ covariance matches the closed form in §1.1.
   genuine three-way race.
 - Precinct progress is read per unit as reported. Feeds whose precinct counts cover Election Day only
   will overstate mail completeness.
-- Corrections cannot arrive over the bus until `CountyResult` gets a correction flag (see the report).
+- A correction is only as good as the pipeline's confirmation rule: a decrease must repeat on
+  `confirm_corrections_after` polls before `is_correction` is set, so a real correction is applied one or
+  two polls late and a one-off glitch never is.
 - The git SHA in headers is resolved when CMake configures, so rebuilding without reconfiguring keeps the
   old SHA.
