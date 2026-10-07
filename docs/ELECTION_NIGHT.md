@@ -670,8 +670,11 @@ stale until then; that is expected. `enr-capture` ignores the schedule.
   election-night orders are counted as fully bought, so the cap can only bind harder. `crates/live/tests/session.rs` drives a real
   `NeedleState` into the engine: a posterior with edge produces a filled buy on the mock exchange, heartbeat silence cancels the working
   order and blocks new ones despite fresh size on the book, and trading resumes only after the resume streak and a fresh posterior.
-- **Count-order playbook (EXP-006):** see §7. The table's numbers are estimates from two cycles of press prints; the gate has run in unit
-  tests, one end-to-end session test and the drill below, never against a live night.
+- **Count-order playbook (EXP-006):** see §7. The table's numbers are estimates from two cycles of press prints. The gate has run in unit
+  tests, one end-to-end session test and the drill in §7, never against a live night. In states whose 2026 prior is MIXED (CA, NV, PA
+  among them), the needle carries each county's counted lean into its uncounted ballots. The table is used there only as a direction
+  check and band, as everywhere else, so some lock-time edge is left unused. Using it as an adjustment in those races would need a
+  per-race "typed prior" flag that rust-live does not have.
 
 ---
 
@@ -718,13 +721,27 @@ The needle's `margin_mean` is already a projection of the final margin. `cpp/nee
 votes at the prior's vote-type offset (`NeedlePrior.vote_types[].margin_offset`, with `typical_report_order` from
 `py/susq/replay/conventions.py` deciding which types an untyped tally contains), shifted by what that county's reported votes taught it.
 
-Subtracting the registered drift from `margin_mean` would therefore count the remaining-vote lean twice. The executor uses the table only to:
+Where the prior is split by vote type, subtracting the registered drift from `margin_mean` would count the remaining-vote lean twice.
+Among the 18 states that is AK, AZ, IA, NC and SC, plus GA in 2022, because MEDSL splits their history by method (§3).
+
+The other states, including the lock-rule states CA, NV and PA, get one MIXED type per county. There the needle still projects where
+the uncounted vote is, and Los Angeles or Clark counted last is weighted as such. Within a county, though, it carries the lean of the
+ballots already counted into the ones still out, shrunk toward the prior while little is counted. In those states the posterior leans
+toward the print, the same way the table registers.
+
+The executor cannot tell typed priors from untyped ones per race; the posterior carries no such flag. So it uses the table the same way
+everywhere, only to:
 
 1. **Check direction.** Does the buy agree with the registered direction of the count still to come? YES on a DEM leg or NO on a REP leg
    leans D.
-2. **Price a band.** If not, how much extra edge must the buy show? The band covers what the needle cannot know. Its vote-type offsets
-   average each type, so they miss the lean between early and late ballots of the same type: late Clark mail, Maricopa late earlies, the
+2. **Price a band.** If not, how much extra edge must the buy show? The band covers what the needle cannot know: the lean between
+   early and late ballots of one type, or of one county under a MIXED prior. Examples are late Clark mail, Maricopa late earlies and the
    California tail.
+
+This can only refuse trades. The needle's threshold is never relaxed below its normal level, so the table never buys more than the needle
+alone would justify. In MIXED-prior states the needle probably understates the side the count still favours. That costs some lock-rule
+edge but does not add risk. Applying a shrunk drift in MIXED races only is a possible follow-up; it would need the prior to tell rust-live
+which races are typed (§6).
 
 ### The gate (`[strategies.en] count_order_enabled`, default on)
 

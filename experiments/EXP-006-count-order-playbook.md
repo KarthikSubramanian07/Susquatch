@@ -24,8 +24,14 @@ registered direction by more than the modelled uncertainty, beats the needle's u
    - **Parsers.** `crates/core/src/count_order.rs`, which validates the file, and `py/susq/replay/count_order.py`.
 2. **`crates/strategies/src/en_executor.rs`: the count-order gate** (`[strategies.en] count_order_enabled = true`).
    - **No adjustment.** The needle's `margin_mean` already projects the remaining vote: `cpp/needle` adds each county's expected
-     remaining votes at the prior's vote-type offsets. The table is therefore **not** subtracted from the margin, which would count the
-     lean twice. It is a direction check and a band.
+     remaining votes at the prior's vote-type offsets. Where the 2026 prior is typed (AK, AZ, IA, NC, SC; GA 2022), subtracting the
+     drift would count the lean twice.
+   - **MIXED priors.** Where the prior is one MIXED type per county (CA, NV, PA and most others), the needle carries each county's
+     counted lean into the uncounted ballots, so its posterior leans toward the print. The posterior does not say which kind of prior it
+     rests on.
+   - **Decision.** The table is used everywhere only as a direction check and a band. That can only refuse trades the needle would make;
+     it never adds exposure. The cost is some unused lock-time edge in MIXED-prior states. A per-race typed-prior flag would allow a
+     shrunk adjustment there later.
    - **The rule.** A buy that agrees with the registered direction of the count still to come needs the normal threshold. A buy against
      it, or in a race with no direction, needs the threshold plus the band converted to probability through the posterior's margin and
      sd. Without a margin sd, a gated buy is refused.

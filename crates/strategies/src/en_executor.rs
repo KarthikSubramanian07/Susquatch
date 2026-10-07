@@ -36,8 +36,13 @@
 //! projection of the **final** margin: `cpp/needle` adds the expected remaining votes of every
 //! county and vote type at the prior's vote-type offsets (`NeedlePrior.vote_types[].margin_offset`,
 //! with `typical_report_order` from `py/susq/replay/conventions.py` filling untyped tallies), shifted
-//! by what the county's reported votes taught it. Subtracting the registered drift from it would
-//! count the remaining-vote lean twice. So the table is used only as a **direction check and band**:
+//! by what the county's reported votes taught it. Where the prior is typed (history split by method:
+//! AK, AZ, IA, NC, SC, GA 2022) subtracting the registered drift would count the remaining-vote lean
+//! twice; where it is one MIXED type per county (CA, NV, PA and most others) the needle projects where
+//! the uncounted vote is but carries each county's counted lean into it, so its posterior leans toward
+//! the print the way the table registers. The posterior does not say which kind of prior it rests on,
+//! so the table is used everywhere only as a **direction check and band**, which can only ever refuse
+//! trades the needle alone would make, never add exposure (docs/ELECTION_NIGHT.md §7):
 //! at `now` the race's registered remaining drift (interpolated by hour after poll close) either has a
 //! direction (`|drift| > band`: the count still to come favours D when the drift is negative) or not.
 //! A buy whose lean (YES on a DEM rule or NO on a REP rule is a D lean) agrees with that direction
