@@ -4,12 +4,13 @@ election_date = "2026-11-03"
 compiled = "2026-09-28"
 utc_offsets_note = "DST ends 2026-11-01: EST=-05, CST=-06, MST=-07 (AZ year-round), PST=-08, AKST=-09, HST=-10"
 
+# Verified 2026-10-06 from https://www.akleg.gov/basis/statutes.asp?media=print&secStart=15.15.080&secEnd=15.15.080
 [states.AK]
 name = "Alaska"
 verified = true
-source = "https://www.elections.alaska.gov/doc/mp/2024/MediaPacket-2024-Primary.pdf"
+source = "https://www.akleg.gov/basis/statutes.asp?media=print&secStart=15.15.080&secEnd=15.15.080"
 split_time_zone = true
-notes = "Division of Elections: polling places open 7am to 8pm local. Western Aleutians (west of 169.5W) are on Hawaii-Aleutian time. First unofficial results historically posted about 8:45-9pm AKT."
+notes = "AS 15.15.080: polls open 7am and close 8pm local. Western Aleutians (west of 169.5W) are on Hawaii-Aleutian time. Division of Elections media packet agrees; first unofficial results historically about 8:45-9pm AKT."
 closings = [
   { zone = "Alaska time (most of state)", tz = "America/Anchorage", closes_local = "20:00", closes_utc = "2026-11-04T05:00:00Z" },
   { zone = "Hawaii-Aleutian (western Aleutians)", tz = "America/Adak", closes_local = "20:00", closes_utc = "2026-11-04T06:00:00Z" },
@@ -35,6 +36,7 @@ closings = [
   { zone = "Central", tz = "America/Chicago", closes_local = "19:30", closes_utc = "2026-11-04T01:30:00Z" },
 ]
 
+# Verified 2026-10-06 from https://www.azleg.gov/ars/16/00565.htm
 [states.AZ]
 name = "Arizona"
 verified = true
@@ -96,12 +98,13 @@ closings = [
   { zone = "Central (western panhandle)", tz = "America/Chicago", closes_local = "19:00", closes_utc = "2026-11-04T01:00:00Z" },
 ]
 
+# Verified 2026-10-06 from https://sos.ga.gov/how-to-guide/how-guide-voting and https://georgia.gov/vote-in-person-election-day
 [states.GA]
 name = "Georgia"
-verified = false
+verified = true
 source = "https://sos.ga.gov/how-to-guide/how-guide-voting"
 split_time_zone = false
-notes = "7am to 7pm Eastern per Georgia SoS (seen via search snippet; sos.ga.gov returned HTTP 403 to direct fetch on 2026-09-28). Matches 270toWin."
+notes = "GA SoS: 'You can vote in person on Election Day from 7 a.m. until 7 p.m. ... If you are in line by 7 p.m., you will still be allowed to vote.' georgia.gov/vote-in-person-election-day agrees. Both fetched 200 on 2026-10-06. Statute O.C.G.A. 21-2-403 not readable (Justia 403; Georgia has no official statute site)."
 closings = [
   { zone = "Eastern", tz = "America/New_York", closes_local = "19:00", closes_utc = "2026-11-04T00:00:00Z" },
 ]
@@ -116,6 +119,7 @@ closings = [
   { zone = "Hawaii", tz = "Pacific/Honolulu", closes_local = "19:00", closes_utc = "2026-11-04T05:00:00Z" },
 ]
 
+# Verified 2026-10-06 from https://www.legis.iowa.gov/docs/code/49.73.pdf
 [states.IA]
 name = "Iowa"
 verified = true
@@ -158,12 +162,13 @@ closings = [
   { zone = "Central (NW and SW corners)", tz = "America/Chicago", closes_local = "18:00", closes_utc = "2026-11-04T00:00:00Z" },
 ]
 
+# Verified 2026-10-06 from https://www.ksrevisor.gov/statutes/chapters/ch25/025_001_0006.html
 [states.KS]
 name = "Kansas"
 verified = true
-source = "https://sos.ks.gov/elections/voter-information.html"
+source = "https://www.ksrevisor.gov/statutes/chapters/ch25/025_001_0006.html"
 split_time_zone = true
-notes = "KS SoS: polls must open 7am and close 7pm, but counties may close as late as 8pm local (K.S.A. 25-106). Greeley, Hamilton, Sherman and Wallace counties are Mountain time. Times below are the statutory default."
+notes = "K.S.A. 25-106: Central-zone counties default to 7am to 7pm and may set hours ending no later than 8pm; the four Mountain-zone counties (Greeley, Hamilton, Sherman, Wallace) default to 6am to 6pm and may end no later than 7pm. The Central row is the statutory default; the Mountain row is the latest legal close (7pm MT, the hours those counties have used), so a county extending Central hours to 8pm would close at 02:00Z."
 closings = [
   { zone = "Central (most of state)", tz = "America/Chicago", closes_local = "19:00", closes_utc = "2026-11-04T01:00:00Z" },
   { zone = "Mountain (4 western counties)", tz = "America/Denver", closes_local = "19:00", closes_utc = "2026-11-04T02:00:00Z" },
@@ -220,6 +225,7 @@ closings = [
   { zone = "Eastern", tz = "America/New_York", closes_local = "20:00", closes_utc = "2026-11-04T01:00:00Z" },
 ]
 
+# Verified 2026-10-06 from https://www.legislature.mi.gov/Laws/MCL?objectName=mcl-168-720
 [states.MI]
 name = "Michigan"
 verified = true
@@ -271,12 +277,13 @@ closings = [
   { zone = "Mountain", tz = "America/Denver", closes_local = "20:00", closes_utc = "2026-11-04T03:00:00Z" },
 ]
 
+# Verified 2026-10-06 from https://www.ncleg.gov/EnactedLegislation/Statutes/HTML/BySection/Chapter_163/GS_163-166.25.html
 [states.NC]
 name = "North Carolina"
 verified = true
-source = "https://www.ncsbe.gov/voting/vote-person-election-day"
+source = "https://www.ncleg.gov/EnactedLegislation/Statutes/HTML/BySection/Chapter_163/GS_163-166.25.html"
 split_time_zone = false
-notes = "NCSBE: polling places open 6:30am to 7:30pm; anyone in line at 7:30pm may vote."
+notes = "G.S. 163-166.25: voting place open 6:30am, closed 7:30pm; the State Board may extend a precinct's close by the length of a delay over 15 minutes (those voters vote provisionally). NCSBE (ncsbe.gov/voting/vote-person-election-day) agrees; anyone in line at 7:30pm may vote."
 closings = [
   { zone = "Eastern", tz = "America/New_York", closes_local = "19:30", closes_utc = "2026-11-04T00:30:00Z" },
 ]
@@ -292,6 +299,7 @@ closings = [
   { zone = "Mountain (southwest)", tz = "America/Denver", closes_local = "19:00", closes_utc = "2026-11-04T02:00:00Z" },
 ]
 
+# Verified 2026-10-06 from https://nebraskalegislature.gov/laws/statutes.php?statute=32-908
 [states.NE]
 name = "Nebraska"
 verified = true
@@ -303,12 +311,13 @@ closings = [
   { zone = "Mountain (western panhandle)", tz = "America/Denver", closes_local = "19:00", closes_utc = "2026-11-04T02:00:00Z" },
 ]
 
+# Checked 2026-10-06: statute floor verified at https://gc.nh.gov/rsa/html/LXIII/659/659-4.htm; 8pm upper bound unverified
 [states.NH]
 name = "New Hampshire"
 verified = false
 source = "https://gc.nh.gov/rsa/html/LXIII/659/659-4.htm"
 split_time_zone = false
-notes = "RSA 659:4 sets only a floor: polls close no earlier than 7pm. Many towns close at 7pm, many (including larger cities) at 8pm; 270toWin lists 8pm as latest. The 8pm upper bound was not verified from an official source (sos.nh.gov returned 403)."
+notes = "RSA 659:4 (fetched 2026-10-06): polls 'shall close not earlier than 7 o'clock in the evening'; in cities the council sets hours. The 7pm floor is verified; the 8pm row (towns and cities that close later) is not from an official list (sos.nh.gov returned 403 on 2026-09-28 and 2026-10-06), so the flag stays false."
 closings = [
   { zone = "Eastern (towns closing at 7pm)", tz = "America/New_York", closes_local = "19:00", closes_utc = "2026-11-04T00:00:00Z" },
   { zone = "Eastern (towns closing at 8pm)", tz = "America/New_York", closes_local = "20:00", closes_utc = "2026-11-04T01:00:00Z" },
@@ -334,10 +343,11 @@ closings = [
   { zone = "Mountain", tz = "America/Denver", closes_local = "19:00", closes_utc = "2026-11-04T02:00:00Z" },
 ]
 
+# Verified 2026-10-06 from https://www.leg.state.nv.us/NRS/NRS-293.html
 [states.NV]
 name = "Nevada"
 verified = true
-source = "https://www.leg.state.nv.us/nrs/nrs-293.html"
+source = "https://www.leg.state.nv.us/NRS/NRS-293.html"
 split_time_zone = false
 notes = "NRS 293.273: polls open 7am and close 7pm."
 closings = [
@@ -354,12 +364,13 @@ closings = [
   { zone = "Eastern", tz = "America/New_York", closes_local = "21:00", closes_utc = "2026-11-04T02:00:00Z" },
 ]
 
+# Verified 2026-10-06 from https://codes.ohio.gov/ohio-revised-code/section-3501.32
 [states.OH]
 name = "Ohio"
 verified = true
-source = "https://www.ohiosos.gov/elections/voters/election-day-voting/"
+source = "https://codes.ohio.gov/ohio-revised-code/section-3501.32"
 split_time_zone = false
-notes = "Ohio SoS: vote at your polling place between 6:30am and 7:30pm."
+notes = "ORC 3501.32: polls open 6:30am and 'shall be closed by proclamation at seven-thirty p.m. unless there are voters waiting in line'. ohiosos.gov returned 403 on 2026-10-06."
 closings = [
   { zone = "Eastern", tz = "America/New_York", closes_local = "19:30", closes_utc = "2026-11-04T00:30:00Z" },
 ]
@@ -385,12 +396,13 @@ closings = [
   { zone = "Pacific (rest of state)", tz = "America/Los_Angeles", closes_local = "20:00", closes_utc = "2026-11-04T04:00:00Z" },
 ]
 
+# Verified 2026-10-06 from https://www.pa.gov/services/vote/find-your-local-polling-place
 [states.PA]
 name = "Pennsylvania"
-verified = false
-source = "https://www.270towin.com/content/local-poll-closing-times-november-2026-general-election"
+verified = true
+source = "https://www.pa.gov/services/vote/find-your-local-polling-place"
 split_time_zone = false
-notes = "8pm Eastern (270toWin). Official source not fetched."
+notes = "pa.gov: 'Polls are open from 7 a.m. to 8 p.m. on Election Day. Remember, if you are in line by 8 p.m., you can vote.' (fetched 2026-10-06). 25 P.S. 3045 sets 7am to 8pm (official legislature page returned no statute text)."
 closings = [
   { zone = "Eastern", tz = "America/New_York", closes_local = "20:00", closes_utc = "2026-11-04T01:00:00Z" },
 ]
@@ -405,6 +417,7 @@ closings = [
   { zone = "Eastern", tz = "America/New_York", closes_local = "20:00", closes_utc = "2026-11-04T01:00:00Z" },
 ]
 
+# Verified 2026-10-06 from https://www.scstatehouse.gov/code/t07c013.php
 [states.SC]
 name = "South Carolina"
 verified = true
@@ -437,12 +450,13 @@ closings = [
   { zone = "Central (Middle and West Tennessee)", tz = "America/Chicago", closes_local = "19:00", closes_utc = "2026-11-04T01:00:00Z" },
 ]
 
+# Verified 2026-10-06 from https://www.votetexas.gov/voting/where.html
 [states.TX]
 name = "Texas"
 verified = true
-source = "https://www.sos.state.tx.us/about/newsreleases/2025/103125.shtml"
+source = "https://www.votetexas.gov/voting/where.html"
 split_time_zone = true
-notes = "Texas SoS: voting hours on Election Day are 7am to 7pm at all polling places statewide. El Paso and Hudspeth counties are Mountain time."
+notes = "VoteTexas (Texas SoS): 'Election Day voting hours are 7:00 a.m. to 7:00 p.m. at all polling places statewide.' (Tex. Elec. Code 41.031). El Paso and Hudspeth counties are Mountain time. sos.state.tx.us and sos.texas.gov returned 403 on 2026-10-06."
 closings = [
   { zone = "Central (most of state)", tz = "America/Chicago", closes_local = "19:00", closes_utc = "2026-11-04T01:00:00Z" },
   { zone = "Mountain (El Paso, Hudspeth)", tz = "America/Denver", closes_local = "19:00", closes_utc = "2026-11-04T02:00:00Z" },
@@ -488,12 +502,13 @@ closings = [
   { zone = "Pacific", tz = "America/Los_Angeles", closes_local = "20:00", closes_utc = "2026-11-04T04:00:00Z" },
 ]
 
+# Verified 2026-10-06 from https://docs.legis.wisconsin.gov/statutes/statutes/6/iii/78
 [states.WI]
 name = "Wisconsin"
-verified = false
-source = "https://www.270towin.com/content/local-poll-closing-times-november-2026-general-election"
+verified = true
+source = "https://docs.legis.wisconsin.gov/statutes/statutes/6/iii/78"
 split_time_zone = false
-notes = "8pm Central (270toWin). Official source not fetched."
+notes = "Wis. Stat. 6.78(1m): 'The polls at every election shall be open from 7 a.m. until 8 p.m.'; (4) electors in line at close may vote (fetched 2026-10-06)."
 closings = [
   { zone = "Central", tz = "America/Chicago", closes_local = "20:00", closes_utc = "2026-11-04T02:00:00Z" },
 ]
