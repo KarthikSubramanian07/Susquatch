@@ -156,7 +156,13 @@ def test_scheduler_loop_runs_jobs_and_stops(tmp_path) -> None:
     async def main() -> None:
         stop = asyncio.Event()
         task = asyncio.create_task(sched.run(stop))
-        await asyncio.sleep(0.2)
+        # Wait for the work, not for the wall clock: a loaded CI runner can take far longer than
+        # 0.2 s to get three 10 ms runs through.
+        deadline = asyncio.get_running_loop().time() + 10.0
+        while (calls.count("fast") < 3 or not sched.health["broken"].failures) and (
+            asyncio.get_running_loop().time() < deadline
+        ):
+            await asyncio.sleep(0.02)
         stop.set()
         await asyncio.wait_for(task, 2)
 
