@@ -30,7 +30,7 @@ message CandidateVotes {
 message CountyResult {
   string race_id = 1;            // "2026-SEN-OH-S", "2026-HOUSE-CA-13", "2026-GOV-GA"
   string state = 2;              // USPS code
-  string county_fips = 3;        // 5-digit FIPS
+  string county_fips = 3;        // 5-digit county FIPS, or a House district reported as one unit: "CA-HD22"
   string source = 4;             // "ca_sos", "clarity:GA", ...
   int64 source_ts_ns = 5;        // timestamp the source stamped (0 if none)
   int64 observed_at_ns = 6;      // when our poller saw it
