@@ -75,7 +75,10 @@ def inputs(tmp_path: Path) -> tuple[Path, Path, list[Path]]:
             }
         ]
     }
-    fair = {"fair": [{"exchangeId": e, "pYes": p} for _, _, e, p in MARKETS if p is not None]}
+    fair = {
+        "header": {"producedAtNs": "1790726400000000000"},
+        "fair": [{"exchangeId": e, "pYes": p} for _, _, e, p in MARKETS if p is not None],
+    }
     (tmp_path / "market_map.json").write_text(json.dumps(mm))
     (tmp_path / "fair_live.json").write_text(json.dumps(fair))
     h22 = [HEADER]
@@ -154,6 +157,7 @@ def test_rendered_spec_loads_and_builds_a_consistent_prior(built: GeneratedSpec,
     text = render_toml(built, generated_on=date(2026, 10, 6), command="python -m susq.replay spec2026 ...")
     assert text.startswith("# Generated on 2026-10-06 by:")
     assert "2026-HOUSE-CA-22: House" in text
+    assert "# fair values produced 2026-09-30T00:00Z" in text
     path = tmp_path / "general_2026.toml"
     path.write_text(text)
     spec = load_spec(path)

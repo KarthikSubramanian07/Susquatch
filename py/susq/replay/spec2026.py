@@ -45,7 +45,7 @@ import math
 import statistics
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 from susq.calibrate.job import _spec_for
@@ -126,6 +126,7 @@ class GeneratedSpec:
     races: list[RaceRow] = field(default_factory=list)
     uncovered: list[Uncovered] = field(default_factory=list)
     history_states: dict[int, set[str]] = field(default_factory=dict)  # year -> states with SEN/GOV/PRES
+    fair_produced_utc: str = ""  # the fair file's header time: how stale the margins are
 
 
 def margin_from_p(p_left: float, sd: float) -> float:
@@ -227,6 +228,11 @@ def build_spec(
     out = GeneratedSpec(
         history=tuple(history_labels) if history_labels is not None else tuple(str(p) for p in history_paths),
         national_shift_prior_sd=nat_sd,
+        fair_produced_utc=datetime.fromtimestamp(fair.header.produced_at_ns / 1e9, UTC).strftime(
+            "%Y-%m-%dT%H:%MZ"
+        )
+        if fair.header.produced_at_ns
+        else "",
     )
     for k in contests:
         if k.district == "STATEWIDE":
@@ -301,6 +307,8 @@ def render_toml(spec: GeneratedSpec, *, generated_on: date, command: str, inputs
         "# Margins: prior_margin_mean = prior_margin_sd * Phi^-1(p_left), prior_margin_sd = the sim's race",
         "# margin SD (see susq/replay/spec2026.py). House races are not modelled (see the list at the end).",
     ]
+    if spec.fair_produced_utc:
+        lines.append(f"# fair values produced {spec.fair_produced_utc}")
     if inputs:
         lines += [f"# {line}" for line in inputs.splitlines()]
     for year in sorted(spec.history_states):
