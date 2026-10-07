@@ -1,7 +1,8 @@
 # Election night: data layer, replays and drills
 
-*Written 2026-09-28. Everything below marked "verified" was fetched or tested on that date. Anything
-not verified says so.*
+*Written 2026-09-28; the battleground feeds (§1.4), poll closing (§2) and open issues (§6) were updated
+2026-10-06. Everything marked "verified" was fetched or tested on the date given. Anything not verified
+says so.*
 
 Election night is where P(1st) gets decided (SPEC §3 Phase 3), so this layer is built to survive
 messy public feeds.
@@ -209,27 +210,57 @@ Live verification (2026-09-28):
   1,236 county results. That is 159 counties per contest: 152 Senate and 154 governor counties × 4 methods, and 7 and 5
   unsplit counties as `MIXED`. Health showed `production_verified: true`.
 
-### 1.4 Battleground results sites
+### 1.4 Battleground results sites (re-checked 2026-10-06)
 
-| State | Official site | Platform | Machine-readable endpoint | Confidence |
-|---|---|---|---|---|
-| CA | api.sos.ca.gov, media.sos.ca.gov | Custom SoS | §1.1 | High (tested) |
-| GA | results.sos.ga.gov | Enhanced Voting | §1.3 (2026 primary verified live; 2026 general ids auto-discovered once published) | High (tested) |
-| SC | enr-scvotes.org | Clarity | `/SC/122436/359624/…` fetched; 2026 id not listed yet | High |
-| IA | electionresults.iowa.gov/IA/ | Clarity | `/IA/elections.json`; `/IA/121508/current_ver.txt` = 344769 | High |
-| NC | er.ncsbe.gov | Custom NCSBE | `s3.amazonaws.com/dl.ncsbe.gov/ENRS/2024_11_05/results_pct_20241105.zip` (206 OK) | High |
-| NE | electionresults.nebraska.gov | Custom (ASP.NET) | `/resultsCSV.aspx?text=All&type={All,CG,SW,…}&map={CTY,DIST}` | High on endpoint |
-| AZ | results.arizona.vote | Custom SoS | UNVERIFIED (403 to curl) | Medium |
-| NV | silverstateelection.nv.gov | Custom SoS | UNVERIFIED (Incapsula bot wall) | Medium |
-| TX | results.texas-election.com | Custom (Angular behind Cloudflare) | UNVERIFIED | Medium |
-| OH | liveresults.ohiosos.gov | Custom SoS | UNVERIFIED (redirects off-season) | Medium |
-| MI | mielections.us/election/results/ | Custom SoS | UNVERIFIED (timed out) | Medium |
-| KS | sos.ks.gov ENR page | Custom SoS | UNVERIFIED | Medium |
-| AK | elections.alaska.gov | Custom (PDF/txt/xml per media packet) | UNVERIFIED (403/405) | Medium |
-| ME, NH | — | No live statewide system found | none | Low |
+Every endpoint below was fetched on 2026-10-06 with a browser User-Agent from a laptop, unless the row says otherwise.
+"Wayback" means the payload came from a web.archive.org capture because the live site refused scripted requests.
+The source ids are the `[[sources]]` entries in `config/enr_sources.toml`, where each one carries a dated comment listing what was tried.
 
-The custom sites that don't have adapters get one by config (`kind = "static_json"`) once their JSON is captured. CSV/zip sources (NC, NE)
-would need a small new adapter; that is not built.
+| State | Source id | Endpoint | Kind | Fixture-tested | Enabled | 2026 races mapped |
+|---|---|---|---|---|---|---|
+| CA | `ca_sos` | media.sos.ca.gov bulk JSON (§1.1) | `ca_sos` | yes | yes | GOV, 52 House |
+| GA | `ga_sos` | results.sos.ga.gov API, discovered by date (§1.3) | `enhanced_voting` | yes | yes | SEN, GOV |
+| NC | `nc_sbe` | `s3.amazonaws.com/dl.ncsbe.gov/ENRS/2026_11_03/results_pct_20261103.zip` (live, already posted with zeros) | `csv` | yes (2024 general, 2026 file) | yes | SEN |
+| TX | `tx_sos` | Civix `goelect.txelections.civixapps.com/api-ivis-system/api/s3/enr/election/countyInfo/53815` (live) | `static_json` + `unwrap_base64` | yes (2024 legacy site, 2026 primary on Civix) | yes | SEN, GOV |
+| AZ | `az_sos` | `cdn1.arizona.vote/data/69/0/election_69_0.json` gives the upload id for `all_county_races_69_0_en_{version}.json` (live, no challenge) | `static_json` + `version_url` | yes (2024 general) | no: `election_69_0.json` is 404 until the first upload | GOV |
+| MI | `mi_sos` | MVIC `mvic.sos.state.mi.us/VoteHistory/GetElectionResultFile?electionId=<id>` (Cloudflare challenge; Wayback) | `csv` | yes (Aug 2024 primary) | no: challenge, and no 2026 general id | SEN, GOV |
+| OH | `oh_sos` | `liveresults.ohiosos.gov/Api/v1/Contest/GetContestDetailsObject?...&resultsLevel=County` (Cloudflare error 1006; Wayback) | `static_json` | yes (2024 President, captured mid-count) | no: refused, and no 2026 contest ids | SEN, GOV (no markets) |
+| SC | `clarity:SC` | `enr-scvotes.org/SC/<id>` | `clarity` | yes (2024) | no: the 2026 general id is not published | none yet |
+| IA | `clarity:IA` | `electionresults.iowa.gov/IA/<id>` | `clarity` | no (2026 primary id only) | no: the 2026 general id is not published | none yet |
+| NE | none | `electionresults.nebraska.gov/resultsCSV.aspx` is statewide and per district only | none | no | no | none |
+| NV | none | `silverstateelection.nv.gov/_xml/USandNV.xml` (Incapsula challenge; Wayback) | none | no | no | none |
+| KS | none | `ent.sos.ks.gov/kssos_ent.html`, HTML only (Cloudflare challenge; Wayback) | none | no | no | none |
+| AK | none | `elections.alaska.gov/enr26/results/GA_ENR_Precinct_State_of_Alaska.csv` (live), but by house district | none | no | no | none |
+| ME, NH, PA, WI | none | no statewide live feed found | none | no | no | none |
+
+**What each state's feed looks like:**
+
+- **North Carolina.**
+  - The file is a zipped, tab-separated, CRLF text file with one row per (precinct, contest, choice) and one column per vote method: `Election Day`, `Early Voting`, `Absentee by Mail`, `Provisional`.
+  - The `csv` kind sums the rows to counties.
+  - Precincts reporting is a proxy: it counts the distinct precincts with `Real Precinct = Y` that have at least one vote in the contest. This leaves out the ABSENTEE, EARLY VOTING, PROVISIONAL and TRANSFER pseudo-precincts.
+  - The 2026 general file already exists with all counts at zero. Its `US SENATE` contest lists Cooper, Whatley, Bray and Dublin.
+  - The fixture asserts official 2024 totals for Hyde, New Hanover and Watauga.
+  - A live `enr-capture` run emitted 400 results (100 counties × 4 methods) on its first poll and got a 304 on the second.
+- **Texas.**
+  - Since 2025 results run on Civix. Its API answers plain GETs but wraps every document as `{"upload": "<base64 JSON>"}`, has no ETag, and takes 9 to 11 s to download the 1.8 MB document. That is why `tx_sos` has a 30 s timeout and polls every 45 s.
+  - The 2026 general is election 53815. Today its county document holds 2025 propositions at zero, so nothing maps yet.
+  - The schema is the same as the 2024 legacy site's `County.json`. The only difference is that the contest name is in `N` rather than `ON`.
+  - `EV` (early in-person plus mail) is published per candidate, but results are tagged `MIXED` because the mapper cannot yet split one total into two scalars.
+  - Precincts come from `Summary.PRR` and `Summary.PRP`. Their meaning is inferred, not documented.
+  - A live capture made 2 polls, both successful, with 0 results.
+- **Arizona.**
+  - The Cloudflare-protected results.arizona.vote reads from Azure blob storage on `cdn1.arizona.vote`, which has no challenge and sends an ETag.
+  - The county file is a flat array with one row per (county, contest, candidate). The party is inside the name (`"Gallego, Ruben (DEM)"`), so the mapping uses `merge_rows` and `party_from_name`.
+  - There is no vote-method split per county, so results are `MIXED`.
+  - Per the site, precincts reporting counts Election Day locations only.
+  - A live capture against the 2024 general (eid 47) emitted all 15 counties and then got 304s.
+- **Michigan.** MVIC's result file is county-level and tab-separated, with a trailer line (`RECORDS: n<TAB>RESULTS: ...`). It has no precinct counts and no method split.
+- **Ohio.** The contest API returns county rows with precinct counts but no method split. A candidate's `totalVotes` field is the county's contest total; the candidate's own votes are in `vCount`.
+- **Nebraska.** County numbers exist only as HTML county pages (`resultsSW.aspx?type=CTYALL&map=CTY&cty=NN`) and as an xlsx export behind an ASP.NET postback. The 2024 general's final CSV (Wayback, 2025-01-19) has no county rows either.
+- **Nevada.** The XML puts one `<County>Votes` attribute per county on each candidate. It has no method split, and the 2026 general is not posted.
+- **Kansas.** County numbers are inside `<area title=...>` HTML. There is no machine-readable feed.
+- **Alaska.** The precinct CSV splits by method but has no borough, so it cannot produce FIPS-keyed results until Alaska is modelled by district.
 
 ---
 
@@ -239,12 +270,17 @@ would need a small new adapter; that is not built.
   Tue 2026-11-03, the source URL, a `split_time_zone` flag and a `verified` flag.
 - DST ends Nov 1, so the offsets are EST −5, CST −6, MST −7 (AZ all year), PST −8, AKST −9, HST −10. `py/tests/replay/test_closing.py`
   recomputes every UTC value from IANA tzdata.
-- **Verified from statutes or election offices (17):** AK, AZ, CA, FL, IA, ID, KS, ME, MI, NC, ND, NE, NV, OH, OR, SC, TX.
-- **Unverified (33, from 270toWin's 2026 schedule):** includes GA (403 from the SoS; the search snippet says 7 a.m. to 7 p.m.), NH (the statute sets a
-  7 p.m. minimum; towns may close at 8) and NY.
+- **Verified from statutes or election offices (20):** AK, AZ, CA, FL, GA, IA, ID, KS, ME, MI, NC, ND, NE, NV, OH, OR, PA, SC, TX, WI.
+  GA, PA and WI were verified on 2026-10-06, and AK, AZ, IA, KS, MI, NC, NE, NV, OH, SC and TX were re-checked that day. Each checked state has a
+  `# Verified 2026-10-06 from <url>` comment. TX, OH, NC, KS and AK now cite pages that answer (statute or votetexas.gov), because
+  sos.state.tx.us and ohiosos.gov return 403.
+- **Unverified (30, from 270toWin's 2026 schedule):** includes NH and NY. For NH, RSA 659:4 sets only a floor (polls close "not earlier than
+  7 o'clock"; city councils set city hours), so the 7 p.m. row is official but the 8 p.m. row for later-closing towns is not, and the flag stays false.
 - **Split time zones:** FL panhandle, IN, KY, TN, MI (4 UP counties), TX (El Paso and Hudspeth), KS (4 western counties), NE, ND, SD, ID, OR (Malheur) and AK (western Aleutians).
-- **Caveats:** some KS counties may close as late as 8 p.m. local and ND precincts as late as 9 p.m. The table stores the statutory 7 p.m.
-- **Action:** verify GA and NH from the SoS before Oct 26.
+- **Caveats:** under K.S.A. 25-106 Kansas Central-zone counties default to 7 p.m. and may run to 8 p.m.; the four Mountain-zone counties default
+  to 6 p.m. MT and may run to 7 p.m. MT. The table stores 7 p.m. for both (the Central default and the Mountain maximum). ND precincts may close
+  as late as 9 p.m.
+- **Action:** find an official list of NH town closing hours before Oct 26 (sos.nh.gov returned 403 on 2026-09-28 and 2026-10-06).
 
 Earliest to latest: 23:00Z (IN/KY Eastern), 00:00Z (GA, SC, VA, VT, …), 00:30Z (NC, OH, WV), 01:00Z, 01:30Z (AR), 02:00Z (IA, NE,
 AZ, western TX/KS, MI UP, …), 03:00Z (NV, MT, UT), 04:00Z (CA, WA, OR), 05:00Z (HI, most of AK), 06:00Z (western Aleutians).
@@ -295,6 +331,16 @@ AZ, western TX/KS, MI UP, …), 03:00Z (NV, MT, UT), 04:00Z (CA, WA, OR), 05:00Z
    - `ca_sos`: bulk or REST.
    - `clarity`: version polling, `detail.xml` (default) or the JSON pair.
    - `static_json`: a jq-like path mapper over any JSON, with `^N` ancestor bindings and a per-candidate vote-type **breakdown pivot**, configured entirely in TOML. A breakdown whose methods are all `null` falls back to the candidate total as `MIXED`.
+     Options added on 2026-10-06 for the battleground feeds:
+     - `version_url` and `version_path` read a version document first and substitute `{version}` into the urls. A lower numeric version is refused (AZ).
+     - `unwrap_base64` maps a base64 JSON document nested in the payload (TX Civix).
+     - `merge_rows` sums flat one-candidate-per-row feeds per county (AZ).
+     - `party_from_name` reads a trailing `(DEM)` from the candidate name (AZ).
+   - `csv`: CSV or TSV, plain or zipped (zip is detected by magic bytes), mapped by header name.
+     - Rows are summed to (contest, county). Vote methods come from one column per method (`vote_type_columns`) or from a label column.
+     - Precincts come from explicit columns or a distinct-precinct proxy (`precinct`, `precinct_flag`).
+     - `skip_rows_starting_with` drops trailer lines.
+     - A missing header or a bad count fails the payload. Used for NC and MI.
    - `enhanced_voting`: discovers the election by date and the ballot items by contest name, then maps each item with the same mapper (§1.3).
    - County names resolve to FIPS through the bundled Census 2020 table. Names are folded ("DeKalb" and "De Kalb", "St." and "Saint"); VA cities stay distinct; numeric codes are checked against the state prefix.
 2. **Validation** (never panics). Each rejection is counted with its reason:
@@ -337,7 +383,7 @@ AZ, western TX/KS, MI UP, …), 03:00Z (NV, MT, UT), 04:00Z (CA, WA, OR), 05:00Z
 
 ### Configuration: `config/enr_sources.toml`
 
-- `[defaults]`, `[consistency]`, `[[sources]]` (kind `ca_sos` / `clarity` / `static_json`, IANA `tz`, `enabled`) and `[[races]]` (a contest name as
+- `[defaults]`, `[consistency]`, `[[sources]]` (kind `ca_sos` / `clarity` / `static_json` / `csv` / `enhanced_voting`, IANA `tz`, `enabled`) and `[[races]]` (a contest name as
   the source prints it mapped to our race id; the match ignores case and whitespace; `source = "*"` applies to all sources).
 - It ships these sources:
   - **CA SoS**, bulk files, enabled;
@@ -346,6 +392,10 @@ AZ, western TX/KS, MI UP, …), 03:00Z (NV, MT, UT), 04:00Z (CA, WA, OR), 05:00Z
   - **Georgia Enhanced Voting** (`ga_sos`, kind `enhanced_voting`), enabled. It targets 2026-11-03 for "US Senate"
     (`2026-SEN-GA`) and "Governor" (`2026-GOV-GA`) and discovers the election and its ballot items itself (§1.3).
     A commented `ga_sos_runoff` block is ready for the Dec 1 general runoff.
+  - **North Carolina** (`nc_sbe`, `csv`) and **Texas** (`tx_sos`, `static_json` on Civix), both enabled, for 2026-SEN-NC, 2026-SEN-TX and 2026-GOV-TX.
+  - **Arizona** (`az_sos`), **Michigan** (`mi_sos`) and **Ohio** (`oh_sos`), configured and fixture-tested but disabled. Each has a dated
+    comment saying what has to change before it can be enabled.
+  - Nebraska, Nevada, Kansas and Alaska have no source yet. Their comment blocks record what was tried (§1.4).
 - The race map covers CA governor and all 52 CA House districts under both spellings.
 - **Before election night:** swap in 2026 election ids and contest names as each state publishes them, and add race rows for every
   market we trade. Contests that aren't mapped are ignored. Georgia is the exception: its ids are discovered, so only its
@@ -446,16 +496,34 @@ The first sample drill on 2026-09-28 used the reference backend, all three chaos
 ## 6. Open issues and what is not verified
 
 - **CA SoS 2026 general test dates:** unverified (§1.1). The 2026 general endpoint CSVs are not posted yet.
-- **2026 election ids** for Clarity (SC, IA) are not published yet. Those configs point at 2024 or primary references and are disabled.
+- **2026 election ids** for Clarity (SC, IA) are not published yet.
+  - On 2026-10-06 SC's `elections.json` was `[]`, and IA's listed only the 2026 primary and the 2025 specials.
+  - Ids up to 127800 all return 404 on both hosts.
+  - Both configs stay disabled and point at 2024 or primary references. Re-check from Oct 20, then set the id and add `[[races]]` rows.
   Georgia no longer needs manual ids: `ga_sos` discovers the Nov 3 general by date (§1.3). What is not verified is the general's
   exact contest names ("US Senate" and "Governor" are assumed from the 2024 and primary naming). Once the SoS lists the election,
   check `discovery.contests` in `last_health.json` for `null` entries.
 - **Georgia test data:** `ga_sos` ships with `require_production = true`. SoS test payloads (not flagged `isProduction`) are
   held off the bus and counted in health. If Georgia ever mislabels real returns, the held counter climbs and the health
   panel shows it; flip the flag only after checking `last_health.json` (`discovery.production_verified`).
-- **Adapters for custom SoS sites** (AZ, NV, TX, OH, MI, KS, AK, NC zip, NE CSV) are not built. Their JSON must be captured first; CSV/zip sources need a small adapter.
+- **Custom SoS sites (status on 2026-10-06; details in §1.4):**
+  - **Live and enabled:**
+    - NC (`csv`).
+    - TX (`static_json` on Civix). Contest names come from the 2026 primary, and the precinct fields are inferred.
+  - **Mapped and fixture-tested but disabled:**
+    - AZ: enable once `cdn1.arizona.vote/data/69/0/election_69_0.json` returns 200. The contest name "Governor" is assumed.
+    - MI: needs a Cloudflare clearance and a 2026 general election id.
+    - OH: Cloudflare 1006 refuses scripted clients, and the 2026 contest ids are not published.
+  - **Not buildable as things stand:**
+    - NE: no county-level machine-readable feed.
+    - NV: Incapsula challenge plus an XML attribute layout.
+    - KS: HTML only, behind a challenge.
+    - AK: house districts, not counties.
+  - Feeds without a vote-method split (AZ, TX, MI, OH) are tagged `MIXED`. TX's `EV` early-vote figure could be split out with a small mapper
+    extension.
+  - A host that is refused by Cloudflare or Incapsula would need a browser-issued cookie, which this crate does not do.
 - The **Clarity `istestmode` flag** is not read. Captured test data should be labelled by date rather than trusted.
-- **Poll-closing table:** 33 states are unverified (GA and NH are the important ones).
+- **Poll-closing table:** 30 states are unverified. GA, PA and WI were verified on 2026-10-06. NH stays unverified because only its 7 p.m. floor is official.
 - **Reporting conventions** are assumptions to calibrate from captures and from any timestamped archives we can find.
 - **Cross-source tolerances** (2 %, 50 votes, 1 pt) are untuned. The CA bulk-versus-REST pair gives a free first calibration on the test days.
 - **C++ needle binding:** built (`cpp/bindings/needle_bindings.cpp`, in the python image through the `models` dependency group) and
@@ -506,6 +574,18 @@ and `/results/public/api/elections/Georgia/RECOUNTPSCDistrict3/data`
 - https://mielections.us/election/results/
 - https://silverstateelection.nv.gov/
 - https://azsos.gov/elections/election-information/unofficial-enr
+
+**Battleground feeds (accessed 2026-10-06):**
+- https://s3.amazonaws.com/dl.ncsbe.gov/ENRS/2024_11_05/results_pct_20241105.zip and https://s3.amazonaws.com/dl.ncsbe.gov/ENRS/2026_11_03/results_pct_20261103.zip
+- https://electionresults.nebraska.gov/resultsCSV.aspx?text=All&type=SW&map=CTY and http://web.archive.org/web/20250119073412id_/https://electionresults.nebraska.gov/resultsCSV.aspx?text=All
+- https://cdn1.arizona.vote/data/47/0/election_47_0.json, https://cdn1.arizona.vote/data/47/0/all_county_races_47_0_en_12036.json, https://cdn1.arizona.vote/data/69/0/site_header_69_0_en.json
+- https://goelect.txelections.civixapps.com/api-ivis-system/api/s3/enr/electionConstants, `.../election/countyInfo/53813`, `.../countyInfo/53815`; https://results.texas-election.com/static/data/election/49664/1012/County.json
+- https://mvic.sos.state.mi.us/votehistory/Index?type=C&electionDate=11-5-2024 and `/VoteHistory/GetElectionResultFile?electionId=698` (Wayback 20240829225126)
+- https://liveresults.ohiosos.gov/Api/v1/Contest/GetContestDetailsObject (Wayback 20241106040935)
+- https://silverstateelection.nv.gov/_xml/USandNV.xml (Wayback 20250717072406)
+- https://ent.sos.ks.gov/kssos_ent.html (Wayback 20241106112118)
+- https://www.elections.alaska.gov/enr26/results/GA_ENR_Precinct_State_of_Alaska.csv and https://www.elections.alaska.gov/results/24GENR/ENRbyPrecinct.csv
+- https://www.enr-scvotes.org/SC/elections.json, https://electionresults.iowa.gov/IA/elections.json
 
 **Poll closing:**
 - Per-state statute and office URLs are in `config/poll_closing.toml`.
