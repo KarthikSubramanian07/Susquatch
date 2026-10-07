@@ -344,6 +344,10 @@ pub struct EnCfg {
     /// `[risk] glitch_through_fair_pts`. A big post-batch edge is exactly a 15+ point buy, so the
     /// general cap would stop the best election-night trades after 2 % of equity.
     pub en_glitch_pts: f64,
+    /// With `--election`, a race's results feed is stale once every enabled source mapped to it
+    /// has had no successful poll for this long (or failed three polls in a row, or never polled);
+    /// the executor then places no new buys on that race (rolls of held legs still happen).
+    pub feed_stale_s: u64,
 }
 
 impl Default for EnCfg {
@@ -357,6 +361,7 @@ impl Default for EnCfg {
             max_order_frac: 0.02,
             order_ttl_s: 20,
             en_glitch_pts: 40.0,
+            feed_stale_s: 180,
         }
     }
 }
@@ -648,8 +653,8 @@ impl Config {
                 en.en_glitch_pts
             ));
         }
-        if en.order_ttl_s == 0 {
-            return bad("strategies.en.order_ttl_s must be > 0".into());
+        if en.order_ttl_s == 0 || en.feed_stale_s == 0 {
+            return bad("strategies.en.order_ttl_s and feed_stale_s must be > 0".into());
         }
         Ok(())
     }
@@ -808,6 +813,7 @@ mod tests {
         assert_eq!(en.max_order_frac, 0.02);
         assert_eq!(en.order_ttl_s, 20);
         assert_eq!(en.en_glitch_pts, 40.0);
+        assert_eq!(en.feed_stale_s, 180);
         assert_eq!(*en, EnCfg::default(), "the file documents the Rust defaults");
         // The one line the runbook flips.
         let armed = text.replacen("enabled = false\nmin_edge_pts", "enabled = true\nmin_edge_pts", 1);
@@ -830,6 +836,7 @@ mod tests {
             ("order_ttl_s = 20 ", "order_ttl_s = 0 "),
             ("en_glitch_pts = 40.0", "en_glitch_pts = 0.0"),
             ("en_glitch_pts = 40.0", "en_glitch_pts = 150.0"),
+            ("feed_stale_s = 180", "feed_stale_s = 0"),
         ] {
             let bad = text.replacen(from, to, 1);
             assert_ne!(bad, text, "{from} not found");

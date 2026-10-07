@@ -18,6 +18,7 @@ use tokio::sync::watch;
 
 use crate::{
     engine::{Engine, EngineDeps},
+    enr_health::EnrFeed,
     realtime::RealtimeFeed,
 };
 
@@ -103,6 +104,8 @@ pub struct BuildOpts {
     /// The realtime feed (per-market channels are managed by the engine).
     pub realtime: Option<RealtimeFeed>,
     pub needle: Option<watch::Receiver<NeedleSnapshot>>,
+    /// The results pollers' health (`--election`): disputed and stale-feed gates for the executor.
+    pub enr: Option<EnrFeed>,
     /// Lease identity (hostname, pid). Tests use distinct pids per "process".
     pub host: String,
     pub pid: u32,
@@ -185,6 +188,7 @@ pub fn build(o: BuildOpts) -> anyhow::Result<Engine> {
         tournament: o.tournament,
         realtime: o.realtime,
         needle: o.needle,
+        enr: o.enr,
     }))
 }
 

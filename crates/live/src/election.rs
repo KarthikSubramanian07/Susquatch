@@ -16,6 +16,15 @@ use susq_enr::{archive::Archive, config::EnrConfig, service::EnrHandle};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
+use crate::enr_health::EnrFeed;
+
+/// A running election mode: the pollers plus what the engine reads from them.
+pub struct Election {
+    pub handle: EnrHandle,
+    /// Health channel and race → source map for the executor's gates.
+    pub feed: EnrFeed,
+}
+
 /// Where county results go (NATS in production, a recorder in tests).
 #[async_trait]
 pub trait CountySink: Send + Sync + 'static {
@@ -72,7 +81,7 @@ pub fn start(
     archive_root: &Path,
     sink: Arc<dyn CountySink>,
     cancel: &CancellationToken,
-) -> anyhow::Result<EnrHandle> {
+) -> anyhow::Result<Election> {
     let cfg = EnrConfig::load(enr_config).with_context(|| format!("loading {}", enr_config.display()))?;
     let sources = susq_enr::build_sources(&cfg, &[])?;
     anyhow::ensure!(
@@ -89,7 +98,11 @@ pub fn start(
         Some(Archive::new(archive_root)),
     );
     tokio::spawn(forward(rx, sink, cancel.clone()));
-    Ok(handle)
+    let feed = EnrFeed {
+        health: handle.health.clone(),
+        race_sources: cfg.race_sources(),
+    };
+    Ok(Election { handle, feed })
 }
 
 #[cfg(test)]
@@ -166,6 +179,11 @@ mod tests {
         let cfg = EnrConfig::load(&path).expect("config/enr_sources.toml parses");
         let sources = susq_enr::build_sources(&cfg, &[]).expect("sources build");
         assert!(!sources.is_empty(), "at least one enabled source");
+        // The MVP races each have a feed (CA SoS bulk, GA enhanced voting).
+        let rs = cfg.race_sources();
+        assert!(rs["2026-GOV-CA"].contains("ca_sos"));
+        assert!(rs["2026-SEN-GA"].contains("ga_sos"));
+        assert!(rs["2026-GOV-GA"].contains("ga_sos"));
     }
 
     #[tokio::test]

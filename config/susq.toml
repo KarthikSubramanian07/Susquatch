@@ -148,6 +148,11 @@ order_ttl_s = 20                   # buys and rolls are re-decided every tick; n
 # glitch trade (cumulative cap [risk] glitch_max_frac). The general 15 pts would cap the best post-batch
 # buys, which are 15+ point edges by design; 40 pts still catches an inverted map or a broken posterior.
 en_glitch_pts = 40.0
+# With --election, rust-live reads the results pollers' health (crates/enr EnrHealth): a race whose mapped
+# sources (config/enr_sources.toml [[races]] / contests) have all had no successful poll for this long, failed
+# three polls in a row, or never polled, gets no new buys (rolls of held legs still happen). A race whose
+# sources disagree beyond [consistency] is disputed: the executor refuses it and cancels its resting orders.
+feed_stale_s = 180
 
 [telemetry]
 leaderboard_interval_s = 3600

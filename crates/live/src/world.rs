@@ -11,6 +11,8 @@ use susq_platform::{ConstraintEval, Relationship};
 use susq_risk::LiveOrder;
 use susq_strategies::{FairQuote, IntentView, NeedleView};
 
+use crate::enr_health::EnrView;
+
 /// How many notable events and trades the status snapshot keeps.
 const KEEP: usize = 50;
 
@@ -33,6 +35,8 @@ pub struct World {
     pub fair: HashMap<ExchangeId, FairQuote>,
     pub needle: Option<NeedleView>,
     pub needle_errors_per_min: u32,
+    /// Latest assessment of the results pollers (`--election` only).
+    pub enr: Option<EnrView>,
     pub health: BTreeMap<String, HealthItem>,
     pub events: VecDeque<String>,
     pub trades: VecDeque<TradeSummary>,

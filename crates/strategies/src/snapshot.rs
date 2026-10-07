@@ -3,7 +3,7 @@
 //! A [`Snapshot`] borrows everything from the live loop for one decision tick; strategies never
 //! mutate it and never perform I/O, so every decision is reproducible from the snapshot alone.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use susq_book::{BookStore, L2Book};
 use susq_contracts::v1::{RacePosterior, TargetFile, TargetPosition};
@@ -74,7 +74,8 @@ impl IntentView {
     }
 }
 
-/// The needle's latest race posteriors plus the watchdog verdict.
+/// The needle's latest race posteriors plus the watchdog verdict, and what the results pollers
+/// say about the feeds behind them (`susq_enr::service::EnrHealth`, only with `--election`).
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct NeedleView {
     /// Watchdog verdict; posteriors must be ignored unless this is true.
@@ -83,6 +84,13 @@ pub struct NeedleView {
     pub epoch: u64,
     /// race_id → posterior.
     pub posteriors: HashMap<String, RacePosterior>,
+    /// Races where two results sources disagree beyond tolerance (`EnrHealth.disputed_races`):
+    /// the executor refuses them outright and cancels its resting orders on them.
+    pub disputed_races: HashSet<String>,
+    /// Races whose mapped results sources are all stale (no successful poll for
+    /// `[strategies.en] feed_stale_s`, three failures in a row, or never polled): no new buys,
+    /// rolls of held legs still happen.
+    pub stale_feed_races: HashSet<String>,
 }
 
 /// Everything a strategy may read for one decision.

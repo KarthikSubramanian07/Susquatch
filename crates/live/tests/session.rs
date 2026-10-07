@@ -252,6 +252,7 @@ fn boot(
         paper_balance: 100_000.0,
         realtime,
         needle: None,
+        enr: None,
         host: "test".into(),
         pid,
         kill: None,
