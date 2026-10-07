@@ -113,8 +113,9 @@ custom-site states (110 to 150 hours). Everything in Layer C is conditional on t
 | Oct 11 (Sun) | Weekly review: tape-fitted T, three-field robustness, 2022-prior detector. |
 | Oct 18 (Sun) | Weekly review; Layer A keep/cut decision. Election-night minimum path code complete. |
 | Oct 21 | Book to 60%. |
+| Oct 24 12:00 ET | Sniper stops buying and unwinds its book toward 60% cash (EXP-003, shipped). |
 | Oct 25 (Sun) | Weekly review; full election-night rehearsal (replay + chaos). |
-| Oct 28 | Endgame rival model; sniper unwind decision (EXP-003). |
+| Oct 28 | Endgame rival model. |
 | Nov 1 (Sun) | Final review; needle prior staged; profiles switched; dashboard drill. |
 | Nov 3 19:00 ET | Election night engine. |
 | Nov 4 16:55Z | Hard stop. |
