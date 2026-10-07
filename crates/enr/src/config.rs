@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::Path;
 use std::time::Duration;
 
+use chrono::{DateTime, Utc};
 use serde::Deserialize;
 
 use crate::adapters::json_map::JsonMapping;
@@ -59,6 +60,31 @@ impl EnrConfig {
             if let SourceKind::EnhancedVoting { .. } = &s.kind {
                 validate_enhanced_voting(s)?;
             }
+            if let SourceKind::StaticJson {
+                urls,
+                version_url,
+                version_path,
+                ..
+            } = &s.kind
+            {
+                let bad = |what: &str| Err(ConfigError::Invalid(format!("source {:?}: {what}", s.id)));
+                match (version_url, version_path) {
+                    (None, None) => {
+                        if urls.iter().any(|u| u.contains("{version}")) {
+                            return bad("{version} in urls needs version_url and version_path");
+                        }
+                    }
+                    (Some(_), Some(p)) => {
+                        if crate::adapters::json_map::Path::parse(p).is_err() {
+                            return bad("version_path is not a path");
+                        }
+                        if urls.is_empty() || !urls.iter().all(|u| u.contains("{version}")) {
+                            return bad("with version_url every url must contain {version}");
+                        }
+                    }
+                    _ => return bad("version_url and version_path go together"),
+                }
+            }
         }
         for r in &self.races {
             if r.race_id.trim().is_empty() || r.contest.trim().is_empty() {
@@ -72,6 +98,11 @@ impl EnrConfig {
                     r.race_id, r.source
                 )));
             }
+        }
+        if !(self.defaults.idle_interval_s.is_finite() && self.defaults.idle_interval_s >= 1.0) {
+            return Err(ConfigError::Invalid(
+                "defaults.idle_interval_s must be >= 1".into(),
+            ));
         }
         if !(0.0..1.0).contains(&self.defaults.jitter_frac) {
             return Err(ConfigError::Invalid(
@@ -92,6 +123,8 @@ impl EnrConfig {
             jitter_frac: s.jitter_frac.unwrap_or(self.defaults.jitter_frac),
             timeout: Duration::from_millis(s.timeout_ms.unwrap_or(self.defaults.timeout_ms)),
             max_backoff: Duration::from_secs_f64(self.defaults.max_backoff_s.max(1.0)),
+            idle_until: self.defaults.idle_until_utc,
+            idle_interval: Duration::from_secs_f64(self.defaults.idle_interval_s.max(1.0)),
         }
     }
 
@@ -179,6 +212,13 @@ pub struct Defaults {
     pub confirm_corrections_after: u32,
     /// Split emitted batches so one bus message stays well under NATS' 1 MB default.
     pub max_results_per_batch: usize,
+    /// Before this instant every source polls at `idle_interval_s` at most often: weeks of
+    /// pre-election polling (the rust-live paper run, rehearsals) stay polite to state sites and
+    /// still exercise every adapter. `None`: always the source's own interval. `enr-capture`
+    /// clears it, since it only runs deliberately during test windows.
+    pub idle_until_utc: Option<DateTime<Utc>>,
+    /// Slowest pre-election cadence (seconds), see `idle_until_utc`.
+    pub idle_interval_s: f64,
 }
 
 impl Default for Defaults {
@@ -191,6 +231,8 @@ impl Default for Defaults {
             user_agent: "susquatch-enr/0.1 (+https://github.com/KarthikSubramanian07/Susquatch)".into(),
             confirm_corrections_after: 2,
             max_results_per_batch: 500,
+            idle_until_utc: None,
+            idle_interval_s: 1800.0,
         }
     }
 }
@@ -260,7 +302,21 @@ pub enum SourceKind {
     /// Any static JSON document, mapped with [`JsonMapping`].
     StaticJson {
         urls: Vec<String>,
+        /// Optional version document fetched before `urls` (e.g. Arizona's
+        /// `election_<eid>_0.json`, whose `uploadId` names the current upload). The value at
+        /// `version_path` replaces `{version}` in every url; a lower numeric version than the
+        /// last one is refused as a regression, like Clarity's.
+        #[serde(default)]
+        version_url: Option<String>,
+        #[serde(default)]
+        version_path: Option<String>,
         mapping: Box<JsonMapping>,
+    },
+    /// A delimited results file (CSV/TSV, plain or zipped), mapped by column name with
+    /// [`crate::adapters::csv::CsvMapping`] (e.g. North Carolina's `results_pct_*.zip`).
+    Csv {
+        urls: Vec<String>,
+        mapping: Box<crate::adapters::csv::CsvMapping>,
     },
     /// Enhanced Voting (e.g. Georgia's results.sos.ga.gov): the election and its ballot items are
     /// discovered at runtime from the jurisdiction's election list, then each ballot item is
@@ -319,6 +375,9 @@ pub struct SourceTiming {
     pub jitter_frac: f64,
     pub timeout: Duration,
     pub max_backoff: Duration,
+    /// Poll no more often than `idle_interval` before this instant (`defaults.idle_until_utc`).
+    pub idle_until: Option<DateTime<Utc>>,
+    pub idle_interval: Duration,
 }
 
 /// Case- and whitespace-insensitive contest lookup.

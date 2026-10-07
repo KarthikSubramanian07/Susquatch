@@ -124,7 +124,10 @@ re-rests on its own cadence.
 
 ## 2b. Dress rehearsals (Oct 26-27 and Oct 29-30)
 
-Both run on the VM beside the live trader, with rust-live in `paper-run --election` and the needle on the bus.
+Both run on the VM beside the live trader, with rust-live in `paper-run` **without** `--election` (set
+`SUSQ_LIVE_FLAGS=` for the rehearsal) and the needle on the bus: the replay is the results feed, and the pollers would
+only add stale-feed gates, since before Nov 3 16:00 ET they poll every 30 min (`config/enr_sources.toml`
+`idle_until_utc`). Put `--election` back afterwards so the soak keeps exercising the adapters.
 1. Stage the rehearsal prior and timeline: `python -m susq.replay spec2026 …` then `prior` and `build` (§2 pre-flight
    commands) into `state/needle/prior.json` and `data/replay/`; restart `needle`.
 2. In the VM checkout only, set `[strategies.en] enabled = true` (rust-live paper reads it; the bridge ignores the

@@ -1,0 +1,18 @@
+# Fixture provenance (battleground feeds)
+
+Payloads recorded from public results sites and trimmed for size. Every value is what the site
+served; only whole rows (or whole JSON entries) were dropped, and the table says where a file was
+re-serialized after trimming. Fetched with a browser User-Agent.
+
+| Fixture | Source URL | Fetched | Trimmed to |
+|---|---|---|---|
+| `ncsbe_2024_results_pct_trimmed.zip` | https://s3.amazonaws.com/dl.ncsbe.gov/ENRS/2024_11_05/results_pct_20241105.zip (S3 `Last-Modified: Tue, 03 Dec 2024 18:32:58 GMT`, the certified file) | 2026-10-06 | Hyde, New Hanover and Watauga counties: every `US PRESIDENT` and `NC GOVERNOR` row, plus the first 15 rows of other contests per county (to exercise skipping). Entry name, tab separators and CRLF kept. |
+| `ncsbe_2026_results_pct_template_trimmed.zip` | https://s3.amazonaws.com/dl.ncsbe.gov/ENRS/2026_11_03/results_pct_20261103.zip (S3 `LastModified: 2026-10-05T14:57:45Z`; all counts zero before the election) | 2026-10-06 | Hyde and New Hanover: every `US SENATE` row plus the first 5 other rows per county. |
+| `az_sos_2024_all_county_races_trimmed.json` | https://cdn1.arizona.vote/data/47/0/all_county_races_47_0_en_12036.json (AZ SoS 2024 general, eid 47, upload 12036; `Last-Modified: Fri, 22 Nov 2024 18:02:34 GMT`) | 2026-10-06 | Apache, Pima and Santa Cruz: every `President of the United States` and `U.S. Senator` row plus the first 3 other rows per county. Re-serialized compactly (same keys and values). |
+| `az_sos_2024_election_47_0.json` | https://cdn1.arizona.vote/data/47/0/election_47_0.json | 2026-10-06 | Verbatim (the version document naming upload 12036). |
+| `tx_sos_2024_county_trimmed.json` | https://results.texas-election.com/static/data/election/49664/1012/County.json (TX SoS legacy results site, 2024 general, final version 1012; Cloudflare answers 200 to a browser User-Agent) | 2026-10-06 | Anderson, Harris and El Paso (keys 48001, 48201, 48141): `PRESIDENT/VICE-PRESIDENT` and `U. S. SENATOR ` plus 2 other races per county. Re-serialized compactly. |
+| `tx_civix_2026_primary_countyinfo_trimmed.json` | https://goelect.txelections.civixapps.com/api-ivis-system/api/s3/enr/election/countyInfo/53813 (TX Civix API, 2026 Republican primary) | 2026-10-06 | Decoded, trimmed to Mitchell and Harris (`U. S. SENATOR `, `GOVERNOR` plus 2 other races each), then re-encoded as `{"upload": "<base64>"}` like the original. |
+| `mi_sos_2024_primary_resultfile_trimmed.txt` | https://mvic.sos.state.mi.us/VoteHistory/GetElectionResultFile?electionId=698 via Wayback (`web.archive.org/web/20240829225126id_/...`; live requests get a Cloudflare challenge) | 2026-10-06 | Alcona, Kent and St Joseph: every `UNITED STATES SENATOR` row plus the first 4 other rows per county, and the trailer line. Bytes, tabs and CRLF kept. |
+| `oh_sos_2024_president_by_county_election_night_trimmed.json` | https://liveresults.ohiosos.gov/Api/v1/Contest/GetContestDetailsObject?contestName=President%20and%20Vice%20President&contestObjectId=_1CFEB8DEECE2420BE0633390EE0A64A5&resultsLevel=County&countyId= via Wayback capture 20241106040935 (live requests get Cloudflare error 1006) | 2026-10-06 | `contestList` cut to Adams, Franklin and Van Wert; everything else kept. Re-serialized compactly. |
+
+Older fixtures are described in the module docs of `tests/adapters.rs` and `tests/enhanced_voting.rs`.

@@ -172,11 +172,25 @@ async fn poll_loop(mut task: SourceTask, tx: mpsc::Sender<Msg>, cancel: Cancella
         if tx.send(msg).await.is_err() {
             return;
         }
-        let delay = next_delay(&task.timing, failures, rng.next_unit());
+        let delay = paced_delay(&task.timing, failures, rng.next_unit(), chrono::Utc::now());
         tokio::select! {
             () = cancel.cancelled() => return,
             () = tokio::time::sleep(delay) => {}
         }
+    }
+}
+
+/// [`next_delay`], but no shorter than the idle interval before `idle_until` (pre-election).
+pub fn paced_delay(
+    t: &SourceTiming,
+    failures: u32,
+    unit: f64,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Duration {
+    let d = next_delay(t, failures, unit);
+    match t.idle_until {
+        Some(until) if now < until => d.max(t.idle_interval),
+        _ => d,
     }
 }
 
@@ -381,6 +395,8 @@ mod tests {
             jitter_frac: 0.2,
             timeout: Duration::from_secs(1),
             max_backoff: Duration::from_secs(60),
+            idle_until: None,
+            idle_interval: Duration::from_secs(1800),
         }
     }
 
@@ -407,5 +423,31 @@ mod tests {
             let u = r.next_unit();
             assert!((0.0..1.0).contains(&u));
         }
+    }
+
+    #[test]
+    fn idle_schedule_slows_polling_until_the_instant_only() {
+        let until: chrono::DateTime<chrono::Utc> = "2026-11-03T21:00:00Z".parse().expect("ts");
+        let t = SourceTiming {
+            idle_until: Some(until),
+            idle_interval: Duration::from_secs(1800),
+            ..timing()
+        };
+        let before = until - chrono::Duration::days(20);
+        let after = until + chrono::Duration::minutes(1);
+        assert_eq!(paced_delay(&t, 0, 0.5, before), Duration::from_secs(1800));
+        assert_eq!(paced_delay(&t, 0, 0.5, after), next_delay(&t, 0, 0.5));
+        // Backoff longer than the idle interval is kept.
+        let slow = SourceTiming {
+            idle_interval: Duration::from_secs(1),
+            ..t
+        };
+        assert_eq!(paced_delay(&slow, 3, 0.5, before), next_delay(&slow, 3, 0.5));
+        // No schedule: the source's own cadence.
+        let none = SourceTiming {
+            idle_until: None,
+            ..t
+        };
+        assert_eq!(paced_delay(&none, 0, 0.5, before), next_delay(&none, 0, 0.5));
     }
 }

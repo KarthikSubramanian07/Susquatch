@@ -6,6 +6,7 @@
 
 pub mod ca_sos;
 pub mod clarity;
+pub mod csv;
 pub mod enhanced_voting;
 pub mod json_map;
 pub mod static_json;
@@ -153,16 +154,31 @@ pub fn build_source(cfg: &EnrConfig, s: &SourceConfig) -> Result<Box<dyn Results
         SourceKind::Clarity { base_url, detail } => {
             Box::new(clarity::ClaritySource::new(ctx, base_url.clone(), *detail, http))
         }
-        SourceKind::StaticJson { urls, mapping } => {
+        SourceKind::StaticJson {
+            urls,
+            version_url,
+            version_path,
+            mapping,
+        } => {
             let compiled = mapping
                 .compile()
                 .map_err(|e| BuildError(format!("{}: {e}", s.id)))?;
-            Box::new(static_json::StaticJsonSource::new(
-                ctx,
-                urls.clone(),
-                compiled,
-                http,
-            ))
+            let version = match (version_url, version_path) {
+                (Some(u), Some(p)) => Some(static_json::VersionedUrls {
+                    url: u.clone(),
+                    path: json_map::Path::parse(p).map_err(|e| BuildError(format!("{}: {e}", s.id)))?,
+                }),
+                _ => None,
+            };
+            Box::new(
+                static_json::StaticJsonSource::new(ctx, urls.clone(), compiled, http).with_version(version),
+            )
+        }
+        SourceKind::Csv { urls, mapping } => {
+            let compiled = mapping
+                .compile()
+                .map_err(|e| BuildError(format!("{}: {e}", s.id)))?;
+            Box::new(csv::CsvSource::new(ctx, urls.clone(), compiled, http))
         }
         SourceKind::EnhancedVoting {
             base_url,

@@ -5,6 +5,8 @@
 #   clarity     Clarity/Scytl ENR: polls <base_url>/current_ver.txt, fetches a snapshot only when
 #               the version changes (detail = "xml" for county x vote type, "json" for totals only)
 #   static_json any JSON document, mapped with the path language in adapters/json_map.rs
+#   csv         a delimited file (CSV/TSV, plain or zipped), mapped by header name and summed
+#               to counties (adapters/csv.rs)
 #   enhanced_voting  Enhanced Voting sites (Georgia): finds the election by date and its ballot
 #               items by contest name at runtime, then maps each item like static_json
 # [[races]] maps a contest name exactly as the source prints it (case/whitespace-insensitive) to
@@ -18,6 +20,11 @@ timeout_ms = 8000
 max_backoff_s = 120.0
 confirm_corrections_after = 2   # a decrease must repeat on 2 consecutive polls to be applied
 max_results_per_batch = 500
+# Until 16:00 ET on Nov 3 every source polls at most every 30 min: the pre-election paper run and
+# rehearsals keep every adapter exercised without hammering state sites for four weeks. From then
+# on each source runs at its own interval. enr-capture ignores this (test-window captures).
+idle_until_utc = "2026-11-03T21:00:00Z"
+idle_interval_s = 1800.0
 
 [consistency]
 total_tol_frac = 0.02           # totals within 2 % are "the same count" ...
@@ -56,7 +63,12 @@ urls = [
 # ── Clarity / Scytl ───────────────────────────────────────────────────────────────────────
 # 2024 South Carolina general (a real, final Clarity election) as the reference Clarity source:
 # enable it to exercise the adapter end to end. For 2026, replace the election id once SC
-# publishes it (the 2026 general is not listed yet: https://www.enr-scvotes.org/SC/elections.json).
+# publishes it and add [[races]] rows for 2026-SEN-SC and 2026-GOV-SC.
+# Checked 2026-10-06: https://www.enr-scvotes.org/SC/elections.json (and the same path on
+# results.enr.clarityelections.com) returns `[]`; scvotes.gov/election-results lists only 2026
+# primaries, runoffs and specials (latest 127227, State Senate 15 special primary); ids 127228 to
+# 127800 all 404 on current_ver.txt. Re-check from Oct 20; Clarity usually lists a general a few
+# weeks out.
 [[sources]]
 id = "clarity:SC"
 state = "SC"
@@ -68,6 +80,9 @@ detail = "xml"
 
 # Iowa runs Clarity on its own domain; election ids are listed at
 # https://electionresults.iowa.gov/IA/elections.json (126082 = 2026 primary).
+# Checked 2026-10-06: the list has four entries (126082 2026 Primary, 125665, 125502, 124196);
+# no 2026 general, and ids 126083 to 127800 all 404 on current_ver.txt. When it appears, set
+# base_url to .../IA/<id>, add [[races]] rows for 2026-SEN-IA and 2026-GOV-IA, and enable.
 [[sources]]
 id = "clarity:IA"
 state = "IA"
@@ -76,6 +91,232 @@ tz = "America/Chicago"
 enabled = false
 base_url = "https://electionresults.iowa.gov/IA/126082"
 detail = "xml"
+
+# ── North Carolina State Board of Elections (csv) ─────────────────────────────────────────
+# One zipped, tab-separated, CRLF file per election with a row per (precinct, contest, choice)
+# and one column per vote method; the adapter sums precincts to counties. Served from S3 with
+# ETag/Last-Modified, so conditional GETs are cheap. The 2026 general file already exists (all
+# zeros, US SENATE: Cooper / Whatley / Bray / Dublin; verified 2026-10-06), as did the 2024
+# general's (results_pct_20241105.zip, the fixture). Reporting is a proxy: distinct precincts
+# with `Real Precinct = Y` that have any vote in the contest (docs/ELECTION_NIGHT.md §1.4).
+# Enabled: before results it only re-reads a 0.6 MB zip that answers 304, and emits zeros.
+[[sources]]
+id = "nc_sbe"
+state = "NC"
+kind = "csv"
+tz = "America/New_York"
+poll_interval_s = 30.0
+urls = ["https://s3.amazonaws.com/dl.ncsbe.gov/ENRS/2026_11_03/results_pct_20261103.zip"]
+
+[sources.mapping]
+delimiter = "tab"
+zip_entry = ".txt"
+race = "Contest Name"
+county = "County"
+candidate = "Choice"
+party = "Choice Party"
+vote_type_columns = ["Election Day", "Early Voting", "Absentee by Mail", "Provisional"]
+precinct = "Precinct"
+precinct_flag = "Real Precinct"
+
+# ── Nebraska Secretary of State: no county-level machine-readable feed (2026-10-06) ───────
+# Not configured. What was tried on 2026-10-06, with a browser User-Agent:
+# * https://electionresults.nebraska.gov/resultsCSV.aspx?text=All&type={All,SW,CG,...}&map={CTY,DIST}
+#   (200, comma CSV, already the 2026 general: "For United States Senator - 6  Year Term",
+#   "For Governor and Lt. Governor"). Every row is statewide (AreaType SW) or per district
+#   (CG); `map=CTY`, `cty=NN`, `text=<county>` and `eid=<old election>` do not change that. The
+#   Wayback capture of `resultsCSV.aspx?text=All` from 2025-01-19 (the 2024 general, final) has
+#   no county rows either, so the csv kind cannot produce CountyResults from it.
+# * County numbers exist only as HTML (resultsSW.aspx?type=CTYALL&map=CTY&cty=NN&name=<County>,
+#   one page per county, NN = the site's county number, Douglas = 01) and as an .xlsx returned by
+#   an ASP.NET __doPostBack of the "County Level" export button (needs __VIEWSTATE).
+# * neresultswebservice.azurewebsites.us/ResultsAjax.svc has GetVoterTurnoutData (per-county
+#   precincts reporting, JSON) and GetMapData(Type, Category, RaceID, OSN, County, Party), which
+#   returned {"d":null} for every parameter guess.
+# Next step: an HTML adapter over the 93 county pages, or capture GetMapData's real parameters
+# from the browser's network tab on the live site. Re-check resultsCSV.aspx on election night.
+
+# ── Arizona Secretary of State (static_json behind a version document) ────────────────────
+# results.arizona.vote is a Cloudflare-challenged SPA, but its data lives on Azure blob storage
+# behind Front Door with no challenge (200 to plain curl, ETag + Last-Modified; verified
+# 2026-10-06): cdn1.arizona.vote/data/<eid>/0/election_<eid>_0.json names the current
+# `uploadId`, and all_county_races_<eid>_0_en_<uploadId>.json is a flat array with one row per
+# (county, contest, candidate), party in the candidate name ("Gallego, Ruben (DEM)"), and
+# PrecinctsReported / PrecinctsParticipating. The county file has no vote-method split (the
+# statewide all_races file has PollingPlace/Early/Provisional, not per county), so results are
+# MIXED. Precincts count only Election Day locations (the site's own caveat), so early ballots
+# are not "reporting". eid 69 = "2026 General Election" (site_header_69_0_en.json, 200);
+# election_69_0.json is 404 until the first upload, so the source would fail every poll until
+# then. Enable once https://cdn1.arizona.vote/data/69/0/election_69_0.json returns 200 (the
+# first test upload). Fixture: the 2024 general (eid 47, uploadId 12036).
+# Contest names: the 2024 general printed "U.S. Senator" (no party); the 2026 primary printed
+# "Governor (REP)" etc., so the general's "Governor" is assumed. Arizona has no 2026 Senate race.
+[[sources]]
+id = "az_sos"
+state = "AZ"
+kind = "static_json"
+tz = "America/Phoenix"
+enabled = false
+poll_interval_s = 20.0
+version_url = "https://cdn1.arizona.vote/data/69/0/election_69_0.json"
+version_path = "uploadId"
+urls = ["https://cdn1.arizona.vote/data/69/0/all_county_races_69_0_en_{version}.json"]
+
+[sources.mapping]
+rows = "[*]"
+race = "ContestName"
+county = "CountyName"
+candidates = ""                 # each row is one candidate; merge_rows sums them per county
+candidate_name = "ChoiceName"
+candidate_votes = "ChoiceTotalVotes"
+party_from_name = true
+merge_rows = true
+precincts_reporting = "PrecinctsReported"
+precincts_total = "PrecinctsParticipating"
+
+# ── Texas Secretary of State (Civix results API, static_json over base64) ─────────────────
+# Since 2025 Texas results run on Civix ("Civix Election Night Results",
+# goelect.txelections.civixapps.com/ivis-enr-ui/). Its API answers plain GETs with no challenge
+# (verified 2026-10-06) but wraps every document as {"upload": "<base64 JSON>"} and sends
+# `cache-control: no-cache` with no ETag (about 1.8 MB per poll for 254 counties).
+# Election ids come from .../api/s3/enr/electionConstants: 53815 = "2026 NOVEMBER GENERAL
+# ELECTION". Its countyInfo currently holds a 254-county skeleton with 2025 propositions at zero
+# votes, so nothing maps until the 2026 contests appear; it is enabled because that is harmless.
+# The decoded document is {<county index>: {N: county name, Summary: {PRR, PRP, ...},
+# Races: {<id>: {N: contest, C: {<id>: {N, P, V, EV}}}}}}, the same schema as the 2024 legacy
+# site (results.texas-election.com/static/data/election/49664/1012/County.json, the fixture,
+# which says ON for the contest name and keys counties by FIPS). `EV` is early votes (in person
+# and mail); the remainder is Election Day. The mapper cannot split a scalar pair yet, so
+# results are MIXED totals. Summary.PRR / PRP are read as precincts reporting / participating
+# (both 23 of 23 for Anderson 2024 final; the field meaning is inferred, not documented).
+# Contest names: "U. S. SENATOR " (trailing space; the race map ignores it) and "GOVERNOR", as
+# printed in the 2026 primary (53813).
+[[sources]]
+id = "tx_sos"
+state = "TX"
+kind = "static_json"
+tz = "America/Chicago"
+poll_interval_s = 45.0
+timeout_ms = 30000             # the full document takes 9 to 11 s to download (2026-10-06)
+urls = ["https://goelect.txelections.civixapps.com/api-ivis-system/api/s3/enr/election/countyInfo/53815"]
+
+[sources.mapping]
+unwrap_base64 = "upload"
+rows = "*.Races.*"
+race = "N"
+county = "^0.N"
+candidates = "C.*"
+candidate_name = "N"
+candidate_party = "P"
+candidate_votes = "V"
+precincts_reporting = "^0.Summary.PRR"
+precincts_total = "^0.Summary.PRP"
+
+# ── Nevada Secretary of State: behind an Incapsula bot wall (2026-10-06) ──────────────────
+# Not configured. silverstateelection.nv.gov serves XML, not JSON: /_xml/USandNV.xml has every
+# statewide race with one `<County>Votes` attribute per county (e.g. ClarkVotes="493,052"),
+# /_xml/<County>.xml has per-county precincts, /_xml/Homepage.xml the ReportedTime. Every live
+# request (browser User-Agent, Accept, Referer and Sec-Fetch headers) gets Incapsula's "Pardon
+# Our Interruption" page, which needs a JavaScript challenge cookie. Wayback has the 2024 final
+# (2025-07-17 capture) and the 2026 primary, but no election-night copies of USandNV.xml. No
+# vote-method split anywhere. The 2026 general is not posted yet (2026-09-23 capture still shows
+# the June primary). Needs an XML attribute mapper plus a way past the challenge (a browser on
+# the host) before it can be polled. Nevada has no 2026 Senate race; Governor is 2026-GOV-NV.
+
+# ── Michigan Secretary of State (csv; behind a Cloudflare challenge, 2026-10-06) ───────────
+# Unofficial results are on MVIC, not mielections.us (that host times out and holds certified
+# files only). The page mvic.sos.state.mi.us/votehistory/Index?type=C&electionDate=<M-D-YYYY>
+# loads /VoteHistory/GetElectionResultFile?electionId=<id>: a tab-separated, CRLF file with one
+# row per (county, office, candidate) and a trailer line "RECORDS: n<TAB>RESULTS: OFFICIAL".
+# County level only, no precinct counts (the page reports "Counties: x/83"), no vote-method
+# split. Election ids: 699 = 2024 general, 698 = Aug 2024 primary, 705 = May 2026; the 2026
+# general has no id yet. Every live request (browser User-Agent too) gets a Cloudflare
+# challenge (403, "Just a moment..."), so it needs a browser-issued cf_clearance cookie; the
+# fixture is the Aug 2024 primary file from a Wayback capture (2024-08-29). Disabled: point the
+# url at the 2026 general id once listed, and enable only if the host can fetch it.
+# Contest names: "UNITED STATES SENATOR 6 YEAR TERM (1) POSITION" (2024 format, verified);
+# "GOVERNOR 4 YEAR TERM (1) POSITION" assumed from 2018's "Governor 4 Year Term (1) Position".
+[[sources]]
+id = "mi_sos"
+state = "MI"
+kind = "csv"
+tz = "America/Detroit"
+enabled = false
+poll_interval_s = 60.0
+urls = ["https://mvic.sos.state.mi.us/VoteHistory/GetElectionResultFile?electionId=699"]
+
+[sources.mapping]
+delimiter = "tab"
+race = "OfficeDescription"
+county = "CountyName"
+candidate = "CandidateLastName"
+party = "PartyDescription"
+votes = "CandidateVotes"
+skip_rows_starting_with = ["RECORDS:"]
+
+# ── Ohio Secretary of State (static_json; API refuses scripted clients, 2026-10-06) ──────────
+# liveresults.ohiosos.gov is an SPA over a JSON API:
+# /Api/v1/Contest/GetContestDetailsObject?contestName=<name>&contestObjectId=<id>&resultsLevel=County&countyId=
+# returns {contestName, contestList: [{name: county, reportedPrecincts, totalPrecincts,
+# candidatesRunning: [{primaryCandidate, candidateParty: "R"/"D", vCount}]}]} (careful: a
+# candidate's `totalVotes` is the county's contest total). The statewide call (empty id and
+# level) yields the contest's objectId; getTabs lists contests. No vote-method split and no
+# timestamp. Every live request gets Cloudflare "error code: 1006" (access denied, not a
+# challenge), and the site root redirects to ohiosos.gov/data off-season. The fixture is the
+# Wayback capture from 2024-11-06 04:09Z (11:09 pm ET, 7,613 of 8,878 precincts in). The 2026
+# general is not listed (getTabs still showed the primary on 2026-05-27); the 2026 primary's
+# U.S. Senator id was _4AA30560E4BC0E39E0633390EE0A3B39. Disabled: replace CONTEST_OBJECT_ID
+# with the general's ids (one url per contest) and enable only if the host is not refused.
+# Contest names "U.S. Senator" and "Governor and Lieutenant Governor" are verified from the
+# 2026 primary. Neither race has a market in state/market_map.json today.
+[[sources]]
+id = "oh_sos"
+state = "OH"
+kind = "static_json"
+tz = "America/New_York"
+enabled = false
+poll_interval_s = 30.0
+urls = [
+  "https://liveresults.ohiosos.gov/Api/v1/Contest/GetContestDetailsObject?contestName=U.S.%20Senator&contestObjectId=CONTEST_OBJECT_ID&resultsLevel=County&countyId=",
+  "https://liveresults.ohiosos.gov/Api/v1/Contest/GetContestDetailsObject?contestName=Governor%20and%20Lieutenant%20Governor&contestObjectId=CONTEST_OBJECT_ID&resultsLevel=County&countyId=",
+]
+
+[sources.mapping]
+rows = "contestList[*]"
+race = "$.contestName"
+county = "name"
+candidates = "candidatesRunning[*]"
+candidate_name = "primaryCandidate"
+candidate_party = "candidateParty"
+candidate_votes = "vCount"
+precincts_reporting = "reportedPrecincts"
+precincts_total = "totalPrecincts"
+
+# ── Kansas Secretary of State: HTML only, behind a Cloudflare challenge (2026-10-06) ───────
+# Not configured. Election-night results are static HTML at https://ent.sos.ks.gov/kssos_ent.html
+# (plus national.html, ks-senate.html and one page per county such as allen.html); sos.ks.gov
+# links there on the night. Each statewide contest is an <h3> with "Precincts Reporting: N of M",
+# and county numbers sit inside the title= attribute of <area> map tags, with the party as a
+# name prefix ("R-Donald J. Trump"). No JSON, CSV or XML feed, no vote-method split. Live
+# requests get 403 with cf-mitigated: challenge. Wayback has the 2024 general (final page "Last
+# Updated: 11/06/2024 3:06 AM") and the 2026 primary ("United States Senate (R)", "Governor / Lt.
+# Governor (R)"); the 2026 general is not set up yet. Needs an HTML adapter and a way past the
+# challenge. Races: 2026-SEN-KS, 2026-GOV-KS.
+
+# ── Alaska Division of Elections: live CSV, but by house district, not county (2026-10-06) ──
+# Not configured. The feed is reachable with no challenge (200 to plain curl):
+# https://www.elections.alaska.gov/enr26/results/GA_ENR_Precinct_State_of_Alaska.csv (2026; it
+# holds the certified primary today), plus /enr26/results/statewide.js and precincts.js (JSON
+# with `updated`, totals and 40 districts). 2024 lived at /results/24GENR/ENRbyPrecinct.csv. One
+# row per (precinct, contest, candidate) with Election Day / Absentee / Early Voting / Question /
+# Remote vote columns, so the csv kind could read it, but Alaska reports by precinct and state
+# house district ("01-600 Ketchikan No. 1"); boroughs (the FIPS county equivalents) are not in
+# the file, and absentee and questioned ballots sit in "District N - Absentee" pseudo-precincts.
+# CountyResult needs a 5-digit FIPS, so this waits on a decision to model Alaska by district
+# (pseudo-FIPS per district, matching how MEDSL history reports it). Reporting_flag is always 0,
+# even in the final 2024 file. 2026 contest names: "U.S. Senator", "Governor / Lieutenant
+# Governor". The 2026 general is not posted (/election-results/e/?id=26genr: "No Election
+# Results Found"). Races: 2026-SEN-AK, 2026-GOV-AK.
 
 # ── Georgia (Enhanced Voting; not Clarity since 2024), discovered at runtime ──────────────
 # Election slugs and ballot-item ids are minted per election and published late, so this source
@@ -148,6 +389,51 @@ race_id = "2026-GOV-CA"
 source = "clarity:SC"
 contest = "President and Vice President"
 race_id = "2024-PRES-SC"
+
+# North Carolina: no governor's race in 2026. Contest name verified in the 2026 file (2026-10-06).
+[[races]]
+source = "nc_sbe"
+contest = "US SENATE"
+race_id = "2026-SEN-NC"
+
+# Arizona: governor only in 2026; name assumed from the 2024 general's style (see az_sos).
+[[races]]
+source = "az_sos"
+contest = "Governor"
+race_id = "2026-GOV-AZ"
+
+# Texas: names as printed by the 2026 primary on the same Civix system (see tx_sos).
+[[races]]
+source = "tx_sos"
+contest = "U. S. SENATOR"
+race_id = "2026-SEN-TX"
+
+[[races]]
+source = "tx_sos"
+contest = "GOVERNOR"
+race_id = "2026-GOV-TX"
+
+# Michigan: see mi_sos for which name is verified.
+[[races]]
+source = "mi_sos"
+contest = "UNITED STATES SENATOR 6 YEAR TERM (1) POSITION"
+race_id = "2026-SEN-MI"
+
+[[races]]
+source = "mi_sos"
+contest = "GOVERNOR 4 YEAR TERM (1) POSITION"
+race_id = "2026-GOV-MI"
+
+# Ohio (names from the 2026 primary; see oh_sos).
+[[races]]
+source = "oh_sos"
+contest = "U.S. Senator"
+race_id = "2026-SEN-OH"
+
+[[races]]
+source = "oh_sos"
+contest = "Governor and Lieutenant Governor"
+race_id = "2026-GOV-OH"
 
 # California House: the bulk files say "United States Representative District N", the REST API
 # says "U.S. House of Representatives District N". Both map to the same race id.
