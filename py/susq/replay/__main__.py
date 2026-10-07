@@ -7,11 +7,17 @@ Examples (from the repo root)::
     uv run python -m susq.replay drill py/susq/replay/specs/sample_2022.toml --chaos-drop 1800:600
     uv run python -m susq.replay publish data/replay/s.jsonl --nats nats://127.0.0.1:4222 --speed 120
     uv run python -m susq.replay download 2022 GA NH ME --out data/replay/county_results_2022.csv
+    uv run python -m susq.replay download 2024 --market-map state/market_map.json \
+        --out data/replay/county_results_2024.csv
+    uv run python -m susq.replay spec2026 --market-map state/market_map.json --fair state/fair_live.json \
+        --history data/replay/county_results_2022.csv --history data/replay/county_results_2024.csv \
+        --out py/susq/replay/specs/general_2026.toml
 """
 
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
 
@@ -23,7 +29,7 @@ from susq.replay.closing import REPO_ROOT
 from susq.replay.drill import ExecutorConfig, render_report, simulate_executor, write_report
 from susq.replay.records import read_replay, write_replay
 from susq.replay.runner import ChaosConfig, replay_in_process, replay_to_nats
-from susq.replay.spec import load_spec, materialize
+from susq.replay.spec import load_spec, materialize, materialize_prior
 
 app = typer.Typer(no_args_is_help=True, help="Synthetic election-night replays, priors and drills.")
 
@@ -64,7 +70,7 @@ def build(spec: Path, out: OutPath = Path("data/replay/replay.jsonl")) -> None:
 @app.command()
 def prior(spec: Path, out: OutPath = Path("data/replay/prior.json")) -> None:
     """Build the NeedlePrior (proto3 JSON) for a spec."""
-    _, _, p = materialize(load_spec(spec))
+    p = materialize_prior(load_spec(spec))
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(to_json(p))
     typer.echo(f"wrote {len(p.races)} races / {len(p.counties)} counties to {out}")
@@ -116,11 +122,72 @@ def drill(
 
 
 @app.command()
-def download(year: int, states: list[str], out: OutPath = Path("data/replay/county_results.csv")) -> None:
-    """Download MEDSL precinct returns for `states` and aggregate them to county CSV."""
-    from susq.replay.download import download as fetch
+def download(
+    year: int,
+    states: Annotated[list[str] | None, typer.Argument(help="USPS codes; omit with --market-map")] = None,
+    out: OutPath = Path("data/replay/county_results.csv"),
+    market_map: Annotated[
+        Path | None,
+        typer.Option(help="state/market_map.json: add every state with a Senate or Governor market"),
+    ] = None,
+    house: Annotated[bool, typer.Option(help="also keep US House rows, by county x district")] = False,
+    refresh: Annotated[bool, typer.Option(help="ignore the per-state cache under data/replay/medsl")] = False,
+) -> None:
+    """Download MEDSL precinct returns for `states` and aggregate them to county CSV.
 
-    typer.echo(f"wrote {fetch(year, [s.upper() for s in states], out)}")
+    Each state is cached under `<out dir>/medsl/<year>/<ST>.csv`; failures are reported, not fatal.
+    """
+    from susq.replay.download import download as fetch
+    from susq.replay.spec2026 import cup_states
+
+    wanted = sorted({s.upper() for s in states or []} | (cup_states(market_map) if market_map else set()))
+    if not wanted:
+        raise typer.BadParameter("give states or --market-map")
+    res = fetch(year, wanted, out, house=house, refresh=refresh)
+    typer.echo(f"wrote {res.out}: {len(res.done)} states ({len(res.cached)} cached)")
+    if res.empty:
+        typer.echo(f"  no Senate/Governor/President rows: {' '.join(res.empty)}")
+    for st, err in res.failed.items():
+        typer.echo(f"  FAILED {st}: {err}", err=True)
+    if res.failed:
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def spec2026(
+    market_map: Annotated[Path, typer.Option(help="state/market_map.json")] = Path("state/market_map.json"),
+    fair: Annotated[Path, typer.Option(help="state/fair_live.json (TargetFile)")] = Path(
+        "state/fair_live.json"
+    ),
+    history: Annotated[
+        list[Path] | None, typer.Option(help="county results CSV from `download` (repeat for 2022 and 2024)")
+    ] = None,
+    poll_closing: Annotated[Path, typer.Option(help="poll closing table")] = REPO_ROOT
+    / "config"
+    / "poll_closing.toml",
+    out: OutPath = Path("py/susq/replay/specs/general_2026.toml"),
+) -> None:
+    """Write the 2026 needle spec: every Cup Senate and Governor race, margins from the fair file."""
+    from susq.replay.spec2026 import build_spec, render_toml
+
+    paths = history or [
+        Path("data/replay/county_results_2022.csv"),
+        Path("data/replay/county_results_2024.csv"),
+    ]
+    missing = [p for p in paths if not p.exists()]
+    if missing:
+        raise typer.BadParameter(f"history not found: {', '.join(map(str, missing))} (run `download` first)")
+    spec = build_spec(market_map, fair, paths, poll_closing)
+    cmd = (
+        f"python -m susq.replay spec2026 --market-map {market_map} --fair {fair} "
+        + " ".join(f"--history {p}" for p in paths)
+        + f" --out {out}"
+    )
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(render_toml(spec, generated_on=datetime.now(UTC).date(), command=cmd))
+    typer.echo(f"wrote {out}: {len(spec.races)} races, {len(spec.uncovered)} uncovered")
+    for u in spec.uncovered:
+        typer.echo(f"  uncovered {u.race_id}: {u.reason}")
 
 
 if __name__ == "__main__":
