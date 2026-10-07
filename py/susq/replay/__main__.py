@@ -25,6 +25,7 @@ import typer
 
 from susq.contracts import to_json
 from susq.replay.backends import select_backend
+from susq.replay.closing import DEFAULT_PATH as CLOSING_PATH
 from susq.replay.closing import REPO_ROOT
 from susq.replay.drill import ExecutorConfig, render_report, simulate_executor, write_report
 from susq.replay.records import read_replay, write_replay
@@ -162,9 +163,7 @@ def spec2026(
     history: Annotated[
         list[Path] | None, typer.Option(help="county results CSV from `download` (repeat for 2022 and 2024)")
     ] = None,
-    poll_closing: Annotated[Path, typer.Option(help="poll closing table")] = REPO_ROOT
-    / "config"
-    / "poll_closing.toml",
+    poll_closing: Annotated[Path, typer.Option(help="poll closing table")] = CLOSING_PATH,
     out: OutPath = Path("py/susq/replay/specs/general_2026.toml"),
 ) -> None:
     """Write the 2026 needle spec: every Cup Senate and Governor race, margins from the fair file."""
