@@ -1,0 +1,21 @@
+{
+  "raceTitle": "U.S. House of Representatives District 42 - Districtwide Results",
+  "Reporting": "100% (178 of 178) precincts reporting",
+  "ReportingTime": "December 3, 2024, 11:53 p.m.",
+  "candidates": [
+    {
+      "Name": "Robert Garcia",
+      "Party": "Dem",
+      "Votes": "159,153",
+      "Percent": "68.1",
+      "incumbent": true
+    },
+    {
+      "Name": "John Briscoe",
+      "Party": "Rep",
+      "Votes": "74,410",
+      "Percent": "31.9",
+      "incumbent": false
+    }
+  ]
+}

@@ -52,6 +52,14 @@ def test_decode_batch_rejects_garbage_and_bad_headers() -> None:
     b.results.add(race_id="R", county_fips="13")
     with pytest.raises(InvalidPayloadError):
         decode_batch(encode(b))
+    # A House district reported as one unit is a valid key, for its own state only.
+    ok = bus_pb2.CountyResultsBatch()
+    ok.header.schema_version = 1
+    ok.results.add(race_id="2026-HOUSE-CA-22", state="CA", county_fips="CA-HD22")
+    assert decode_batch(encode(ok)).results[0].county_fips == "CA-HD22"
+    ok.results[0].state = "NV"
+    with pytest.raises(InvalidPayloadError):
+        decode_batch(encode(ok))
 
 
 def test_clean_replay_delivers_everything_in_order(ga_replay) -> None:

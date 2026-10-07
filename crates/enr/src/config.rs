@@ -92,6 +92,17 @@ impl EnrConfig {
                     "race mapping with empty contest or race_id".into(),
                 ));
             }
+            // A House race is reported as one district unit keyed off its race id (`crate::units`),
+            // so the id must follow the race-id grammar exactly: `2026-HOUSE-CA-1` would match no
+            // market and be modelled as county pieces.
+            if crate::units::looks_like_house_race(&r.race_id)
+                && crate::units::house_district(&r.race_id).is_none()
+            {
+                return Err(ConfigError::Invalid(format!(
+                    "race {:?}: House race ids are <cycle>-HOUSE-<ST>-<two-digit district or AL>",
+                    r.race_id
+                )));
+            }
             if r.source != "*" && !seen.contains(r.source.as_str()) {
                 return Err(ConfigError::Invalid(format!(
                     "race {:?} names unknown source {:?}",
@@ -504,6 +515,12 @@ race_id = "2026-SEN-GA-override"
         assert!(EnrConfig::parse(&bad_state).is_err());
         let unknown_src = SAMPLE.replace("source = \"clarity:GA\"", "source = \"nope\"");
         assert!(EnrConfig::parse(&unknown_src).is_err());
+        for bad_house in ["2026-HOUSE-CA-1", "2026-HOUSE-CA-022", "2026-HOUSE-Cal-22"] {
+            let text = SAMPLE.replace("2026-SEN-GA-override", bad_house);
+            assert!(EnrConfig::parse(&text).is_err(), "{bad_house} must be refused");
+        }
+        let good_house = SAMPLE.replace("2026-SEN-GA-override", "2026-HOUSE-CA-01");
+        assert!(EnrConfig::parse(&good_house).is_ok());
     }
 
     const EV: &str = r#"
@@ -600,5 +617,19 @@ candidate_votes = "v"
         assert_eq!(election_date.to_string(), "2026-11-03");
         let ids: Vec<_> = contests.iter().map(|c| c.race_id.as_str()).collect();
         assert_eq!(ids, ["2026-SEN-GA", "2026-GOV-GA"]);
+        // Every California district is mapped under both contest spellings (bulk and REST).
+        for n in 1..=52 {
+            let race = format!("2026-HOUSE-CA-{n:02}");
+            assert_eq!(
+                cfg.race_map("ca_sos")
+                    .get(&format!("United States Representative District {n}")),
+                Some(race.as_str())
+            );
+            assert_eq!(
+                cfg.race_map("ca_sos_api")
+                    .get(&format!("U.S. House of Representatives District {n}")),
+                Some(race.as_str())
+            );
+        }
     }
 }

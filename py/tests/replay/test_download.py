@@ -82,6 +82,31 @@ def test_house_rows_are_kept_by_district() -> None:
     assert house[("07", "A")]["totalvotes"] == 50, "totals are per county x district"
     assert house[("08", "C")]["totalvotes"] == 5
     assert next(r for r in out if r["office"] == "US SENATE")["district"] == "STATEWIDE"
+    only = aggregate_precincts(rows, house_only=True)
+    assert {r["office"] for r in only} == {"US HOUSE"}, "a House file does not repeat statewide contests"
+    assert len(only) == 3
+
+
+def test_cache_files_differ_by_selection(tmp_path: Path) -> None:
+    out = tmp_path / "replay" / "house_results_2022.csv"
+    paths = {
+        cache_path(out, 2022, "CA"),
+        cache_path(out, 2022, "CA", house=True),
+        cache_path(out, 2022, "CA", house_only=True),
+    }
+    assert len(paths) == 3, "a statewide cache is never reused for a House download"
+    assert cache_path(out, 2022, "ca", house_only=True).name == "CA.house.csv"
+    calls: list[str] = []
+
+    def fake(year: int, state: str, client: object) -> list[dict[str, str | int]]:
+        calls.append(state)
+        return aggregate_precincts([_row(office="US HOUSE", district="22", state_po=state)], house_only=True)
+
+    download(2022, ["CA"], out, house_only=True, fetch=fake)
+    assert cache_path(out, 2022, "CA", house_only=True).exists()
+    assert not cache_path(out, 2022, "CA").exists()
+    download(2022, ["CA"], out, house_only=True, fetch=fake)
+    assert calls == ["CA"], "the House cache is reused"
 
 
 @pytest.mark.parametrize(

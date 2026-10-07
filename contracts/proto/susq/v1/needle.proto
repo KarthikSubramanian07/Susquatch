@@ -28,7 +28,7 @@ message RacePrior {
 message CountyPrior {
   string race_id = 1;
   string state = 2;
-  string county_fips = 3;
+  string county_fips = 3;                // county FIPS, or a district unit "CA-HD22" (as CountyResult)
   double expected_total_votes = 4;
   double expected_total_sd_frac = 5;     // turnout uncertainty as a fraction of expected_total_votes
   double prior_margin = 6;               // D - R pts for this county (two-party)

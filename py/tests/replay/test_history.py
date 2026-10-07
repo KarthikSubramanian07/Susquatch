@@ -12,6 +12,9 @@ from susq.replay.history import (
     ContestHistory,
     ContestKey,
     classify_mode,
+    collapse_to_unit,
+    district_unit_id,
+    is_unit_key,
     load_all,
     load_contest,
     party_code,
@@ -181,3 +184,61 @@ def test_ballot_count_rows_are_not_candidates(tmp_path: Path) -> None:
     c = load_contest(p, year=2022, state="NY", office="GOVERNOR")
     assert c.tally.other == 3
     assert "PUBLIC COUNTER" not in c.counties["36001"].candidates
+
+
+def test_district_units_collapse_a_district_split_across_counties(tmp_path: Path) -> None:
+    a = _csv(
+        tmp_path / "ca.csv",
+        [
+            "2022,CALIFORNIA,CA,KERN,06029,US HOUSE,22,VALADAO,REPUBLICAN,TOTAL,35000,65000",
+            "2022,CALIFORNIA,CA,KERN,06029,US HOUSE,22,SALAS,DEMOCRAT,TOTAL,30000,65000",
+            "2022,CALIFORNIA,CA,KINGS,06031,US HOUSE,22,VALADAO,REPUBLICAN,TOTAL,12000,22000",
+            "2022,CALIFORNIA,CA,KINGS,06031,US HOUSE,22,SALAS,DEMOCRAT,TOTAL,10000,22000",
+        ],
+    )
+    pieces = load_contest(a, year=2022, state="CA", office="US HOUSE", district="22")
+    assert len(pieces.counties) == 2
+    unit = collapse_to_unit(pieces, district_unit_id("CA", "22"), "CA district 22")
+    assert list(unit.counties) == ["CA-HD22"]
+    (u,) = unit.counties.values()
+    assert (u.county_fips, u.state, u.county_name) == ("CA-HD22", "CA", "CA district 22")
+    assert (u.tally.dem, u.tally.rep, u.tally.total) == (40_000, 47_000, 87_000)
+    assert u.candidates["VALADAO"] == ("REPUBLICAN", {MIXED: 47_000})
+    assert not u.is_split
+    assert (unit.year, unit.state, unit.office) == (2022, "CA", "US HOUSE")
+    assert pieces.counties["06029"].tally.total == 65_000, "the input is not modified"
+
+    # California's ABSENTEE / NOT ABSENTEE modes (both read as mail) and a TOTAL-only county
+    # fold into one MIXED tally: the feed reports the district untyped.
+    b = _csv(
+        tmp_path / "ca_split.csv",
+        [
+            "2022,CALIFORNIA,CA,KERN,06029,US HOUSE,22,V,REPUBLICAN,ABSENTEE,20000,65000",
+            "2022,CALIFORNIA,CA,KERN,06029,US HOUSE,22,V,REPUBLICAN,NOT ABSENTEE,15000,65000",
+            "2022,CALIFORNIA,CA,KERN,06029,US HOUSE,22,S,DEMOCRAT,ABSENTEE,25000,65000",
+            "2022,CALIFORNIA,CA,KERN,06029,US HOUSE,22,S,DEMOCRAT,NOT ABSENTEE,5000,65000",
+            "2022,CALIFORNIA,CA,KINGS,06031,US HOUSE,22,V,REPUBLICAN,TOTAL,12000,22000",
+            "2022,CALIFORNIA,CA,KINGS,06031,US HOUSE,22,S,DEMOCRAT,TOTAL,10000,22000",
+        ],
+    )
+    split = load_contest(b, year=2022, state="CA", office="US HOUSE", district="22")
+    assert {vt for c in split.counties.values() for vt in c.by_type} == {MAIL, MIXED}
+    (folded,) = collapse_to_unit(split, "CA-HD22").counties.values()
+    assert list(folded.by_type) == [MIXED]
+    assert (folded.tally.dem, folded.tally.rep) == (40_000, 47_000)
+    assert folded.candidates["S"] == ("DEMOCRAT", {MIXED: 40_000})
+
+
+def test_unit_ids_match_the_rust_pipeline() -> None:
+    assert district_unit_id("CA", "22") == "CA-HD22"
+    assert district_unit_id("ca", "1") == "CA-HD01"
+    assert district_unit_id("WY", "al") == "WY-HDAL"
+    for bad in ("0", "100", "X", ""):
+        with pytest.raises(ValueError, match="not a House district"):
+            district_unit_id("CA", bad)
+    assert is_unit_key("06037", "CA")
+    assert is_unit_key("CA-HD22", "CA")
+    assert is_unit_key("CA-HDAL", "CA")
+    for bad in ("CA-HD22@NV", "CA-HD2", "CA-HD00", "CA-22", "0603", ""):
+        state = "NV" if bad.endswith("@NV") else "CA"
+        assert not is_unit_key(bad.removesuffix("@NV"), state), bad

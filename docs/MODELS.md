@@ -498,7 +498,11 @@ covariance matches the closed form in §1.1.
 - `independent_major` handling is a heuristic (IND votes join the non-R side). It fits Nebraska, not a
   genuine three-way race.
 - Precinct progress is read per unit as reported. Feeds whose precinct counts cover Election Day only
-  will overstate mail completeness.
+  will overstate mail completeness. The California adapter therefore passes no precinct counts at all
+  (docs/ELECTION_NIGHT.md §1.1), so CA units fall back to `expected - reported`.
+- A unit key is opaque: a county FIPS, or a House district reported as one unit (`CA-HD22`). A one-unit
+  race has no within-race spread, so its unit SD must stay small for `delta_r` to carry the race SD
+  (docs/ELECTION_NIGHT.md §5).
 - A correction is only as good as the pipeline's confirmation rule: a decrease must repeat on
   `confirm_corrections_after` polls before `is_correction` is set, so a real correction is applied one or
   two polls late and a one-off glitch never is.

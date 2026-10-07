@@ -1,9 +1,11 @@
-"""The 2026 needle prior spec: every Cup Senate and Governor race → `specs/general_2026.toml`.
+"""The 2026 needle prior spec: every Cup Senate and Governor race, and every Cup California House
+seat → `specs/general_2026.toml`.
 
 `build_spec` turns three inputs into a spec that `spec.load_spec` reads:
 
 * **Races** come from the market map (`state/market_map.json`): one race per `race_party` row whose
-  race id is a Senate or Governor race (`2026-SEN-GA`, `2026-GOV-CA`, `2026-SEN-FL-S`).
+  race id is a Senate or Governor race (`2026-SEN-GA`, `2026-GOV-CA`, `2026-SEN-FL-S`) or a
+  California House seat (`2026-HOUSE-CA-22`, see the last section).
 * **Prior margin** comes from the fair file (`state/fair_live.json`, a `TargetFile`). The race's
   left side is the Democrat, or the independent where the independent out-prices the Democrat (the
   rule in `calibrate.consensus.left_party`; Nebraska Senate). `p_left = p_left_yes / (p_left_yes +
@@ -33,10 +35,24 @@
   states that have both years when the state has no 2022 contest.
 * **Poll close** is the state's last close from `config/poll_closing.toml`, pinned per race.
 
-House races are not emitted. The needle keys county priors by (race, county FIPS), and most
-competitive districts split counties (CA-22, CA-48), so a district cannot be modelled from county
-history without a county x district key in the ENR feed and the prior. `download --house` keeps the
-district rows for when that exists; until then House races are listed as uncovered.
+**California House seats** are emitted as single-unit races. The needle keys priors by (race,
+county), and most competitive districts split counties (CA-22, CA-48), so a district cannot be
+assembled from county history. California's SoS feed, though, reports every district's total, and
+`crates/enr` files it as one reporting unit `CA-HD22` (`crates/enr/src/units.rs`). So a CA House
+race is one "county" under that key (`single_unit = true`, `history.collapse_to_unit`):
+
+* prior margin from the fair file, exactly as for a statewide race (the same `_spec_for` race SD,
+  which includes the sim's `house` cluster; the same saturated-price rule);
+* expected total votes = the district's 2022 US House total, or its 2024 total where 2022 was
+  uncontested or one-sided (each side under 15% of the two-party vote, e.g. a top-two D vs D
+  general) or missing, times the turnout ratio chosen as for statewide races;
+* report order from California's convention, like every CA county.
+
+House history comes from `download <year> CA --house-only` (a separate file, so the statewide
+contests are not read twice). The 2022 and 2024 lines are not the 2026 ones (Proposition 50 redrew
+them), so only the district total is used, and the prior widens its turnout SD
+(`prior.DISTRICT_TURNOUT_SD_FRAC`). Every other state's House races stay uncovered: no other feed
+reports district totals, and their districts split counties.
 """
 
 from __future__ import annotations
@@ -55,9 +71,16 @@ from susq.models.numpy_engine import analytic_margin_sd
 from susq.models.types import SimParams
 from susq.replay.closing import DEFAULT_PATH as POLL_CLOSING_PATH
 from susq.replay.closing import load_closings
-from susq.replay.history import ContestHistory, ContestKey, load_all, pool_independent, top_independent
+from susq.replay.history import (
+    ContestHistory,
+    ContestKey,
+    district_unit_id,
+    load_all,
+    pool_independent,
+    top_independent,
+)
 
-SEN, GOV, PRES = "US SENATE", "GOVERNOR", "US PRESIDENT"
+SEN, GOV, PRES, HOUSE = "US SENATE", "GOVERNOR", "US PRESIDENT", "US HOUSE"
 STATEWIDE_OFFICES = {"SEN": SEN, "GOV": GOV}
 BASELINES: dict[str, tuple[tuple[int, str], ...]] = {
     "SEN": ((2022, SEN), (2022, GOV), (2024, SEN), (2024, PRES)),
@@ -68,7 +91,10 @@ MIN_SIDE_SHARE = 0.15  # each side's share of the two-party vote for a usable ba
 STRONG_IND_SHARE = 0.20  # an independent-led race prefers a baseline where an independent got this
 SATURATED_Z = 1.645  # |Phi^-1(p)| at 95/5
 P_CLIP = 0.001
-HOUSE_REASON = "House: needle priors are keyed by county FIPS and the district splits counties"
+HOUSE_REASON = "House: only California's feed reports district totals; elsewhere the district splits counties"
+# States whose results feed reports each House district as one unit (crates/enr ca_sos).
+HOUSE_UNIT_STATES = frozenset({"CA"})
+HOUSE_BASELINE_YEARS = (MIDTERM_YEAR, 2024)
 
 
 def _office(race_id: str) -> str:
@@ -111,6 +137,7 @@ class RaceRow:
     national_beta: float = 1.0
     independent_major: bool = False
     notes: tuple[str, ...] = ()
+    district: str = ""  # House races: the district ("22"), modelled as one reporting unit
 
 
 @dataclass(frozen=True)
@@ -171,6 +198,20 @@ def _baseline(
         order.sort(key=rank)  # stable: keeps the midterm-first order within each rank
     for year, name in order:
         c = contests.get(ContestKey(year, state, name))
+        if c is None:
+            continue
+        c = pool_independent(c) if independent else c
+        if _usable(c):
+            return c
+    return None
+
+
+def _house_baseline(
+    contests: dict[ContestKey, ContestHistory], state: str, district: str, independent: bool
+) -> ContestHistory | None:
+    """The district's 2022 US House contest, else its 2024 one, whichever is first usable."""
+    for year in HOUSE_BASELINE_YEARS:
+        c = contests.get(ContestKey(year, state, HOUSE, district))
         if c is None:
             continue
         c = pool_independent(c) if independent else c
@@ -240,10 +281,11 @@ def build_spec(
 
     for rid, parties in sorted(_fair_by_race(mm, fair).items()):
         office = _office(rid)
-        if office == "HOUSE":
+        house = office == "HOUSE"
+        if house and _state(rid) not in HOUSE_UNIT_STATES:
             out.uncovered.append(Uncovered(rid, HOUSE_REASON))
             continue
-        if office not in STATEWIDE_OFFICES:
+        if not house and office not in STATEWIDE_OFFICES:
             continue  # chamber control and anything else the needle does not model
         st = _state(rid)
         lp = _left_and_p(parties)
@@ -252,10 +294,23 @@ def build_spec(
             continue
         left, p_left = lp
         independent = left == IND
-        base = _baseline(contests, office, st, independent)
-        if base is None:
-            out.uncovered.append(Uncovered(rid, f"no usable 2022/2024 statewide history for {st}"))
-            continue
+        district = race_from_id(rid).district if house else ""
+        if house:
+            base = _house_baseline(contests, st, district, independent)
+            if base is None:
+                out.uncovered.append(
+                    Uncovered(
+                        rid,
+                        f"no usable 2022/2024 US HOUSE history for {st}-{district} "
+                        f"(download {st} --house-only)",
+                    )
+                )
+                continue
+        else:
+            base = _baseline(contests, office, st, independent)
+            if base is None:
+                out.uncovered.append(Uncovered(rid, f"no usable 2022/2024 statewide history for {st}"))
+                continue
         if st not in closings:
             out.uncovered.append(Uncovered(rid, f"{st} missing from poll_closing.toml"))
             continue
@@ -278,6 +333,12 @@ def build_spec(
         else:
             ratio, why = 1.0, f"no state has both {MIDTERM_YEAR} and 2024 totals: default 1.0"
         notes.append(f"turnout_ratio: {why}")
+        if house:
+            notes.append(
+                f"one reporting unit {district_unit_id(st, district)}: expected total "
+                f"{base.tally.total * ratio:,.0f} = {base.year} district total {base.tally.total:,} x ratio "
+                f"(old lines: Prop 50 redrew them for 2026)"
+            )
         out.races.append(
             RaceRow(
                 race_id=rid,
@@ -293,6 +354,7 @@ def build_spec(
                 national_beta=spec.national_beta,
                 independent_major=independent,
                 notes=tuple(notes),
+                district=district,
             )
         )
     return out
@@ -305,7 +367,8 @@ def render_toml(spec: GeneratedSpec, *, generated_on: date, command: str, inputs
         f"#   {command}",
         "# Do not edit by hand: re-run the command (the pre-flight does, on the VM, from fair_live.json).",
         "# Margins: prior_margin_mean = prior_margin_sd * Phi^-1(p_left), prior_margin_sd = the sim's race",
-        "# margin SD (see susq/replay/spec2026.py). House races are not modelled (see the list at the end).",
+        "# margin SD (see susq/replay/spec2026.py). California House seats are single reporting units;",
+        "# other House races are not modelled (see the list at the end).",
     ]
     if spec.fair_produced_utc:
         lines.append(f"# fair values produced {spec.fair_produced_utc}")
@@ -336,6 +399,8 @@ def render_toml(spec: GeneratedSpec, *, generated_on: date, command: str, inputs
         ]
         if r.independent_major:
             lines.append("independent_major = true")
+        if r.district:
+            lines += [f'district = "{r.district}"', "single_unit = true"]
     if spec.uncovered:
         lines += ["", f"# Uncovered ({len(spec.uncovered)} races):"]
         lines += [f"#   {u.race_id}: {u.reason}" for u in spec.uncovered]

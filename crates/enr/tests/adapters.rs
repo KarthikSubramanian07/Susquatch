@@ -1,6 +1,7 @@
 //! Parsers against recorded payloads. Fixtures (see `tests/fixtures/`):
 //! * `ca_sos_governor_testdata_2026-09-28.json`: verbatim CA SoS bulk file (2026 general test data);
 //! * `ca_sos_us_rep_synthetic_midcount.json`: real CA-13/CA-22 structure with synthetic counts;
+//! * `ca_sos_us_rep_district_42_2024-12-03.json`: verbatim CA SoS REST district payload, 2024 general;
 //! * `clarity_sc_2024_detailxml.zip`: SC 2024 general `detailxml.zip`, presidential contest only;
 //! * `clarity_wv_2024_detail.xml` + `clarity_wv_2024_{summary,details}.json`: WV 2024 general;
 //! * `ga_enhanced_voting_2024_president.json`: GA SoS (Enhanced Voting) 2024, three counties.
@@ -60,14 +61,19 @@ fn ca_sos_real_test_data_yields_every_county_mixed() {
         .iter()
         .find(|r| r.county_fips == "06001")
         .expect("Alameda");
-    assert_eq!((alameda.precincts_reporting, alameda.precincts_total), (0, 627));
+    // "0% (0 of 627) precincts reporting" is not passed on: CA precincts are not ballot progress.
+    assert_eq!((alameda.precincts_reporting, alameda.precincts_total), (0, 0));
     assert_eq!(alameda.votes[0].party, "DEM");
     // "September 28, 2026, 2:11 p.m." PDT.
     assert_eq!(alameda.source_ts_ns, 1_790_629_860_000_000_000);
 }
 
+/// The bulk file carries a districtwide row and the district's county pieces (CA-13 spans five
+/// counties, CA-22 five). Each district is one reporting unit from its districtwide row; the
+/// county pieces are skipped so the district is not counted twice. (The fixture's districtwide
+/// counts are synthetic and deliberately differ from the county rows, which shows which is used.)
 #[test]
-fn ca_sos_house_districts_split_across_counties() {
+fn ca_sos_house_districts_are_one_unit_each() {
     let c = ctx(
         "ca_sos",
         "CA",
@@ -78,21 +84,64 @@ fn ca_sos_house_districts_split_across_counties() {
         Tz::America__Los_Angeles,
     );
     let parsed = ca_sos::parse(&fixture("ca_sos_us_rep_synthetic_midcount.json"), &c, 1).expect("parse");
-    let ca13: Vec<_> = parsed
-        .results
-        .iter()
-        .filter(|r| r.race_id == "2026-HOUSE-CA-13")
-        .collect();
-    let ca22: Vec<_> = parsed
-        .results
-        .iter()
-        .filter(|r| r.race_id == "2026-HOUSE-CA-22")
-        .collect();
-    assert_eq!(ca13.len(), 5, "Fresno, Madera, Merced, San Joaquin, Stanislaus");
-    assert_eq!(ca22.len(), 5, "Fresno, Kern, Kings, Madera, Tulare");
-    assert!(ca13.iter().any(|r| r.county_fips == "06047"), "Merced");
-    assert!(ca13.iter().all(|r| r.votes.iter().all(|v| v.votes >= 4000)));
-    assert_eq!((ca13[0].precincts_reporting, ca13[0].precincts_total), (212, 515));
+    assert_eq!(
+        parsed.results.len(),
+        2,
+        "one result per district, no county pieces"
+    );
+    assert_eq!(parsed.unresolved_counties, 0);
+    let ca13 = find(&parsed.results, "CA-HD13", VoteType::Mixed);
+    assert_eq!(ca13.race_id, "2026-HOUSE-CA-13");
+    assert_eq!((votes_for(ca13, "DEM"), votes_for(ca13, "REP")), (15, 11));
+    assert_eq!((ca13.precincts_reporting, ca13.precincts_total), (0, 0));
+    let ca22 = find(&parsed.results, "CA-HD22", VoteType::Mixed);
+    assert_eq!(ca22.race_id, "2026-HOUSE-CA-22");
+    assert_eq!(ca22.votes.len(), 2);
+}
+
+/// Real 2024 general payload from the REST path (`/returns/us-rep/district/42`, near-final
+/// Dec 3 2024 count; see `tests/fixtures/README.md`): one districtwide object, no county rows.
+#[test]
+fn ca_sos_rest_district_payload_2024_is_one_unit() {
+    let c = ctx(
+        "ca_sos_api",
+        "CA",
+        &[("U.S. House of Representatives District 42", "2026-HOUSE-CA-42")],
+        Tz::America__Los_Angeles,
+    );
+    let parsed = ca_sos::parse(&fixture("ca_sos_us_rep_district_42_2024-12-03.json"), &c, 7).expect("parse");
+    assert_eq!(parsed.results.len(), 1);
+    let r = &parsed.results[0];
+    assert_eq!(
+        (r.race_id.as_str(), r.state.as_str(), r.county_fips.as_str()),
+        ("2026-HOUSE-CA-42", "CA", "CA-HD42")
+    );
+    assert_eq!(r.vote_type, VoteType::Mixed as i32);
+    assert_eq!((votes_for(r, "DEM"), votes_for(r, "REP")), (159_153, 74_410));
+    assert_eq!(r.votes[0].candidate, "Robert Garcia");
+    // "100% (178 of 178) precincts reporting" is not passed on as progress.
+    assert_eq!((r.precincts_reporting, r.precincts_total), (0, 0));
+    // "December 3, 2024, 11:53 p.m." PST = 07:53Z Dec 4.
+    assert_eq!(r.source_ts_ns, 1_733_298_780_000_000_000);
+    assert_eq!(r.observed_at_ns, 7);
+
+    // The pipeline accepts the unit key and fills the total from the candidate sum.
+    let mut p = susq_enr::pipeline::Pipeline::default();
+    let out = p.ingest(parsed.results);
+    assert_eq!(out.accepted.len(), 1, "{:?}", out.events);
+    assert_eq!(out.accepted[0].total_votes, 233_563);
+
+    // A House race of another state mapped onto the CA feed is not turned into a CA unit.
+    let wrong = ctx(
+        "ca_sos_api",
+        "CA",
+        &[("U.S. House of Representatives District 42", "2026-HOUSE-NV-42")],
+        Tz::America__Los_Angeles,
+    );
+    let parsed =
+        ca_sos::parse(&fixture("ca_sos_us_rep_district_42_2024-12-03.json"), &wrong, 7).expect("parse");
+    assert!(parsed.results.is_empty());
+    assert_eq!(parsed.unresolved_counties, 1);
 }
 
 #[test]

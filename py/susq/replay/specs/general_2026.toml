@@ -1,12 +1,13 @@
 # Generated on 2026-10-07 by:
-#   python -m susq.replay spec2026 --market-map state/market_map.json --fair state/fair_live.json --history data/replay/county_results_2022.csv --history data/replay/county_results_2024.csv --out py/susq/replay/specs/general_2026.toml
+#   python -m susq.replay spec2026 --market-map state/market_map.json --fair state/fair_live.json --history data/replay/county_results_2022.csv --history data/replay/county_results_2024.csv --history data/replay/house_results_2022.csv --history data/replay/house_results_2024.csv --out py/susq/replay/specs/general_2026.toml
 # Do not edit by hand: re-run the command (the pre-flight does, on the VM, from fair_live.json).
 # Margins: prior_margin_mean = prior_margin_sd * Phi^-1(p_left), prior_margin_sd = the sim's race
-# margin SD (see susq/replay/spec2026.py). House races are not modelled (see the list at the end).
+# margin SD (see susq/replay/spec2026.py). California House seats are single reporting units;
+# other House races are not modelled (see the list at the end).
 # fair values produced 2026-10-01T01:39Z
 # history 2022: 37 states
 # history 2024: 44 states
-history = ["data/replay/county_results_2022.csv", "data/replay/county_results_2024.csv"]
+history = ["data/replay/county_results_2022.csv", "data/replay/county_results_2024.csv", "data/replay/house_results_2022.csv", "data/replay/house_results_2024.csv"]
 seed = 7
 horizon_h = 17.0
 bucket_s = 60.0
@@ -484,6 +485,38 @@ turnout_ratio = 0.7211
 poll_close_utc = "2026-11-04T02:00:00Z"
 
 [[races]]
+# fair p_left=0.9185 (DEM) -> +7.45 pts at sd 5.34
+# turnout_ratio: baseline is the 2022 midterm
+# one reporting unit CA-HD22: expected total 102,852 = 2022 district total 102,852 x ratio (old lines: Prop 50 redrew them for 2026)
+race_id = "2026-HOUSE-CA-22"
+state = "CA"
+year = 2022
+office = "US HOUSE"
+prior_margin_mean = 7.451
+prior_margin_sd = 5.342
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T04:00:00Z"
+district = "22"
+single_unit = true
+
+[[races]]
+# fair p_left=0.9119 (DEM) -> +7.23 pts at sd 5.34
+# turnout_ratio: baseline is the 2022 midterm
+# one reporting unit CA-HD48: expected total 256,742 = 2022 district total 256,742 x ratio (old lines: Prop 50 redrew them for 2026)
+race_id = "2026-HOUSE-CA-48"
+state = "CA"
+year = 2022
+office = "US HOUSE"
+prior_margin_mean = 7.227
+prior_margin_sd = 5.342
+national_beta = 1.000
+turnout_ratio = 1.0000
+poll_close_utc = "2026-11-04T04:00:00Z"
+district = "48"
+single_unit = true
+
+[[races]]
 # fair p_left=0.6950 (DEM) -> +2.72 pts at sd 5.34
 # turnout_ratio: baseline is the 2022 midterm
 race_id = "2026-SEN-AK"
@@ -941,50 +974,48 @@ national_beta = 1.000
 turnout_ratio = 0.7211
 poll_close_utc = "2026-11-04T02:00:00Z"
 
-# Uncovered (46 races):
-#   2026-HOUSE-AL-02: House: needle priors are keyed by county FIPS and the district splits counties
-#   2026-HOUSE-AZ-01: House: needle priors are keyed by county FIPS and the district splits counties
-#   2026-HOUSE-AZ-06: House: needle priors are keyed by county FIPS and the district splits counties
-#   2026-HOUSE-CA-22: House: needle priors are keyed by county FIPS and the district splits counties
-#   2026-HOUSE-CA-48: House: needle priors are keyed by county FIPS and the district splits counties
-#   2026-HOUSE-CO-03: House: needle priors are keyed by county FIPS and the district splits counties
-#   2026-HOUSE-CO-04: House: needle priors are keyed by county FIPS and the district splits counties
-#   2026-HOUSE-CO-08: House: needle priors are keyed by county FIPS and the district splits counties
-#   2026-HOUSE-FL-07: House: needle priors are keyed by county FIPS and the district splits counties
-#   2026-HOUSE-FL-09: House: needle priors are keyed by county FIPS and the district splits counties
-#   2026-HOUSE-FL-13: House: needle priors are keyed by county FIPS and the district splits counties
-#   2026-HOUSE-FL-16: House: needle priors are keyed by county FIPS and the district splits counties
-#   2026-HOUSE-FL-20: House: needle priors are keyed by county FIPS and the district splits counties
-#   2026-HOUSE-FL-22: House: needle priors are keyed by county FIPS and the district splits counties
-#   2026-HOUSE-IA-01: House: needle priors are keyed by county FIPS and the district splits counties
-#   2026-HOUSE-IA-02: House: needle priors are keyed by county FIPS and the district splits counties
-#   2026-HOUSE-IA-03: House: needle priors are keyed by county FIPS and the district splits counties
-#   2026-HOUSE-KY-04: House: needle priors are keyed by county FIPS and the district splits counties
-#   2026-HOUSE-ME-02: House: needle priors are keyed by county FIPS and the district splits counties
-#   2026-HOUSE-MI-07: House: needle priors are keyed by county FIPS and the district splits counties
-#   2026-HOUSE-MI-10: House: needle priors are keyed by county FIPS and the district splits counties
-#   2026-HOUSE-MN-01: House: needle priors are keyed by county FIPS and the district splits counties
-#   2026-HOUSE-MN-02: House: needle priors are keyed by county FIPS and the district splits counties
-#   2026-HOUSE-MN-05: House: needle priors are keyed by county FIPS and the district splits counties
-#   2026-HOUSE-MT-01: House: needle priors are keyed by county FIPS and the district splits counties
-#   2026-HOUSE-NE-02: House: needle priors are keyed by county FIPS and the district splits counties
-#   2026-HOUSE-NH-01: House: needle priors are keyed by county FIPS and the district splits counties
-#   2026-HOUSE-NJ-07: House: needle priors are keyed by county FIPS and the district splits counties
-#   2026-HOUSE-NY-13: House: needle priors are keyed by county FIPS and the district splits counties
-#   2026-HOUSE-NY-17: House: needle priors are keyed by county FIPS and the district splits counties
-#   2026-HOUSE-PA-01: House: needle priors are keyed by county FIPS and the district splits counties
-#   2026-HOUSE-PA-07: House: needle priors are keyed by county FIPS and the district splits counties
-#   2026-HOUSE-PA-08: House: needle priors are keyed by county FIPS and the district splits counties
-#   2026-HOUSE-PA-10: House: needle priors are keyed by county FIPS and the district splits counties
-#   2026-HOUSE-SC-01: House: needle priors are keyed by county FIPS and the district splits counties
-#   2026-HOUSE-TN-05: House: needle priors are keyed by county FIPS and the district splits counties
-#   2026-HOUSE-TX-15: House: needle priors are keyed by county FIPS and the district splits counties
-#   2026-HOUSE-TX-23: House: needle priors are keyed by county FIPS and the district splits counties
-#   2026-HOUSE-TX-28: House: needle priors are keyed by county FIPS and the district splits counties
-#   2026-HOUSE-VA-01: House: needle priors are keyed by county FIPS and the district splits counties
-#   2026-HOUSE-VA-02: House: needle priors are keyed by county FIPS and the district splits counties
-#   2026-HOUSE-VA-05: House: needle priors are keyed by county FIPS and the district splits counties
-#   2026-HOUSE-VA-07: House: needle priors are keyed by county FIPS and the district splits counties
-#   2026-HOUSE-WA-03: House: needle priors are keyed by county FIPS and the district splits counties
-#   2026-HOUSE-WI-01: House: needle priors are keyed by county FIPS and the district splits counties
-#   2026-HOUSE-WI-03: House: needle priors are keyed by county FIPS and the district splits counties
+# Uncovered (44 races):
+#   2026-HOUSE-AL-02: House: only California's feed reports district totals; elsewhere the district splits counties
+#   2026-HOUSE-AZ-01: House: only California's feed reports district totals; elsewhere the district splits counties
+#   2026-HOUSE-AZ-06: House: only California's feed reports district totals; elsewhere the district splits counties
+#   2026-HOUSE-CO-03: House: only California's feed reports district totals; elsewhere the district splits counties
+#   2026-HOUSE-CO-04: House: only California's feed reports district totals; elsewhere the district splits counties
+#   2026-HOUSE-CO-08: House: only California's feed reports district totals; elsewhere the district splits counties
+#   2026-HOUSE-FL-07: House: only California's feed reports district totals; elsewhere the district splits counties
+#   2026-HOUSE-FL-09: House: only California's feed reports district totals; elsewhere the district splits counties
+#   2026-HOUSE-FL-13: House: only California's feed reports district totals; elsewhere the district splits counties
+#   2026-HOUSE-FL-16: House: only California's feed reports district totals; elsewhere the district splits counties
+#   2026-HOUSE-FL-20: House: only California's feed reports district totals; elsewhere the district splits counties
+#   2026-HOUSE-FL-22: House: only California's feed reports district totals; elsewhere the district splits counties
+#   2026-HOUSE-IA-01: House: only California's feed reports district totals; elsewhere the district splits counties
+#   2026-HOUSE-IA-02: House: only California's feed reports district totals; elsewhere the district splits counties
+#   2026-HOUSE-IA-03: House: only California's feed reports district totals; elsewhere the district splits counties
+#   2026-HOUSE-KY-04: House: only California's feed reports district totals; elsewhere the district splits counties
+#   2026-HOUSE-ME-02: House: only California's feed reports district totals; elsewhere the district splits counties
+#   2026-HOUSE-MI-07: House: only California's feed reports district totals; elsewhere the district splits counties
+#   2026-HOUSE-MI-10: House: only California's feed reports district totals; elsewhere the district splits counties
+#   2026-HOUSE-MN-01: House: only California's feed reports district totals; elsewhere the district splits counties
+#   2026-HOUSE-MN-02: House: only California's feed reports district totals; elsewhere the district splits counties
+#   2026-HOUSE-MN-05: House: only California's feed reports district totals; elsewhere the district splits counties
+#   2026-HOUSE-MT-01: House: only California's feed reports district totals; elsewhere the district splits counties
+#   2026-HOUSE-NE-02: House: only California's feed reports district totals; elsewhere the district splits counties
+#   2026-HOUSE-NH-01: House: only California's feed reports district totals; elsewhere the district splits counties
+#   2026-HOUSE-NJ-07: House: only California's feed reports district totals; elsewhere the district splits counties
+#   2026-HOUSE-NY-13: House: only California's feed reports district totals; elsewhere the district splits counties
+#   2026-HOUSE-NY-17: House: only California's feed reports district totals; elsewhere the district splits counties
+#   2026-HOUSE-PA-01: House: only California's feed reports district totals; elsewhere the district splits counties
+#   2026-HOUSE-PA-07: House: only California's feed reports district totals; elsewhere the district splits counties
+#   2026-HOUSE-PA-08: House: only California's feed reports district totals; elsewhere the district splits counties
+#   2026-HOUSE-PA-10: House: only California's feed reports district totals; elsewhere the district splits counties
+#   2026-HOUSE-SC-01: House: only California's feed reports district totals; elsewhere the district splits counties
+#   2026-HOUSE-TN-05: House: only California's feed reports district totals; elsewhere the district splits counties
+#   2026-HOUSE-TX-15: House: only California's feed reports district totals; elsewhere the district splits counties
+#   2026-HOUSE-TX-23: House: only California's feed reports district totals; elsewhere the district splits counties
+#   2026-HOUSE-TX-28: House: only California's feed reports district totals; elsewhere the district splits counties
+#   2026-HOUSE-VA-01: House: only California's feed reports district totals; elsewhere the district splits counties
+#   2026-HOUSE-VA-02: House: only California's feed reports district totals; elsewhere the district splits counties
+#   2026-HOUSE-VA-05: House: only California's feed reports district totals; elsewhere the district splits counties
+#   2026-HOUSE-VA-07: House: only California's feed reports district totals; elsewhere the district splits counties
+#   2026-HOUSE-WA-03: House: only California's feed reports district totals; elsewhere the district splits counties
+#   2026-HOUSE-WI-01: House: only California's feed reports district totals; elsewhere the district splits counties
+#   2026-HOUSE-WI-03: House: only California's feed reports district totals; elsewhere the district splits counties

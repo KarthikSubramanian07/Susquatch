@@ -1097,10 +1097,16 @@ struct FakeNeedle {
 
 impl FakeNeedle {
     fn new(cfg: &Config, now: i64) -> (Self, tokio::sync::watch::Receiver<susq_bus::NeedleSnapshot>) {
-        let races = ["2026-SEN-OH", "2026-GOV-TX", "2026-GOV-CA", "2026-GOV-NV"]
-            .into_iter()
-            .map(str::to_owned)
-            .collect();
+        let races = [
+            "2026-SEN-OH",
+            "2026-GOV-TX",
+            "2026-GOV-CA",
+            "2026-GOV-NV",
+            "2026-HOUSE-CA-22",
+        ]
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
         let state = susq_bus::NeedleState::new(susq_bus::WatchdogCfg::from_config(&cfg.needle), races)
             .with_posterior_ttl(Duration::from_secs(cfg.needle.posterior_max_age_s));
         let (tx, rx) = tokio::sync::watch::channel(state.snapshot(now));
@@ -1146,7 +1152,8 @@ impl FakeNeedle {
         self.publish(now);
     }
 
-    /// One posterior: Democrat wins `race` with `p_dem`, the margin it rests on, `n_batches` batches.
+    /// One posterior: Democrat wins `race` with `p_dem`, the margin it rests on, `n_batches` batches,
+    /// 60% of the expected vote counted.
     fn posterior(
         &mut self,
         now: i64,
@@ -1155,6 +1162,21 @@ impl FakeNeedle {
         margin_mean: f64,
         margin_sd: f64,
         n_batches: u32,
+    ) {
+        self.posterior_counted(now, race, p_dem, margin_mean, margin_sd, n_batches, 0.6);
+    }
+
+    /// [`Self::posterior`] with `reported_frac` of the expected vote counted.
+    #[allow(clippy::too_many_arguments)]
+    fn posterior_counted(
+        &mut self,
+        now: i64,
+        race: &str,
+        p_dem: f64,
+        margin_mean: f64,
+        margin_sd: f64,
+        n_batches: u32,
+        reported_frac: f64,
     ) {
         self.posterior_seq += 1;
         let header = Self::header(self.posterior_seq, now);
@@ -1168,7 +1190,7 @@ impl FakeNeedle {
                     margin_mean,
                     margin_sd,
                     n_batches,
-                    reported_frac: 0.6,
+                    reported_frac,
                     ..Default::default()
                 }],
             }),
@@ -1288,13 +1310,64 @@ async fn needle_posterior_drives_an_election_night_buy_and_silence_stops_it() {
     );
 }
 
+/// One lock-time-rule scenario: a race the needle projects for the Democrat on a partial count, its
+/// Democrat leg on the Cup, and what the needle said before going quiet.
+struct LockCase {
+    race: &'static str,
+    market: &'static str,
+    title: &'static str,
+    ex: &'static str,
+    cluster: &'static str,
+    p_dem: f64,
+    margin_mean: f64,
+    margin_sd: f64,
+    n_batches: u32,
+    reported_frac: f64,
+}
+
 /// EXP-006 lock-time rule, end to end. Nevada governor at 60% counted on Wednesday morning: the
 /// Democrat trails on the print, the needle projects D +3 ± 1.2 (q 0.994) from the late Clark mail
 /// still to come, and then goes quiet on the race (Clark posts once a day) while it keeps
 /// heartbeating. Two hours later the Cup sells the Democrat at 0.40 off the print. With the lock
 /// rule on the executor buys the Democrat on that quiet posterior; with it off nothing is sent,
 /// because the posterior is older than `[needle] posterior_max_age_s`.
+const NEVADA: LockCase = LockCase {
+    race: "2026-GOV-NV",
+    market: "m5",
+    title: "NV-GOV",
+    ex: "7",
+    cluster: "state:NV",
+    p_dem: 0.994,
+    margin_mean: 3.0,
+    margin_sd: 1.2,
+    n_batches: 40,
+    reported_frac: 0.6,
+};
+
+/// The same rule on a California House seat, which the needle can only model because the CA SoS
+/// feed reports the district as ONE unit (`CA-HD22`, from its districtwide row). 55% counted at the
+/// lock with the Democrat trailing on the print (the 2024 CA-13 and CA-45 pattern); the needle
+/// projects D +2.5 ± 1.0 from the uncounted 45%, the count-order override for `2026-HOUSE-CA-*`
+/// registers −3 ± 1.5 at the lock (the count still to come favours the Democrat), and the Cup
+/// prices the Democrat off the print.
+const CA_22: LockCase = LockCase {
+    race: "2026-HOUSE-CA-22",
+    market: "m6",
+    title: "CA-22",
+    ex: "8",
+    cluster: "state:CA",
+    p_dem: 0.99,
+    margin_mean: 2.5,
+    margin_sd: 1.0,
+    n_batches: 12,
+    reported_frac: 0.55,
+};
+
 async fn nevada_lock_session(lock_rule_enabled: bool) -> (Session, usize) {
+    lock_session(&NEVADA, lock_rule_enabled).await
+}
+
+async fn lock_session(case: &LockCase, lock_rule_enabled: bool) -> (Session, usize) {
     let home = tempfile::tempdir().expect("tmp");
     let mut cfg = config();
     cfg.strategies.en.enabled = true;
@@ -1312,15 +1385,15 @@ async fn nevada_lock_session(lock_rule_enabled: bool) -> (Session, usize) {
         },
     ));
     seed(&mock);
-    mock.add_market("m5", "NV-GOV", &[("7", "DEM")]);
+    mock.add_market(case.market, case.title, &[(case.ex, "DEM")]);
     // While the needle is fresh nobody sells the Democrat below 0.995: no edge. (The bid sits low so
     // the later 0.40 offer rests instead of crossing it.)
-    mock.seed_order("alice", "7", Side::Yes, Action::Buy, 100, px(3500));
-    mock.seed_order("bob", "7", Side::Yes, Action::Sell, 100, px(9950));
+    mock.seed_order("alice", case.ex, Side::Yes, Action::Buy, 100, px(3500));
+    mock.seed_order("bob", case.ex, Side::Yes, Action::Sell, 100, px(9950));
     write_market_map_plus(
         home.path(),
         &cfg,
-        vec![map_rule("7", "m5", "2026-GOV-NV", "DEM", &["state:NV"])],
+        vec![map_rule(case.ex, case.market, case.race, "DEM", &[case.cluster])],
     );
     let (mut needle, rx) = FakeNeedle::new(&cfg, clock.now_ns());
     let engine = build(BuildOpts {
@@ -1351,17 +1424,25 @@ async fn nevada_lock_session(lock_rule_enabled: bool) -> (Session, usize) {
     for _ in 0..cfg.needle.resume_after_healthy {
         needle.heartbeat(s.clock.now_ns());
     }
-    // reported_frac 0.6 (FakeNeedle's), 40 county batches.
-    needle.posterior(s.clock.now_ns(), "2026-GOV-NV", 0.994, 3.0, 1.2, 40);
+    needle.posterior_counted(
+        s.clock.now_ns(),
+        case.race,
+        case.p_dem,
+        case.margin_mean,
+        case.margin_sd,
+        case.n_batches,
+        case.reported_frac,
+    );
     s.tick(1).await;
     s.tick(1).await;
     assert!(
         s.intents("en").is_empty(),
-        "no edge while the Cup asks 0.995 for a 0.994 Democrat"
+        "{}: no edge while the Cup asks 0.995 for the Democrat",
+        case.race
     );
 
     // Two hours on, heartbeating every 5 s (well inside heartbeat_timeout_s), no new batch for
-    // Nevada; the engine steps every half hour.
+    // the race; the engine steps every half hour.
     for _ in 0..4 {
         for _ in 0..(30 * 60 / 5) {
             s.clock.advance(Duration::from_secs(5));
@@ -1375,7 +1456,7 @@ async fn nevada_lock_session(lock_rule_enabled: bool) -> (Session, usize) {
     );
     // 14:30Z: the Cup now sells the Democrat at 0.40 off the print.
     s.mock
-        .seed_order("carol", "7", Side::Yes, Action::Sell, 100, px(4000));
+        .seed_order("carol", case.ex, Side::Yes, Action::Sell, 100, px(4000));
     // Without realtime the book is refetched by REST once it is half its max age old.
     for _ in 0..cfg.live.book_max_age_s {
         needle.heartbeat(s.clock.now_ns());
@@ -1388,7 +1469,7 @@ async fn nevada_lock_session(lock_rule_enabled: bool) -> (Session, usize) {
     );
     if lock_rule_enabled {
         assert!(
-            n.quiet_posteriors.contains_key("2026-GOV-NV"),
+            n.quiet_posteriors.contains_key(case.race),
             "the quiet posterior is passed on"
         );
     } else {
@@ -1418,4 +1499,23 @@ async fn lock_rule_buys_a_trailing_nevada_democrat_on_a_quiet_needle_only_when_o
         "with the lock rule off a quiet posterior is never traded"
     );
     assert_eq!(s.paper_position("7").await, 0);
+}
+
+#[tokio::test]
+async fn lock_rule_buys_a_trailing_california_house_democrat_only_when_on() {
+    let (s, placed) = lock_session(&CA_22, true).await;
+    assert!(
+        placed > 0,
+        "the lock rule must buy the CA-22 Democrat on the quiet posterior"
+    );
+    assert!(
+        s.paper_position(CA_22.ex).await > 0,
+        "the buy filled against the 0.40 ask"
+    );
+    let (s, placed) = lock_session(&CA_22, false).await;
+    assert_eq!(
+        placed, 0,
+        "with the lock rule off a quiet House posterior is never traded"
+    );
+    assert_eq!(s.paper_position(CA_22.ex).await, 0);
 }
