@@ -169,6 +169,44 @@ merge_rows = true
 precincts_reporting = "PrecinctsReported"
 precincts_total = "PrecinctsParticipating"
 
+# ── Texas Secretary of State (Civix results API, static_json over base64) ─────────────────
+# Since 2025 Texas results run on Civix ("Civix Election Night Results",
+# goelect.txelections.civixapps.com/ivis-enr-ui/). Its API answers plain GETs with no challenge
+# (verified 2026-10-06) but wraps every document as {"upload": "<base64 JSON>"} and sends
+# `cache-control: no-cache` with no ETag (about 1.8 MB per poll for 254 counties).
+# Election ids come from .../api/s3/enr/electionConstants: 53815 = "2026 NOVEMBER GENERAL
+# ELECTION". Its countyInfo currently holds a 254-county skeleton with 2025 propositions at zero
+# votes, so nothing maps until the 2026 contests appear; it is enabled because that is harmless.
+# The decoded document is {<county index>: {N: county name, Summary: {PRR, PRP, ...},
+# Races: {<id>: {N: contest, C: {<id>: {N, P, V, EV}}}}}}, the same schema as the 2024 legacy
+# site (results.texas-election.com/static/data/election/49664/1012/County.json, the fixture,
+# which says ON for the contest name and keys counties by FIPS). `EV` is early votes (in person
+# and mail); the remainder is Election Day. The mapper cannot split a scalar pair yet, so
+# results are MIXED totals. Summary.PRR / PRP are read as precincts reporting / participating
+# (both 23 of 23 for Anderson 2024 final; the field meaning is inferred, not documented).
+# Contest names: "U. S. SENATOR " (trailing space; the race map ignores it) and "GOVERNOR", as
+# printed in the 2026 primary (53813).
+[[sources]]
+id = "tx_sos"
+state = "TX"
+kind = "static_json"
+tz = "America/Chicago"
+poll_interval_s = 45.0
+timeout_ms = 30000             # the full document takes 9 to 11 s to download (2026-10-06)
+urls = ["https://goelect.txelections.civixapps.com/api-ivis-system/api/s3/enr/election/countyInfo/53815"]
+
+[sources.mapping]
+unwrap_base64 = "upload"
+rows = "*.Races.*"
+race = "N"
+county = "^0.N"
+candidates = "C.*"
+candidate_name = "N"
+candidate_party = "P"
+candidate_votes = "V"
+precincts_reporting = "^0.Summary.PRR"
+precincts_total = "^0.Summary.PRP"
+
 # ── Georgia (Enhanced Voting; not Clarity since 2024), discovered at runtime ──────────────
 # Election slugs and ballot-item ids are minted per election and published late, so this source
 # names *what* to follow and finds *where* itself: it polls the jurisdiction's election list until
@@ -252,6 +290,17 @@ race_id = "2026-SEN-NC"
 source = "az_sos"
 contest = "Governor"
 race_id = "2026-GOV-AZ"
+
+# Texas: names as printed by the 2026 primary on the same Civix system (see tx_sos).
+[[races]]
+source = "tx_sos"
+contest = "U. S. SENATOR"
+race_id = "2026-SEN-TX"
+
+[[races]]
+source = "tx_sos"
+contest = "GOVERNOR"
+race_id = "2026-GOV-TX"
 
 # California House: the bulk files say "United States Representative District N", the REST API
 # says "U.S. House of Representatives District N". Both map to the same race id.

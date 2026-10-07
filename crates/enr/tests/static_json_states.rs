@@ -1,7 +1,11 @@
-//! `static_json` sources for Arizona against real payloads, through the mappings
+//! `static_json` sources for Arizona and Texas against real payloads, through the mappings
 //! shipped in `config/enr_sources.toml`. Fixture provenance is in `tests/fixtures/README.md`:
 //! * `az_sos_2024_all_county_races_trimmed.json` + `az_sos_2024_election_47_0.json`: AZ SoS
-//!   2024 general (eid 47, upload 12036), Apache, Pima and Santa Cruz counties.
+//!   2024 general (eid 47, upload 12036), Apache, Pima and Santa Cruz counties;
+//! * `tx_sos_2024_county_trimmed.json`: TX SoS legacy site, 2024 general County.json (Anderson,
+//!   Harris, El Paso);
+//! * `tx_civix_2026_primary_countyinfo_trimmed.json`: TX Civix countyInfo for the 2026 Republican
+//!   primary (Mitchell, Harris), re-wrapped as `{"upload": "<base64>"}` after trimming.
 
 use chrono_tz::Tz;
 use susq_contracts::v1::{CountyResult, VoteType};
@@ -105,6 +109,112 @@ fn az_version_document_names_the_upload() {
     assert!(static_json::parse_version(br#"{"uploadId":null}"#, &v.path).is_err());
     assert!(static_json::parse_version(br#"{"uploadId":"../x"}"#, &v.path).is_err());
     assert!(static_json::parse_version(b"<html>", &v.path).is_err());
+}
+
+#[test]
+fn tx_legacy_2024_county_file_maps_by_name() {
+    let cfg = repo_config();
+    // The legacy site names contests `ON` and is not base64-wrapped; otherwise identical.
+    let mut mapping = repo_mapping(&cfg, "tx_sos");
+    mapping.unwrap_base64 = None;
+    mapping.race = "ON".into();
+    let m = mapping.compile().expect("compile");
+    let c = ctx(
+        "tx_sos",
+        "TX",
+        &[
+            ("U. S. SENATOR", "2024-SEN-TX"),
+            ("PRESIDENT/VICE-PRESIDENT", "2024-PRES-TX"),
+        ],
+        Tz::America__Chicago,
+    );
+    let parsed = static_json::parse(&fixture("tx_sos_2024_county_trimmed.json"), &m, &c, 1).expect("parse");
+    assert_eq!(parsed.unresolved_counties, 0);
+    assert_eq!(parsed.results.len(), 3 * 2);
+    let harris = find(&parsed.results, "2024-SEN-TX", "48201");
+    assert_eq!((votes(harris, "DEM"), votes(harris, "REP")), (841_784, 666_027));
+    assert_eq!(
+        (harris.precincts_reporting, harris.precincts_total),
+        (1_173, 1_173)
+    );
+    let el_paso = find(&parsed.results, "2024-PRES-TX", "48141");
+    assert_eq!((votes(el_paso, "DEM"), votes(el_paso, "REP")), (143_156, 105_124));
+    let anderson = find(&parsed.results, "2024-SEN-TX", "48001");
+    assert_eq!((votes(anderson, "REP"), votes(anderson, "DEM")), (15_022, 3_872));
+    assert!(
+        parsed
+            .results
+            .iter()
+            .all(|r| r.vote_type == VoteType::Mixed as i32)
+    );
+}
+
+#[test]
+fn tx_civix_base64_payload_with_shipped_mapping_and_race_map() {
+    let cfg = repo_config();
+    let m = repo_mapping(&cfg, "tx_sos").compile().expect("compile");
+    let c = AdapterContext {
+        races: cfg.race_map("tx_sos"),
+        ..ctx("tx_sos", "TX", &[], Tz::America__Chicago)
+    };
+    let parsed = static_json::parse(
+        &fixture("tx_civix_2026_primary_countyinfo_trimmed.json"),
+        &m,
+        &c,
+        1,
+    )
+    .expect("parse");
+    assert_eq!(parsed.unresolved_counties, 0);
+    assert_eq!(
+        parsed.results.len(),
+        2 * 2,
+        "Senate and governor, Mitchell and Harris"
+    );
+    let harris_sen = find(&parsed.results, "2026-SEN-TX", "48201");
+    let cornyn = harris_sen
+        .votes
+        .iter()
+        .find(|v| v.candidate == "JOHN CORNYN (I)")
+        .expect("Cornyn");
+    assert_eq!((cornyn.votes, cornyn.party.as_str()), (76_361, "REP"));
+    assert_eq!(
+        (harris_sen.precincts_reporting, harris_sen.precincts_total),
+        (1_225, 1_225)
+    );
+    let mitchell_gov = find(&parsed.results, "2026-GOV-TX", "48335");
+    assert_eq!(
+        votes(mitchell_gov, "REP"),
+        mitchell_gov.votes.iter().map(|v| v.votes).sum::<u64>()
+    );
+    assert!(
+        mitchell_gov
+            .votes
+            .iter()
+            .any(|v| v.candidate == "GREG ABBOTT (I)" && v.votes == 669)
+    );
+    // Garbage inside the wrapper fails the payload instead of yielding nothing.
+    assert!(static_json::parse(br#"{"upload":"!!!"}"#, &m, &c, 1).is_err());
+    assert!(static_json::parse(br#"{"other":"e30="}"#, &m, &c, 1).is_err());
+}
+
+#[test]
+fn base64_decoder_matches_reference_vectors() {
+    for (enc, dec) in [
+        ("", ""),
+        ("Zg==", "f"),
+        ("Zm8=", "fo"),
+        ("Zm9v", "foo"),
+        ("Zm9vYg", "foob"),
+        ("Zm9vYmE=", "fooba"),
+        ("Zm9v\nYmFy", "foobar"),
+    ] {
+        assert_eq!(
+            static_json::decode_base64(enc).expect(enc),
+            dec.as_bytes(),
+            "{enc}"
+        );
+    }
+    assert!(static_json::decode_base64("Zm9v*").is_err());
 }
 
 fn versioned_config(base: &str) -> EnrConfig {
@@ -229,7 +339,7 @@ candidate_votes = "v"
 #[test]
 fn repo_sources_build() {
     let cfg = repo_config();
-    for id in ["az_sos"] {
+    for id in ["az_sos", "tx_sos"] {
         let s = cfg.sources.iter().find(|s| s.id == id).expect(id);
         assert!(build_source(&cfg, s).is_ok(), "{id}");
     }
