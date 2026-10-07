@@ -10,6 +10,7 @@ use std::{
 
 use chrono::{DateTime, Utc};
 use parking_lot::Mutex;
+use susq_core::OrderId;
 use susq_core::{
     Action, Calendar, Clock, ExchangeId, ManualClock, MarketIndex, Mode, OrderBundle, OrderSpec, Pips, Qty,
     Side, TournamentId,
@@ -17,7 +18,13 @@ use susq_core::{
 use susq_gateway::{Blocked, Gateway, GatewayDeps, KillSwitch, Lease, LeaseConfig, RetryPolicy, SendOutcome};
 use susq_journal::{Journal, JournalConfig};
 use susq_oms::{Oms, OmsConfig, OrderState};
-use susq_platform::mock::{CALLER, Endpoint, Fault, MockConfig, MockPlatform};
+use susq_platform::{
+    BatchRequest, BatchResponse, BulkPrices, CancelAllResponse, CancelOutcome, CancelScope, Collateral,
+    Constraints, Fill, Leaderboard, LeaderboardPeriod, Market, MarketStatusFilter, MultiLegRequest,
+    MultiLegResponse, OrderAck, OrderBook, OrderStatusFilter, Page, PlaceOrderRequest, PlatformAdapter,
+    PlatformResult, Pnl, PnlPeriod, Positions, RealtimeToken, Relationship, Tournament,
+    mock::{CALLER, Endpoint, Fault, MockConfig, MockPlatform},
+};
 use susq_risk::{PreTrade, RiskContext, RiskLimits};
 use uuid::Uuid;
 
@@ -64,6 +71,15 @@ fn harness(mode: Mode) -> Harness {
 }
 
 fn harness_with(mode: Mode, journal: impl FnOnce(&Path) -> Journal) -> Harness {
+    harness_writes(mode, journal, |mock, _| mock)
+}
+
+/// Like [`harness_with`], with the gateway's writes going through `wrap(mock, clock)`.
+fn harness_writes(
+    mode: Mode,
+    journal: impl FnOnce(&Path) -> Journal,
+    wrap: impl FnOnce(Arc<MockPlatform>, ManualClock) -> Arc<dyn PlatformAdapter>,
+) -> Harness {
     let dir = tempfile::tempdir().expect("tmp");
     let root = dir.path().to_owned();
     let clock = ManualClock::at(t0());
@@ -98,8 +114,9 @@ fn harness_with(mode: Mode, journal: impl FnOnce(&Path) -> Journal) -> Harness {
         clock.now_ns(),
     )
     .expect("oms");
+    let writes = wrap(mock.clone(), clock.clone());
     let gw = Gateway::new(GatewayDeps {
-        writes: mock.clone(),
+        writes,
         mode,
         go_live_file: root.join("ops/GO_LIVE"),
         kill: KillSwitch::new(root.join("ops/KILL")),
@@ -449,4 +466,171 @@ async fn risk_refusals_are_journaled_with_what_the_caps_saw() {
     assert_eq!(b["detail"]["positions"], 0);
     assert_eq!(b["detail"]["resting"], 0);
     assert_eq!(b["order"]["legs"][0]["intent_id"], "t:15");
+}
+
+// ── Orders whose own expiry passes before the venue accepts them ─────────────────────────────────
+
+/// Writes that take `delay` of engine time before reaching the venue: what a 60 s rate-limit pause
+/// (or the paper broker's rate-limited book read) does to an order with a shorter time-to-live.
+struct SlowWrites {
+    inner: Arc<MockPlatform>,
+    clock: ManualClock,
+    delay: Duration,
+}
+
+#[async_trait::async_trait]
+impl PlatformAdapter for SlowWrites {
+    async fn tournament(&self, slug: &str) -> PlatformResult<Tournament> {
+        self.inner.tournament(slug).await
+    }
+    async fn markets_page(
+        &self,
+        slug: &str,
+        status: MarketStatusFilter,
+        cursor: Option<&str>,
+    ) -> PlatformResult<Page<Market>> {
+        self.inner.markets_page(slug, status, cursor).await
+    }
+    async fn prices(&self, tid: &TournamentId, ids: &[ExchangeId]) -> PlatformResult<BulkPrices> {
+        self.inner.prices(tid, ids).await
+    }
+    async fn orderbook(
+        &self,
+        tid: &TournamentId,
+        exchange: &ExchangeId,
+        depth: u32,
+    ) -> PlatformResult<OrderBook> {
+        self.inner.orderbook(tid, exchange, depth).await
+    }
+    async fn place_order(&self, req: &PlaceOrderRequest) -> PlatformResult<OrderAck> {
+        self.clock.advance(self.delay);
+        self.inner.place_order(req).await
+    }
+    async fn place_batch(&self, req: &BatchRequest) -> PlatformResult<BatchResponse> {
+        self.clock.advance(self.delay);
+        self.inner.place_batch(req).await
+    }
+    async fn place_multi_leg(&self, req: &MultiLegRequest) -> PlatformResult<MultiLegResponse> {
+        self.clock.advance(self.delay);
+        self.inner.place_multi_leg(req).await
+    }
+    async fn cancel_order(&self, id: OrderId) -> PlatformResult<CancelOutcome> {
+        self.inner.cancel_order(id).await
+    }
+    async fn cancel_all(&self, tid: &TournamentId, scope: &CancelScope) -> PlatformResult<CancelAllResponse> {
+        self.inner.cancel_all(tid, scope).await
+    }
+    async fn orders_page(
+        &self,
+        tid: &TournamentId,
+        status: OrderStatusFilter,
+        exchange: Option<&ExchangeId>,
+        cursor: Option<&str>,
+    ) -> PlatformResult<Page<susq_platform::Order>> {
+        self.inner.orders_page(tid, status, exchange, cursor).await
+    }
+    async fn positions(&self, slug: &str) -> PlatformResult<Positions> {
+        self.inner.positions(slug).await
+    }
+    async fn pnl(&self, slug: &str, period: PnlPeriod) -> PlatformResult<Pnl> {
+        self.inner.pnl(slug, period).await
+    }
+    async fn fills_page(&self, slug: &str, cursor: Option<&str>) -> PlatformResult<Page<Fill>> {
+        self.inner.fills_page(slug, cursor).await
+    }
+    async fn leaderboard(
+        &self,
+        slug: &str,
+        period: LeaderboardPeriod,
+        limit: u32,
+        offset: u32,
+    ) -> PlatformResult<Leaderboard> {
+        self.inner.leaderboard(slug, period, limit, offset).await
+    }
+    async fn relationships_page(
+        &self,
+        tid: &TournamentId,
+        cursor: Option<&str>,
+    ) -> PlatformResult<Page<Relationship>> {
+        self.inner.relationships_page(tid, cursor).await
+    }
+    async fn constraints(
+        &self,
+        tid: &TournamentId,
+        violations_only: bool,
+        min_violation: f64,
+    ) -> PlatformResult<Constraints> {
+        self.inner.constraints(tid, violations_only, min_violation).await
+    }
+    async fn realtime_token(&self) -> PlatformResult<RealtimeToken> {
+        self.inner.realtime_token().await
+    }
+    async fn collateral(&self, tid: &TournamentId) -> PlatformResult<Collateral> {
+        self.inner.collateral(tid).await
+    }
+}
+
+/// The Oct 7 paper run: a 60 s pause inside the call outlasted a 30 s order, the venue refused
+/// the stale order, and eleven such refusals tripped the reject breaker. An order whose own expiry
+/// passed before the venue accepted it is now a local expiry: closed, never a rejection.
+#[tokio::test(start_paused = true)]
+async fn an_order_that_expires_waiting_inside_the_call_is_expired_not_rejected() {
+    let h = harness_writes(
+        Mode::Paper,
+        |_| Journal::discard(),
+        |mock, clock| {
+            Arc::new(SlowWrites {
+                inner: mock,
+                clock,
+                delay: Duration::from_secs(61),
+            })
+        },
+    );
+    let mut b = bundle("t:exp", 10, 5500);
+    b.legs[0].ttl = Duration::from_secs(30);
+    let out = h.submit_one(&b).await;
+    assert!(matches!(out, SendOutcome::Expired), "{out:?}");
+    assert_eq!(
+        h.mock.calls(Endpoint::PlaceOrder),
+        1,
+        "the venue saw it once and refused it"
+    );
+    assert_eq!(h.state("t:exp"), Some(OrderState::Expired));
+}
+
+/// A retry that would go out after the order's own expiry is not sent at all.
+#[tokio::test(start_paused = true)]
+async fn a_retry_past_the_order_expiry_is_not_sent() {
+    let h = harness(Mode::Paper);
+    h.mock.inject(Endpoint::PlaceOrder, Fault::Unavailable);
+    let mut b = bundle("t:retry", 10, 5500);
+    b.legs[0].ttl = Duration::from_secs(10); // shorter than the 30 s lease, which must stay valid
+    let handle = h.submit(&b).expect("gates pass").remove(0);
+    // Let the first attempt run and fail with 503, then let the order's own expiry pass.
+    while h.mock.calls(Endpoint::PlaceOrder) == 0 {
+        tokio::task::yield_now().await;
+    }
+    h.clock.advance(Duration::from_secs(15));
+    let out = handle.await.expect("task");
+    assert!(matches!(out, SendOutcome::Expired), "{out:?}");
+    assert_eq!(h.mock.calls(Endpoint::PlaceOrder), 1, "no doomed retry");
+    assert_eq!(h.state("t:retry"), Some(OrderState::Expired));
+}
+
+/// An order already within a second of its expiry before the first attempt never leaves.
+#[tokio::test(start_paused = true)]
+async fn an_order_at_its_expiry_before_the_first_attempt_is_never_sent() {
+    let h = harness(Mode::Paper);
+    let mut b = bundle("t:late", 10, 5500);
+    b.legs[0].ttl = Duration::from_secs(10);
+    let handle = h.submit(&b).expect("gates pass").remove(0);
+    h.clock.advance(Duration::from_millis(9_500));
+    let out = handle.await.expect("task");
+    assert!(matches!(out, SendOutcome::Expired), "{out:?}");
+    assert_eq!(h.mock.calls(Endpoint::PlaceOrder), 0);
+    assert_eq!(
+        h.state("t:late"),
+        Some(OrderState::Cancelled),
+        "never sent: cancelled, not expired at the venue"
+    );
 }
