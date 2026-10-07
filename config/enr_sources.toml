@@ -298,6 +298,21 @@ precincts_total = "totalPrecincts"
 # Governor (R)"); the 2026 general is not set up yet. Needs an HTML adapter and a way past the
 # challenge. Races: 2026-SEN-KS, 2026-GOV-KS.
 
+# ── Alaska Division of Elections: live CSV, but by house district, not county (2026-10-06) ──
+# Not configured. The feed is reachable with no challenge (200 to plain curl):
+# https://www.elections.alaska.gov/enr26/results/GA_ENR_Precinct_State_of_Alaska.csv (2026; it
+# holds the certified primary today), plus /enr26/results/statewide.js and precincts.js (JSON
+# with `updated`, totals and 40 districts). 2024 lived at /results/24GENR/ENRbyPrecinct.csv. One
+# row per (precinct, contest, candidate) with Election Day / Absentee / Early Voting / Question /
+# Remote vote columns, so the csv kind could read it, but Alaska reports by precinct and state
+# house district ("01-600 Ketchikan No. 1"); boroughs (the FIPS county equivalents) are not in
+# the file, and absentee and questioned ballots sit in "District N - Absentee" pseudo-precincts.
+# CountyResult needs a 5-digit FIPS, so this waits on a decision to model Alaska by district
+# (pseudo-FIPS per district, matching how MEDSL history reports it). Reporting_flag is always 0,
+# even in the final 2024 file. 2026 contest names: "U.S. Senator", "Governor / Lieutenant
+# Governor". The 2026 general is not posted (/election-results/e/?id=26genr: "No Election
+# Results Found"). Races: 2026-SEN-AK, 2026-GOV-AK.
+
 # ── Georgia (Enhanced Voting; not Clarity since 2024), discovered at runtime ──────────────
 # Election slugs and ballot-item ids are minted per election and published late, so this source
 # names *what* to follow and finds *where* itself: it polls the jurisdiction's election list until
