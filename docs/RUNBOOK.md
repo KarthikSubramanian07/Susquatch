@@ -71,8 +71,10 @@ what you saw in the reason. It goes into `ops/KILL` and tomorrow's summary.
 **100 reads and 30 writes a minute** (changelog Oct 1; more keys add nothing). A `429` carries `Retry-After: 60`, and
 the trading engine has its own throttle under the same code, so one 429 is a minute of lost writes. What that means:
 
-- Only run **one** trader. The bridge and rust-live use the same key, so running both at once splits the one budget
-  even though the lease stops them trading together. Set `COMPOSE_PROFILES` to one of them, never both.
+- Only run **one** trader on the night. The bridge and rust-live use the same key, so running both splits the one
+  budget even though the lease stops them trading together. The pre-cutover paper run (§2a) is the one planned
+  overlap, and `[platform] max_rps = 1.0` halves each process's share for exactly that; the night profile raises it
+  to 2.0 once the bridge is stopped.
 - Don't poll from your laptop with the same key while the bot is working (a `curl` loop is a read the bot can't make).
   The dashboard reads our own status files, not the platform, so it is free.
 - Books come over realtime (`tournament:{id}:market:{market_id}`, one-second batches, full `asOf`-versioned books),
@@ -80,6 +82,61 @@ the trading engine has its own throttle under the same code, so one 429 is a min
   per read.
 - 30 writes a minute is one order every 2 s, or one 50-order batch. The executor's limiter is tuned to 100/30; if the
   summary shows `RATE_LIMITED` in events, something else is spending the budget.
+
+## 2a. Cutover: bridge to rust-live (Mon Nov 2, 10:00 ET; never on Nov 3)
+
+Election night runs in rust-live: only it has the election-night executor, the results pollers and the needle
+watchdog. The bridge trades until Nov 2. Do the switch on a quiet weekday morning, a full day before the night, so
+anything odd has 24 hours to surface.
+
+**Preconditions (all must hold).**
+- The rust-live paper run (`SUSQ_LIVE_CMD=paper-run`, `SUSQ_LIVE_FLAGS=--election`, beside the bridge) has run at least
+  72 hours with no OOM kills (`sudo journalctl -k | grep -c "Killed process"` unchanged), no sustained 429s in either
+  trader, and its paper equity tracking the bridge's live equity within the drift you can explain from fills.
+- Both dress rehearsals (§2b) passed, and the needle tile was green throughout the paper run.
+- `make backup` succeeded today; `make selfcheck` is 7/7.
+
+**Steps.**
+1. `make backup`, then note equity, cash and open-order count from the dashboard.
+2. `docker compose --project-directory . -f ops/compose.yaml stop bridge`. Stopping does **not** cancel its orders:
+   the far-quote ladders (about 300 resting, 24 h TTL) and anything else stay on the book. Its lease lapses within
+   `[lease] ttl_s` (30 s).
+3. Edit `.env` in place (keep the inode; the containers bind-mount it): `COMPOSE_PROFILES=rust,election`,
+   `SUSQ_LIVE_CMD=run`, `SUSQ_LIVE_FLAGS=--election`. `SUSQ_MODE=live` and `ops/GO_LIVE` are already set from Oct 1.
+4. `git pull` to pick up the night-profile commit (below), then
+   `docker compose --project-directory . -f ops/compose.yaml up -d --no-build --remove-orphans`.
+5. Watch for 15 minutes: rust-live logs `susq-live running mode="live"`, takes `ops/state/trader.lease`, and its first
+   reconcile cancels every open order it did not place (*events*: `cancelled untracked order …`). At 30 writes a minute
+   that is about 10 minutes for 300 ladders; the far quoter then re-rests its own ladders on its next passes. Positions
+   carry over (they are account-level and read from REST).
+6. Check: `make ps` (bridge absent), dashboard trader = rust-live, equity unchanged within the far-quote cancels,
+   no `RATE_LIMITED` events after the cancels finish.
+
+**Night profile (merge as one commit on Nov 2, before step 4).** With one trader the whole budget is ours:
+`[platform] max_rps = 2.0` (was 1.0, split for the paper run); `[strategies.farquote] interval_s = 3600` so top-ups
+leave writes for the executor. Do **not** merge it while the bridge and the paper run both trade: each would take
+the full budget.
+
+**Rollback (any time before Nov 3 17:00 ET).** Stop rust-live; set `.env` back to `COMPOSE_PROFILES=bridge`,
+`SUSQ_LIVE_CMD=paper-run`, `SUSQ_LIVE_FLAGS=`; revert the night-profile commit; `make up`. The bridge's reconcile
+keeps every open order it finds (rust-live's included) instead of cancelling it, so nothing is lost; its far quoter
+re-rests on its own cadence.
+
+## 2b. Dress rehearsals (Oct 26-27 and Oct 29-30)
+
+Both run on the VM beside the live trader, with rust-live in `paper-run --election` and the needle on the bus.
+1. Stage the rehearsal prior and timeline: `python -m susq.replay spec2026 …` then `prior` and `build` (§2 pre-flight
+   commands) into `state/needle/prior.json` and `data/replay/`; restart `needle`.
+2. In the VM checkout only, set `[strategies.en] enabled = true` (rust-live paper reads it; the bridge ignores the
+   section) and restart rust-live. Revert the file when the rehearsal ends (`git checkout config/susq.toml`).
+3. Publish the timeline into NATS from the scheduler container at 10x (`python -m susq.replay publish
+   /susq/data/replay/<file>.jsonl --nats nats://nats:4222 --speed 10`); rehearsal #2 adds `--chaos-drop`,
+   `--chaos-malformed-every` and `--chaos-kill`.
+4. Mid-run, `docker compose … stop needle` for 60 s: the executor must cancel its working orders and place nothing
+   until the needle is healthy again; then `touch ops/KILL` once and un-kill.
+5. Record: posteriors received, election-night intents placed, fills on paper, 429s, `free -m`, kernel OOM count,
+   and every refusal reason. Pass = orders only on races with edge, none while the needle was down, no OOM, no
+   sustained 429s.
 
 ## 3. Kill and un-kill
 
