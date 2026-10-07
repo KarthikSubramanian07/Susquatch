@@ -22,6 +22,8 @@
 //! candidate_votes = "votes"
 //! ```
 
+use std::collections::BTreeMap;
+
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -31,8 +33,13 @@ use serde_json::Value;
 pub struct JsonMapping {
     /// Iterates one row per (contest, county[, vote type]).
     pub rows: String,
-    /// Contest name, looked up in the race map.
+    /// Contest name, looked up in the race map. Leave empty when `contest` is set.
+    #[serde(default)]
     pub race: String,
+    /// Fixed contest name for documents that hold one contest without printing its name
+    /// (Pennsylvania's `GetCountyBreak` is fetched per office id). Exclusive with `race`.
+    #[serde(default)]
+    pub contest: Option<String>,
     /// County name, 5-digit FIPS or 3-digit county code.
     pub county: String,
     /// Iterates candidates within a row.
@@ -54,6 +61,13 @@ pub struct JsonMapping {
     pub breakdown_label: Option<String>,
     #[serde(default)]
     pub breakdown_votes: Option<String>,
+    /// Per-candidate scalar fields that each hold one vote method, keyed by a vote-type label,
+    /// e.g. `{ "Election Day" = "ElectionDayVotes", Mail = "MailInVotes" }` (Pennsylvania).
+    /// Each candidate is pivoted into one result per type, like `candidate_breakdown`; whatever
+    /// part of `candidate_votes` the fields do not cover (a missing or null field, or a county
+    /// that publishes only totals) is MIXED. Exclusive with `candidate_breakdown`.
+    #[serde(default)]
+    pub candidate_vote_fields: BTreeMap<String, String>,
     #[serde(default)]
     pub total_votes: Option<String>,
     #[serde(default)]
@@ -68,6 +82,12 @@ pub struct JsonMapping {
     /// decoded document.
     #[serde(default)]
     pub unwrap_base64: Option<String>,
+    /// Path (`$` for the root) to a string holding the real document as JSON text: Pennsylvania's
+    /// API serialises every response twice, so the body is one JSON string. An empty string is a
+    /// document with no rows (what Pennsylvania serves before an election is loaded). Exclusive
+    /// with `unwrap_base64`.
+    #[serde(default)]
+    pub unwrap_json: Option<String>,
     /// Sum rows that land on the same (race, county, vote type) into one result. Needed for flat
     /// feeds with one row per (county, contest, candidate), such as Arizona's.
     #[serde(default)]
@@ -245,7 +265,9 @@ pub fn as_text(v: &Value) -> Option<String> {
 #[derive(Debug, Clone)]
 pub struct CompiledMapping {
     pub rows: Path,
-    pub race: Path,
+    /// Where the contest name comes from: a path, or the fixed `contest` name.
+    pub race: Option<Path>,
+    pub contest: Option<String>,
     pub county: Path,
     pub candidates: Path,
     pub candidate_name: Path,
@@ -254,11 +276,14 @@ pub struct CompiledMapping {
     pub vote_type: Option<Path>,
     /// (breakdown iterator, label, votes), all relative to the candidate / breakdown element.
     pub breakdown: Option<(Path, Path, Path)>,
+    /// (vote-type label, path relative to the candidate), from `candidate_vote_fields`.
+    pub vote_fields: Vec<(String, Path)>,
     pub total_votes: Option<Path>,
     pub precincts_reporting: Option<Path>,
     pub precincts_total: Option<Path>,
     pub source_ts: Option<Path>,
     pub unwrap_base64: Option<Path>,
+    pub unwrap_json: Option<Path>,
     pub merge_rows: bool,
     pub party_from_name: bool,
 }
@@ -284,9 +309,41 @@ impl JsonMapping {
                 });
             }
         };
+        let bad = |path: &str, reason: &str| PathError {
+            path: path.into(),
+            reason: reason.into(),
+        };
+        let contest = self
+            .contest
+            .as_deref()
+            .map(str::trim)
+            .filter(|c| !c.is_empty())
+            .map(str::to_owned);
+        let race = match (self.race.trim().is_empty(), &contest) {
+            (false, None) => Some(Path::parse(&self.race)?),
+            (true, Some(_)) => None,
+            (true, None) => return Err(bad("race", "set race (a path) or contest (a fixed name)")),
+            (false, Some(_)) => return Err(bad("contest", "race and contest are exclusive")),
+        };
+        if breakdown.is_some() && !self.candidate_vote_fields.is_empty() {
+            return Err(bad(
+                "candidate_vote_fields",
+                "candidate_vote_fields and candidate_breakdown are exclusive",
+            ));
+        }
+        if self.unwrap_base64.is_some() && self.unwrap_json.is_some() {
+            return Err(bad("unwrap_json", "unwrap_json and unwrap_base64 are exclusive"));
+        }
+        let vote_fields = self
+            .candidate_vote_fields
+            .iter()
+            .map(|(label, p)| Ok((label.clone(), Path::parse(p)?)))
+            .collect::<Result<Vec<_>, PathError>>()?;
         let m = CompiledMapping {
             breakdown,
-            race: Path::parse(&self.race)?,
+            vote_fields,
+            race,
+            contest,
             county: Path::parse(&self.county)?,
             candidates: Path::parse(&self.candidates)?,
             candidate_name: Path::parse(&self.candidate_name)?,
@@ -298,13 +355,14 @@ impl JsonMapping {
             precincts_total: opt(&self.precincts_total)?,
             source_ts: opt(&self.source_ts)?,
             unwrap_base64: opt(&self.unwrap_base64)?,
+            unwrap_json: opt(&self.unwrap_json)?,
             merge_rows: self.merge_rows,
             party_from_name: self.party_from_name,
             rows,
         };
         let n = m.rows.wildcards();
         let all = [
-            Some(&m.race),
+            m.race.as_ref(),
             Some(&m.county),
             Some(&m.candidates),
             m.vote_type.as_ref(),
@@ -383,6 +441,7 @@ mod tests {
         let mut m = JsonMapping {
             rows: "a[*]".into(),
             race: "^1.name".into(),
+            contest: None,
             county: "c".into(),
             candidates: "x[*]".into(),
             candidate_name: "n".into(),
@@ -392,11 +451,13 @@ mod tests {
             candidate_breakdown: None,
             breakdown_label: None,
             breakdown_votes: None,
+            candidate_vote_fields: Default::default(),
             total_votes: None,
             precincts_reporting: None,
             precincts_total: None,
             source_ts: None,
             unwrap_base64: None,
+            unwrap_json: None,
             merge_rows: false,
             party_from_name: false,
         };
@@ -405,5 +466,32 @@ mod tests {
         assert!(m.compile().is_ok());
         m.candidate_breakdown = Some("groups[*]".into());
         assert!(m.compile().is_err(), "breakdown needs label and votes too");
+        m.candidate_breakdown = None;
+
+        // A fixed contest name replaces the race path; exactly one of the two.
+        m.contest = Some("Governor".into());
+        assert!(m.compile().is_err(), "race and contest are exclusive");
+        m.race = String::new();
+        let c = m.compile().expect("contest alone");
+        assert!(c.race.is_none());
+        assert_eq!(c.contest.as_deref(), Some("Governor"));
+        m.contest = Some("  ".into());
+        assert!(m.compile().is_err(), "neither race nor contest");
+        m.contest = Some("Governor".into());
+
+        // Scalar vote-method fields exclude a breakdown iterator; the two unwraps exclude each other.
+        m.candidate_vote_fields = [("Mail".to_owned(), "MailInVotes".to_owned())].into();
+        assert_eq!(m.compile().expect("vote fields").vote_fields.len(), 1);
+        m.candidate_breakdown = Some("groups[*]".into());
+        m.breakdown_label = Some("l".into());
+        m.breakdown_votes = Some("v".into());
+        assert!(m.compile().is_err(), "vote fields and breakdown are exclusive");
+        m.candidate_breakdown = None;
+        m.breakdown_label = None;
+        m.breakdown_votes = None;
+        m.unwrap_json = Some("$".into());
+        assert!(m.compile().is_ok());
+        m.unwrap_base64 = Some("upload".into());
+        assert!(m.compile().is_err(), "one unwrap at a time");
     }
 }
