@@ -52,8 +52,9 @@ P(S) · P(M_S > T_S | S). Changes from the first week:
    field can reach in each world, and the leaderboard's volume column gives how many accounts are
    all-in. Re-fit every Sunday.
 2. **Robustness over three field assumptions.** Rank scenarios under T = thin (1.5x), medium (5x),
-   and tail (Seel–Strack, 20x). Commit only to a scenario that ranks top under all three; if the
-   ranking flips, buy the robust half and wait for more tape.
+   and tail (Seel–Strack, 20x). Commit only to a scenario that ranks top under at least two of the
+   four rankings (the fitted T plus these three; EXP-004); if none does, commit nothing and wait for
+   more tape.
 3. **Regional, not national, scenarios.** The grid is already national decile × four cluster signs.
    EXP-005 adds the 2018 pattern (Midwest/FL R-miss with Southwest D-miss) and the 2022 pattern
    (near-zero bias, markets too R) as explicit cells with Shirani-Mehr magnitudes (shared 2 pts,

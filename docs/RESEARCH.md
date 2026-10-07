@@ -225,8 +225,43 @@ after every market resolves, but the leaderboard shows marks: the day-one leader
 near-certain-to-lose contracts at 0.95 in thin books, so their 10× marks are an artifact of the
 mark and will resolve to 0. Fitting g on the top-1 and extrapolating it to lock put T₅₀ at about
 93× and made every scenario score P(M > T | S) = 0. The p90/p50 spread still comes from the SPEC
-prior (N ≈ 500 → 8–15×, 2,000 → 15–30×, 10,000 → 25–100×, read as p50–p90). The optimizer uses
-the fitted T when telemetry exists and the field model otherwise.
+prior (N ≈ 500 → 8–15×, 2,000 → 15–30×, 10,000 → 25–100×, read as p50–p90).
+
+**Fitted to the trade tape (EXP-004, `telemetry/field.py`).** The tape has each trade's price and
+side but no accounts; the leaderboard has each account's volume but no positions. Together they give
+the resolved field maximum per simulated world:
+
+1. *Price ladder.* Shares per (exchange, taker side, price), folded one `date=` partition at a time
+   (peak memory is one day of trades). The platform runs one YES-space book and canonicalises sells
+   into the complementary buy, so `side` is the side the taker bought and `price` is the YES price
+   (docs/API.md, ERRATA E4, the mock's `/trades`). `detect_price_space` checks it on the data: in YES
+   space the YES-taker and NO-taker VWAPs on one exchange sit together, in taker space they sum to
+   one. The vote is recorded and only a strict majority switches to taker space.
+2. *Cheap-leg footprint.* For contract side c bought at side price q (q = price for YES, 1 − price for
+   NO), spend = shares · q. Only q ≤ 0.20 counts (resolved multiples of 5× and up):
+   `S_c = Σ spend`, `p̄_c = S_c / Σ shares`. Only the taker's side is counted; the maker side of a
+   cheap trade is mostly hedged resting liquidity (our own far-quote ladder included).
+3. *All-in counts.* `stake = max(100,000, median volume of accounts with turnover ≥ 100%)`,
+   `n_c = min(S_c / stake, n_hi)` with n_hi that account count, rescaled so `Σ n_c ≤ n_hi`.
+   Bots are the accounts with `trades_count ≥ 200`.
+4. *Resolved maximum.* `T(ω) = max(floor, consensus/bot maximum, max_{c pays in ω, held} 1/p̄_c)`,
+   where c is held with probability `min(1, n_c)` per world, a YES side pays when its leg resolves
+   YES and a NO side when it resolves NO, and a side whose exchange is not simulated pays
+   independently with probability p̄_c. The YOLO share of `FieldParams` is replaced by the tape;
+   passive, consensus and bots keep the SPEC model with the leaderboard's bot count.
+5. *Floor.* The leaderboard anchor stays only as a floor: the third-highest mark, at most the
+   EXP-001 fit's T50.
+
+A whole balance bought at 0.95 on a 1% outcome (the 9.9× marks) is not a cheap leg and adds nothing;
+it resolves to about 0, or 1.05× if the 1% happens. On a synthetic field shaped like Oct 6 (N 4,350,
+496 high-turnover accounts, 120 all-in YOLO accounts on cheap sides chosen ∝ price, five 0.95
+buyers, 240 contracts with a one-factor copula) the tape model gives T10/T50/T90 ≈ 8.5 / 15 / 30×.
+
+**Which T the targets run uses.** The tape threshold when telemetry's `field` footprint is usable,
+meaning at least 1,000 trades spanning 2 days with 5 cheap contract sides; else the EXP-001
+leaderboard fit (sampled independently of the worlds); else the SPEC field model. The targets notes
+name the method (`T from tape(...)`, `leaderboard+prior(...)` with the reason the tape was not used,
+or `field-model(...)`).
 
 ## Crowd-position inference (ITERATION §2.3)
 
@@ -255,7 +290,14 @@ No data gives e = 0.
 5. **Score.** P(S) · P(M_S > T_S | S). When no book beats T anywhere, which is the normal state
    while tails are expensive, scenarios are ranked by P(S)·E[min(M/T, 1) | S], i.e. how close to
    winning, so the choice is never alphabetical.
-6. **Construction.** Quantities are nudged off multiples of 5, and one mid-priced
+6. **Robustness (EXP-004).** Scenarios are also ranked under three constant field assumptions:
+   thin (T = 1.5×), medium (5×) and tail (20×). The fitted-T winner is committed only if it is
+   top-ranked under at least two of the four rankings. Otherwise the scenario top-ranked under the
+   most rankings is committed if that count is at least two (ties go to the better fitted rank).
+   Otherwise nothing is committed and the book waits for more tape. Legs and quantities always come
+   from the fitted T. The notes record the tops under each assumption and which ones the committed
+   scenario wins.
+7. **Construction.** Quantities are nudged off multiples of 5, and one mid-priced
    **idiosyncratic leg** (the one least tied to S) is added: everyone starts at exactly 100,000,
    so a tie is a real risk. Core legs are **locked** unless their state reports early (poll close
    ≤ 8 pm ET), in which case they double as election-night rolling fuel. Tranches are T1 (best
