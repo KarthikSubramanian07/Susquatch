@@ -255,6 +255,59 @@ def load_all(path: HistoryPaths) -> dict[ContestKey, ContestHistory]:
     return {k: _contest_from_rows(k, rows) for k, rows in grouped.items()}
 
 
+HOUSE_UNIT_TAG = "-HD"
+
+
+def district_unit_id(state: str, district: str) -> str:
+    """Reporting-unit id of a US House district reported as one total: ("CA", "22") → "CA-HD22".
+
+    The same key `crates/enr` files a California district's "Districtwide Results" row under
+    (`crates/enr/src/units.rs`): a letter and a hyphen, so it never collides with a county FIPS.
+    """
+    d = district.strip().upper()
+    if d != "AL":
+        if not d.isdigit() or not 0 < int(d) < 100:
+            raise ValueError(f"not a House district: {district!r}")
+        d = f"{int(d):02d}"
+    return f"{state.upper()}{HOUSE_UNIT_TAG}{d}"
+
+
+def is_unit_key(key: str, state: str) -> bool:
+    """A 5-digit county FIPS, or a House district unit of `state` (`CA-HD22`), as the Rust pipeline."""
+    if len(key) == 5 and key.isdigit():
+        return True
+    d = key.removeprefix(state + HOUSE_UNIT_TAG)
+    if d == key:
+        return False
+    return d == "AL" or (len(d) == 2 and d.isdigit() and d != "00")
+
+
+def collapse_to_unit(contest: ContestHistory, unit_id: str, name: str = "") -> ContestHistory:
+    """The whole contest as ONE reporting unit keyed `unit_id` (county tallies and candidates summed).
+
+    A House district whose feed reports only its total (California) is modelled this way: the
+    district's history is its total, whatever counties it spans, so the needle prior has a single
+    `CountyPrior` under the same key as the feed's results.
+
+    Every vote type is folded into one MIXED tally. The feed reports a district as one untyped
+    total, and the history's split cannot be trusted to mean anything for it: MEDSL's California
+    modes are ABSENTEE / NOT ABSENTEE, which `classify_mode` reads as mail both, and counties
+    without a split add TOTAL rows, so a district straddling both would get a meaningless
+    MAIL/MIXED "split". California's count-order bias is the count-order table's job (EXP-006).
+    """
+    unit = CountyHistory(contest.state, unit_id, name or unit_id)
+    total = Tally()
+    candidates: dict[str, tuple[str, dict[VoteType, int]]] = {}
+    for c in contest.counties.values():
+        total += c.tally
+        for cand, (party, per_type) in c.candidates.items():
+            _, merged = candidates.setdefault(cand, (party, {MIXED: 0}))
+            merged[MIXED] += sum(per_type.values())
+    unit.by_type = {MIXED: total}
+    unit.candidates = candidates
+    return ContestHistory(contest.year, contest.state, contest.office, {unit_id: unit})
+
+
 def top_independent(contest: ContestHistory) -> tuple[str, float] | None:
     """The leading non-D/R/L candidate statewide and their share of all votes (None if there is none)."""
     votes: dict[str, int] = defaultdict(int)

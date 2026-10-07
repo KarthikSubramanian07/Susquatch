@@ -28,6 +28,7 @@ from google.protobuf.message import DecodeError
 
 from susq.contracts import SCHEMA_VERSION, bus_pb2, common_pb2, decode, encode
 from susq.replay.backends import NeedleBackend
+from susq.replay.history import is_unit_key
 
 NS = 1_000_000_000
 GARBAGE = b"\xff\xff\xff\xff\x0f\x00garbage"
@@ -47,7 +48,7 @@ def decode_batch(data: bytes) -> bus_pb2.CountyResultsBatch:
     if not batch.HasField("header") or batch.header.schema_version != SCHEMA_VERSION:
         raise InvalidPayloadError("missing header or wrong schema version")
     for r in batch.results:
-        if len(r.county_fips) != 5 or not r.county_fips.isdigit() or not r.race_id:
+        if not is_unit_key(r.county_fips, r.state) or not r.race_id:
             raise InvalidPayloadError(f"bad result {r.race_id!r}/{r.county_fips!r}")
     return batch
 

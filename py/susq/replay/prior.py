@@ -11,6 +11,9 @@ For each race:
 * **Vote types.** Where history splits by vote type, each type's share of the county total and its
   margin offset relative to the county margin (the mail vs E-day skew) come from the data; the
   report order comes from the state's reporting convention. Unsplit history yields one MIXED entry.
+* **Single-unit races.** A House district whose feed reports only its total is one "county" keyed
+  by its unit id (`CA-HD22`): its prior margin is the race prior, its expected total the district's
+  historical total × turnout ratio, and its margin SD the small `DISTRICT_UNIT_SD_PTS` (see there).
 """
 
 from __future__ import annotations
@@ -40,6 +43,18 @@ class RaceInput:
     turnout_sd_frac: float = 0.08
     county_sd_pts: float = 4.0
     poll_close_utc: datetime | None = None  # overrides the state table when set (2026 specs pin it)
+    single_unit: bool = False  # the contest is one reporting unit (a House district, see below)
+
+
+# A House district reported as one unit (`history.collapse_to_unit`). The needle sizes the race-level
+# deviation so the race's prior SD is honoured: prior var = beta^2 nat_var + delta_var + unit_sd^2 +
+# type_sd^2. A statewide race's county SD, hypot(race sd, 4), is fine spread over many counties but
+# would exceed the whole race SD in a race of one unit and floor delta, so the unit gets only its own
+# small deviation and delta keeps the rest (with race sd 5.34, national 2.96, type 3: delta sd 2.6).
+DISTRICT_UNIT_SD_PTS = 2.0
+# 2022/2024 district totals are under the old lines (Prop 50 redrew California's for 2026), so the
+# unit's expected total is a rougher guess than a county's: wider turnout uncertainty.
+DISTRICT_TURNOUT_SD_FRAC = 0.15
 
 
 def _size_sd_frac(expected: float) -> float:
@@ -58,7 +73,7 @@ def _county_prior(r: RaceInput, c: CountyHistory, shift: float, poll_state: str)
         expected_total_votes=expected,
         expected_total_sd_frac=sd_frac,
         prior_margin=margin,
-        prior_margin_sd=math.hypot(r.prior_margin_sd, r.county_sd_pts),
+        prior_margin_sd=r.county_sd_pts if r.single_unit else math.hypot(r.prior_margin_sd, r.county_sd_pts),
     )
     conv = convention_for(poll_state)
     if not c.is_split or tally.total == 0:

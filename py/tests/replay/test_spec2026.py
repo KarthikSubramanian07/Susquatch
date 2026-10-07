@@ -42,6 +42,12 @@ MARKETS: list[tuple[str, str, str, float | None]] = [
     ("2026-SEN-ME", "DEM", "12", None),  # listed but unpriced
     ("2026-HOUSE-CA-22", "DEM", "13", 0.5),
     ("2026-HOUSE-CA-22", "REP", "14", 0.5),
+    ("2026-HOUSE-CA-48", "DEM", "15", 0.30),  # 2022 was R vs R: falls back to the 2024 district
+    ("2026-HOUSE-CA-48", "REP", "16", 0.72),
+    ("2026-HOUSE-CA-13", "DEM", "17", 0.55),  # no House history for CA-13
+    ("2026-HOUSE-CA-13", "REP", "18", 0.45),
+    ("2026-HOUSE-PA-07", "DEM", "19", 0.5),  # outside California: uncovered
+    ("2026-HOUSE-PA-07", "REP", "20", 0.5),
 ]
 
 
@@ -56,6 +62,15 @@ def _county_rows(
     if o:
         rows.append(f"{year},{name},{st},C{fips},{fips},{office},STATEWIDE,INDCAND,OTHER,TOTAL,{o},{total}")
     return rows
+
+
+def _house_rows(
+    year: int, district: str, fips: str, d: int, r: int, dem_party: str = "DEMOCRAT"
+) -> list[str]:
+    """California US HOUSE rows for one county piece of a district (as `download --house-only`)."""
+    total = d + r
+    pre = f"{year},CALIFORNIA,CA,C{fips},{fips},US HOUSE,{district}"
+    return [f"{pre},DEMCAND,{dem_party},TOTAL,{d},{total}", f"{pre},REPCAND,REPUBLICAN,TOTAL,{r},{total}"]
 
 
 @pytest.fixture
@@ -91,6 +106,11 @@ def inputs(tmp_path: Path) -> tuple[Path, Path, list[Path]]:
         h24 += _county_rows(2024, "NE", "NEBRASKA", "US SENATE", fips, 0, r, ind)
     for fips, d, r in (("10001", 3000, 2000), ("10003", 6000, 4000)):
         h24 += _county_rows(2024, "DE", "DELAWARE", "US SENATE", fips, d, r)
+    # CA-22 spans Kern and Kings; CA-48 was R vs R in 2022 (top two), so its 2024 race is used.
+    h22 += _house_rows(2022, "22", "06029", 30_000, 35_000) + _house_rows(2022, "22", "06031", 10_000, 12_000)
+    h22 += _house_rows(2022, "48", "06073", 40_000, 90_000, dem_party="REPUBLICAN")
+    h24 += _house_rows(2024, "22", "06029", 60_000, 64_000)
+    h24 += _house_rows(2024, "48", "06073", 100_000, 150_000)
     p22, p24 = tmp_path / "h22.csv", tmp_path / "h24.csv"
     p22.write_text("\n".join(h22) + "\n")
     p24.write_text("\n".join(h24) + "\n")
@@ -117,11 +137,19 @@ def test_margin_inverts_the_sims_probability_map() -> None:
 
 def test_races_covered_and_uncovered(built: GeneratedSpec) -> None:
     rows = {r.race_id: r for r in built.races}
-    assert set(rows) == {"2026-SEN-GA", "2026-GOV-GA", "2026-SEN-NE", "2026-SEN-DE"}
+    assert set(rows) == {
+        "2026-SEN-GA",
+        "2026-GOV-GA",
+        "2026-SEN-NE",
+        "2026-SEN-DE",
+        "2026-HOUSE-CA-22",
+        "2026-HOUSE-CA-48",
+    }
     why = {u.race_id: u.reason for u in built.uncovered}
     assert why["2026-GOV-WY"] == "no usable 2022/2024 statewide history for WY"
     assert why["2026-SEN-ME"] == "no fair value for any party row"
-    assert why["2026-HOUSE-CA-22"] == HOUSE_REASON
+    assert why["2026-HOUSE-PA-07"] == HOUSE_REASON
+    assert why["2026-HOUSE-CA-13"].startswith("no usable 2022/2024 US HOUSE history for CA-13")
     assert "2026-CONTROL-SENATE" not in why
     assert built.history_states == {2022: {"GA"}, 2024: {"GA", "NE", "DE"}}
 
@@ -156,7 +184,8 @@ def test_margin_sd_and_baselines(built: GeneratedSpec) -> None:
 def test_rendered_spec_loads_and_builds_a_consistent_prior(built: GeneratedSpec, tmp_path: Path) -> None:
     text = render_toml(built, generated_on=date(2026, 10, 6), command="python -m susq.replay spec2026 ...")
     assert text.startswith("# Generated on 2026-10-06 by:")
-    assert "2026-HOUSE-CA-22: House" in text
+    assert "2026-HOUSE-PA-07: House" in text
+    assert 'district = "22"\nsingle_unit = true' in text
     assert "# fair values produced 2026-09-30T00:00Z" in text
     path = tmp_path / "general_2026.toml"
     path.write_text(text)
@@ -187,9 +216,53 @@ def test_cli_writes_the_spec(inputs: tuple[Path, Path, list[Path]], tmp_path: Pa
     args = ["spec2026", "--market-map", str(mm), "--fair", str(fair), "--history", str(h22)]
     res = CliRunner().invoke(app, [*args, "--history", str(h24), "--out", str(out)])
     assert res.exit_code == 0, res.output
-    assert "4 races, 3 uncovered" in res.output
+    assert "6 races, 4 uncovered" in res.output
     assert f"--history {h22} --history {h24}" in out.read_text()
-    assert len(load_spec(out).races) == 4
+    assert len(load_spec(out).races) == 6
 
     missing = CliRunner().invoke(app, [*args[:5], "--history", str(tmp_path / "nope.csv"), "--out", str(out)])
     assert missing.exit_code != 0
+
+
+def test_california_house_seats_are_single_unit_races(built: GeneratedSpec) -> None:
+    rows = {r.race_id: r for r in built.races}
+    ca22, ca48 = rows["2026-HOUSE-CA-22"], rows["2026-HOUSE-CA-48"]
+    # The fair value, exactly as for a statewide race (the sim's SD includes the "house" cluster).
+    assert (ca22.year, ca22.office, ca22.district, ca22.left_party) == (2022, "US HOUSE", "22", "DEM")
+    assert ca22.p_left == pytest.approx(0.5)
+    assert ca22.prior_margin_mean == pytest.approx(0.0, abs=1e-9)
+    assert ca22.prior_margin_sd > rows["2026-SEN-GA"].prior_margin_sd
+    assert ca22.turnout_ratio == 1.0, "2022 midterm baseline"
+    assert ca22.poll_close_utc == "2026-11-04T04:00:00Z"
+    assert any("one reporting unit CA-HD22" in n and "87,000" in n for n in ca22.notes)
+    # CA-48's 2022 general had no Democrat: the 2024 district total at the statewide ratio.
+    assert (ca48.year, ca48.district) == (2024, "48")
+    assert ca48.p_left == pytest.approx(0.30 / 1.02)
+    assert ca48.prior_margin_mean == pytest.approx(margin_from_p(ca48.p_left, ca48.prior_margin_sd))
+    assert ca48.turnout_ratio == pytest.approx(rows["2026-SEN-NE"].turnout_ratio), "median ratio: no CA total"
+
+
+def test_single_unit_prior_is_one_county_under_the_feeds_key(built: GeneratedSpec, tmp_path: Path) -> None:
+    from susq.replay.prior import DISTRICT_UNIT_SD_PTS
+
+    path = tmp_path / "general_2026.toml"
+    path.write_text(render_toml(built, generated_on=date(2026, 10, 7), command="spec2026"))
+    prior = materialize_prior(load_spec(path))
+    ca22 = [c for c in prior.counties if c.race_id == "2026-HOUSE-CA-22"]
+    assert len(ca22) == 1, "Kern and Kings pieces collapse into one unit"
+    unit = ca22[0]
+    row = next(r for r in built.races if r.race_id == "2026-HOUSE-CA-22")
+    assert (unit.county_fips, unit.state) == ("CA-HD22", "CA")
+    assert unit.expected_total_votes == pytest.approx(87_000.0)
+    assert unit.prior_margin == pytest.approx(row.prior_margin_mean), "one unit carries the race prior"
+    assert unit.prior_margin_sd == pytest.approx(DISTRICT_UNIT_SD_PTS)
+    assert 0.15 < unit.expected_total_sd_frac < 0.17, "the wide district turnout SD"
+    assert [(v.vote_type, v.share_of_total) for v in unit.vote_types] == [(5, 1.0)], "one MIXED type"
+    assert unit.vote_types[0].typical_report_order == pytest.approx(0.5), "California's MIXED order"
+    (ca48,) = [c for c in prior.counties if c.race_id == "2026-HOUSE-CA-48"]
+    assert ca48.county_fips == "CA-HD48"
+    assert ca48.expected_total_votes == pytest.approx(
+        250_000 * next(r for r in built.races if r.race_id == "2026-HOUSE-CA-48").turnout_ratio
+    )
+    rp = next(r for r in prior.races if r.race_id == "2026-HOUSE-CA-22")
+    assert rp.prior_margin_sd == pytest.approx(row.prior_margin_sd, abs=1e-3)

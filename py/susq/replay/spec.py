@@ -18,7 +18,9 @@ office = "US SENATE"
 prior_margin_mean = 0.0     # D - R pts, two-party, as the market/sim saw it before the night
 prior_margin_sd = 5.0
 turnout_ratio = 1.0         # replaying the same election: 1.0
-# optional: district = "07" (US House history built with `download --house`),
+# optional: district = "07" (US House history built with `download --house` or `--house-only`),
+# single_unit = true (with a district: model the district as ONE reporting unit keyed "CA-HD07",
+#   as California's feed reports it; see `history.collapse_to_unit`),
 # poll_close_utc = "2026-11-04T00:00:00Z" (pins the close instead of config/poll_closing.toml)
 ```
 """
@@ -32,8 +34,8 @@ from pathlib import Path
 
 from susq.contracts import bus_pb2, needle_pb2
 from susq.replay.closing import REPO_ROOT, StateClosing, load_closings
-from susq.replay.history import ContestKey, load_all, pool_independent
-from susq.replay.prior import RaceInput, build_prior
+from susq.replay.history import ContestKey, collapse_to_unit, district_unit_id, load_all, pool_independent
+from susq.replay.prior import DISTRICT_TURNOUT_SD_FRAC, DISTRICT_UNIT_SD_PTS, RaceInput, build_prior
 from susq.replay.records import ReplayMeta
 from susq.replay.timeline import BuildConfig, RaceSpec, build_replay
 
@@ -85,16 +87,28 @@ def load_spec(path: Path) -> Spec:
             raise ValueError(f"{path}: {r['race_id']}: no rows for {key} in {[str(h) for h in history]}")
         independent = bool(r.get("independent_major", False))
         close = r.get("poll_close_utc")
+        contest = pool_independent(contests[key]) if independent else contests[key]
+        single_unit = bool(r.get("single_unit", False))
+        unit_sd, turnout_sd = 4.0, 0.08  # RaceInput's county defaults
+        if single_unit:
+            if key.district == "STATEWIDE":
+                raise ValueError(f"{path}: {r['race_id']}: single_unit needs a House district")
+            unit = district_unit_id(key.state, key.district)
+            contest = collapse_to_unit(contest, unit, f"{key.state} district {key.district}")
+            unit_sd, turnout_sd = DISTRICT_UNIT_SD_PTS, DISTRICT_TURNOUT_SD_FRAC
         races.append(
             RaceInput(
                 race_id=r["race_id"],
-                contest=pool_independent(contests[key]) if independent else contests[key],
+                contest=contest,
                 prior_margin_mean=float(r["prior_margin_mean"]),
                 prior_margin_sd=float(r.get("prior_margin_sd", 5.0)),
                 national_beta=float(r.get("national_beta", 1.0)),
                 independent_major=independent,
                 turnout_ratio=float(r.get("turnout_ratio", 1.0)),
+                turnout_sd_frac=turnout_sd,
+                county_sd_pts=unit_sd,
                 poll_close_utc=_parse_utc(close) if close else None,
+                single_unit=single_unit,
             )
         )
     if not races:
