@@ -6,6 +6,7 @@
 pub mod calendar;
 pub mod clock;
 pub mod config;
+pub mod count_order;
 pub mod ids;
 pub mod market_map;
 pub mod order;

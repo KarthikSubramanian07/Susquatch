@@ -1,0 +1,365 @@
+# Pre-registered count-order playbook for election night (EXP-006), Nov 3 to 4 2026.
+#
+# Read by rust-live (crates/core/src/count_order.rs, used by the election-night executor
+# crates/strategies/src/en_executor.rs) and by the replay drill (py/susq/replay/count_order.py).
+# Registered 2026-10-06 from the two research memos (gitignored, reports/research/):
+#   count-order-and-detector-2026-10-06.md   (15 states plus the "Lock-time drift summary, all 18 states")
+#   count-order-IA-GA-WI-2026-10-06.md       (Iowa, Georgia, Wisconsin)
+# Do not tune these numbers on the night: the point of the table is that it was written down first.
+#
+# Convention (the memos'): drift = (reported D minus R margin at the hour) minus (final D minus R margin),
+# in points. Negative drift means the partial count is more Republican than the final, so the count still
+# to come favours the Democrat. Hours are after `poll_close_utc` (the memos' hour zero, the state's last
+# general poll close; for MI, NH, TX and KS the memos count from 8 pm ET, for NE from 9 pm ET, for AK
+# from midnight ET, and those are the instants written here, each equal to one of the closings in
+# config/poll_closing.toml). The lock is Nov 4 2026 12:00 ET = 17:00Z, so `lock_h` is the hours from
+# poll close to 17:00Z.
+#
+# Points: `h1`, `h3`, `h6`, `h12` and `lock`. `h1` carries the FIRST-HOUR value (the first batches,
+# 0 to 1 h after close), because that is how the memos report the opening mirage. Between points the
+# executor interpolates linearly; before `h1` it holds the `h1` value; after `lock` it goes linearly to
+# zero at `final_h` (when the count is essentially complete) and is zero after. Before poll close
+# nothing is registered. The linear segment from h1 to h3 overstates the mirage where the crossover is
+# fast (NC, OH, NE flip within about 90 minutes); the bands are wide there.
+#
+# Bands (points) were set by one rule, written down before any replay:
+#   band = half the range spanned by the memos' numbers at that hour (both cycles, or the stated range)
+#          + an estimate allowance: 0.5 pt where the memo marks the number "est.", 1.0 pt for an
+#          est. first-hour value of 5 pts or more, 0.25 pt for an "about" print; 0 for a sourced print.
+# Where the memos give a range the drift is its midpoint; where they say "no direction" the drift is 0
+# and the band carries the size. A drift has a registered DIRECTION only when |drift| > band; the
+# executor then needs only its normal threshold for a buy that agrees with the count still to come and
+# the threshold plus the band (converted to probability through the posterior's margin and sd) for a
+# buy against it. With no direction every buy pays the band.
+#
+# Race-level overrides: `[states.XX.races."<pattern>"]`, keyed by a race id pattern (`*` matches any
+# run of characters; the longest literal pattern wins). An override replaces `drift_pts` and
+# `band_pts` for matching races; everything else comes from the state.
+
+[meta]
+lock_utc = "2026-11-04T17:00:00Z"
+registered = "2026-10-06"
+election_date = "2026-11-03"
+
+# ── West: the lock-time states ──────────────────────────────────────────────────────────────────
+
+[states.CA]
+name = "California"
+poll_close_utc = "2026-11-04T04:00:00Z"   # 8:00 pm PT
+lock_h = 13.0
+final_h = 312.0                           # AB 5: most ballots counted within 13 days
+share_counted_at_lock = "50 to 60%"
+report_first = ["mail received before Election Day", "election day in person", "late mail and Election Day drop-offs", "conditional registrations and provisionals"]
+# h1: first mail batch +5.6 (2022) / +2 to +5 est. (2024): mid 3.8, band 1.8 + 0.5.
+# h3: -0.5 to -1.5 est. (2022) / -1 to -2 est. (2024): mid -1.25, band 0.75 + 0.5.
+# h6, h12: the Wednesday-morning print covers +6 to +13: -3.2 / -2.9, mid -3.05, band 0.15 + 0.5.
+# lock: pre-registered -3 (observed -3.2 and -2.9), band 0.15 + 0.5 (share counted is est.).
+drift_pts = { h1 = 3.8, h3 = -1.25, h6 = -3.05, h12 = -3.05, lock = -3.0 }
+band_pts = { h1 = 2.3, h3 = 1.25, h6 = 0.65, h12 = 0.65, lock = 0.65 }
+notes = "Largest lock-time bias on the board: the lock print is reliably about 3 pts more R than final statewide, with only 50 to 60% counted. AB 5 speeds the tail, not the Wednesday-morning count. Governor race is top-two and open."
+source = "count-order-and-detector-2026-10-06.md: California; Lock-time drift summary (CA)"
+
+[states.CA.races."2026-HOUSE-CA-*"]
+# Pre-registered -2 to -4 in Central Valley and Orange County seats: mid -3, band 1.0 + 0.5 (Prop 50
+# redrew the 2026 lines, so 2024 district drifts do not map one to one). Early hours follow the state
+# with the extra 0.5 of district uncertainty on every band.
+drift_pts = { h1 = 3.8, h3 = -1.25, h6 = -3.0, h12 = -3.0, lock = -3.0 }
+band_pts = { h1 = 2.8, h3 = 1.75, h6 = 1.5, h12 = 1.5, lock = 1.5 }
+notes = "In 2024 two GOP election-night leaders (CA-45 Steel, CA-13 Duarte) lost on late ballots; pre-register a 2 to 4 pt D shift still to come for any House market priced off the lock print."
+
+[states.NV]
+name = "Nevada"
+poll_close_utc = "2026-11-04T03:00:00Z"   # 7:00 pm PT
+lock_h = 14.0
+final_h = 168.0                           # mail received to Sat Nov 7, cures to the sixth day
+share_counted_at_lock = "about 80%"
+report_first = ["early in person and mail received before Election Day (after last in line)", "election day in person", "Clark and Washoe mail dropped off or arriving after Election Day (one update a day)"]
+# h1: +1 to +4 est. (2022; 2024 not observed): mid 2.5, band 1.5 + 0.5.
+# h3: about -3 est. (2022) / about -1.5 est. (2024): mid -2.25, band 0.75 + 0.5.
+# h6: -3.56 (2022) / -1.75 (2024), sourced: mid -2.65, band 0.9.
+# h12: interpolated -3.07 (2022) / -1.75 (2024): mid -2.4, band 0.66 + 0.5.
+# lock: pre-registered -1.5 to -2.5 (observed about -2.9 and -1.75): mid -2.0, band 0.5 + 0.25.
+drift_pts = { h1 = 2.5, h3 = -2.25, h6 = -2.65, h12 = -2.4, lock = -2.0 }
+band_pts = { h1 = 2.0, h3 = 1.25, h6 = 0.9, h12 = 1.15, lock = 0.75 }
+notes = "Cleanest red-at-the-lock state: in 2022 and 2024 the Democrat who won was behind or tied at the lock. The four-day mail window survives for 2026 (AB 178 failed, AB 499 vetoed, Watson v. RNC upheld receipt deadlines). The 2024 drift was smaller because Republicans voted more by mail."
+source = "count-order-and-detector-2026-10-06.md: Nevada; Lock-time drift summary (NV)"
+
+[states.AZ]
+name = "Arizona"
+poll_close_utc = "2026-11-04T02:00:00Z"   # 7:00 pm MST
+lock_h = 15.0
+final_h = 240.0                           # late earlies counted over 5 to 10 days
+share_counted_at_lock = "60 to 75%"
+report_first = ["early ballots received by the weekend before (one batch at 8 pm MST)", "election day in person", "late earlies dropped off on Election Day (one Maricopa update each evening)"]
+# h1: first batch +6 to +10 (summary; +10.1 in 2022, about +5.6 est. in 2024): mid 8, band 2 + 1.0.
+# h3: +2 to +4 est. (2022) / +2 to +3.5 est. (2024): mid 3, band 1.0 + 0.5.
+# h6, h12: about +0.5 est. both cycles (nothing posts from about 2 am to 7 pm MST); band 0.5 est. plus
+#   1.0 for the documented wide lock (a third uncounted, 2026 ID-at-drop-off moves R earlies forward).
+# lock: pre-registered 0 to +0.5, wide: mid 0.25, band 0.25 + 0.5 + 0.75 (wide) = 1.5. No direction.
+drift_pts = { h1 = 8.0, h3 = 3.0, h6 = 0.5, h12 = 0.5, lock = 0.25 }
+band_pts = { h1 = 3.0, h3 = 1.5, h6 = 1.5, h12 = 1.5, lock = 1.5 }
+notes = "The first batch is the biggest blue mirage in the 18 states. By the lock the drift is small and uncertain with about a third of the vote still out, so the lock price is registered wide with no direction."
+source = "count-order-and-detector-2026-10-06.md: Arizona; Lock-time drift summary (AZ)"
+
+[states.AZ.races."2026-GOV-AZ"]
+# The 2022 governor tail moved R: lock-to-final change about -0.5 to -1, i.e. the lock print was more D
+# than final by +0.5 to +1: mid +0.75, band 0.25 + 0.5 + 0.25 (one cycle). No direction at the lock.
+drift_pts = { h1 = 8.0, h3 = 3.0, h6 = 0.75, h12 = 0.75, lock = 0.75 }
+band_pts = { h1 = 3.0, h3 = 1.5, h6 = 1.0, h12 = 1.0, lock = 1.0 }
+notes = "Hobbs 2022: led the first batch and the morning count, about tied Wednesday evening, +1.4 Friday, won by +0.67."
+
+[states.WA]
+name = "Washington"
+poll_close_utc = "2026-11-04T04:00:00Z"   # 8:00 pm PT
+lock_h = 13.0
+final_h = 240.0                           # postmarked ballots count until certification
+share_counted_at_lock = "55 to 65%"
+report_first = ["all-mail election-night batch (about 8:15 pm PT; nothing new until Wednesday afternoon)", "ballots dropped off on Election Day and late mail (one update per afternoon)"]
+# Statewide: drift-neutral within 0.5 pt (2022 Senate -0.44); pre-registered 0, band 0.5, every hour
+# (the election-night batch is the lock print).
+drift_pts = { h1 = 0.0, h3 = 0.0, h6 = 0.0, h12 = 0.0, lock = 0.0 }
+band_pts = { h1 = 0.5, h3 = 0.5, h6 = 0.5, h12 = 0.5, lock = 0.5 }
+notes = "No statewide or Senate race in 2026. Watson v. RNC preserved the postmark rule. Statewide tail roughly neutral to slightly D (King); rural and exurban districts have been R."
+source = "count-order-and-detector-2026-10-06.md: Washington; Lock-time drift summary (WA)"
+
+[states.WA.races."2026-HOUSE-WA-03"]
+# 2022 lock print overstated the Democrat by 5.0; 2024 understated her. No sign: drift 0, band 5.
+drift_pts = { h1 = 0.0, h3 = 0.0, h6 = 0.0, h12 = 0.0, lock = 0.0 }
+band_pts = { h1 = 5.0, h3 = 5.0, h6 = 5.0, h12 = 5.0, lock = 5.0 }
+notes = "WA-03: price the lock print with a wide band and no direction (Clark, Cowlitz, Lewis tail was R in 2022, D in 2024)."
+
+[states.AK]
+name = "Alaska"
+poll_close_utc = "2026-11-04T05:00:00Z"   # 8:00 pm AKST (memos count from midnight ET)
+lock_h = 12.0
+final_h = 360.0                           # 10-day mail window, RCV tabulation Nov 18
+share_counted_at_lock = "65 to 75%"
+report_first = ["early in person and absentee processed before Election Day plus Election Day precincts as they arrive", "rural precincts over the following days", "mail received within 10 days"]
+# Election-night count = lock: about 0 to +0.5 est. (2024); pre-registered 0. Band 0.25 + 0.5, plus 0.25
+# for the RCV transfer bias (about +0.5 to the Republican when a conservative minor candidate runs),
+# which moves the resolution, not the count.
+drift_pts = { h1 = 0.0, h3 = 0.0, h6 = 0.0, h12 = 0.0, lock = 0.0 }
+band_pts = { h1 = 1.0, h3 = 1.0, h6 = 1.0, h12 = 1.0, lock = 1.0 }
+notes = "A quarter to a third of the vote is counted after the lock. Nothing resolves by the lock unless a candidate is clearly above 50% of first choices; RCV runs Nov 18, certification Nov 25."
+source = "count-order-and-detector-2026-10-06.md: Alaska; Lock-time drift summary (AK)"
+
+# ── Mail-late and overnight states ─────────────────────────────────────────────────────────────
+
+[states.PA]
+name = "Pennsylvania"
+poll_close_utc = "2026-11-04T01:00:00Z"   # 8:00 pm ET
+lock_h = 16.0
+final_h = 96.0                            # no mail grace period; provisionals, cures and UOCAVA
+share_counted_at_lock = "90 to 97%"
+report_first = ["Philadelphia and collar-county mail (scanned all day, dropped at or after 8 pm)", "election day precincts", "remaining Philadelphia, Allegheny and suburban mail; slow R counties (Cambria, York)"]
+# h1: +3 to +8 est. (2022) / +2 to +5 est. (2024): mid 5, band 3 + 1.0.
+# h3: about -3 est. (2022) / -0.3 to -1 (2024): mid -1.65, band 1.35 + 0.5.
+# h6: -3.6 to -2.9 (2022) / about -0.8 est. (2024): mid -2.2, band 1.4 + 0.5.
+# h12: about -2.3 interpolated (2022) / -0.71 at +11.5 (2024): mid -1.5, band 0.8 + 0.5.
+# lock: pre-registered -1 to -2: mid -1.5, band 0.5 + 0.5 (2024 about -0.6 est.).
+drift_pts = { h1 = 5.0, h3 = -1.65, h6 = -2.2, h12 = -1.5, lock = -1.5 }
+band_pts = { h1 = 4.0, h3 = 1.85, h6 = 1.9, h12 = 1.3, lock = 1.0 }
+notes = "Red mirage between about +2 h and +6 h, then a blue shift through the morning. No pre-canvassing in 2026 (HB 37 not passed by the Senate). The same -1 to -2 lock drift is registered for the Philadelphia-suburb House seats (PA-01, PA-07, PA-08, PA-10), which inherit the state row."
+source = "count-order-and-detector-2026-10-06.md: Pennsylvania; Lock-time drift summary (PA)"
+
+[states.MI]
+name = "Michigan"
+poll_close_utc = "2026-11-04T01:00:00Z"   # 8:00 pm ET (memos' hour zero; four western UP counties close at 9 pm ET)
+lock_h = 16.0
+final_h = 48.0                            # no grace period
+share_counted_at_lock = "about 99%"
+report_first = ["small rural townships, precinct by precinct", "absentee pre-processed in jurisdictions over 5,000", "Detroit, Wayne suburbs and large cities' absentee counting boards (often after 3 am)"]
+# h1: -3 to -8 est. (2022) / -3 to -6 est. (2024): mid -5.5, band 2.5 + 1.0.
+# h3: -6.2 at +3.25 (2022) / -2 to -4 est. (2024): mid -4.1, band 2.1 + 0.5.
+# h6: -2 to -4 est. at +5 (2022) / -1.5 to -2.5 est. at +8 (2024): mid -2.75, band 1.25 + 0.5.
+# h12: interpolated toward the lock, -1.7 (2022) / -1.1 (2024): mid -1.4, band 0.3 + 0.5.
+# lock: about -0.3 est. (2022) / -0.1 to -0.3 est. (2024), pre-registered about -0.2: band 0.1 + 0.5.
+drift_pts = { h1 = -5.5, h3 = -4.1, h6 = -2.75, h12 = -1.4, lock = -0.2 }
+band_pts = { h1 = 3.5, h3 = 2.6, h6 = 1.75, h12 = 0.8, lock = 0.6 }
+notes = "Strongest overnight red mirage among states with no post-Election Day mail, gone by the lock. Governor is a three-way race (Benson, James, Duggan); Duggan's Detroit base also reports late, so overnight prints may understate him as well as Benson."
+source = "count-order-and-detector-2026-10-06.md: Michigan; Lock-time drift summary (MI)"
+
+[states.WI]
+name = "Wisconsin"
+poll_close_utc = "2026-11-04T02:00:00Z"   # 8:00 pm CT
+lock_h = 15.0
+final_h = 48.0
+share_counted_at_lock = "about 99%"
+report_first = ["polling-place absentee and election day precincts", "Madison and Dane (done by midnight CT)", "Milwaukee, West Allis and Wauwatosa central-count absentee batch (one delivery, 11 pm to 4 am CT)"]
+# h1: +1 to +3 est. (2022) / -3 to -6 est. (2024): mid -1.5, band 4.5 + 0.5. No direction.
+# h3: before the Milwaukee batch, -1.5 to -2.5 (2022) / -3 to -4 (2024), summary -2 to -4: mid -2.75,
+#     band 1.25 + 0.5. (2026 is a midterm: the batch should be worth 1 to 1.5 pts, nearer 2022.)
+# h6: -0.4 / about 0 (2022, after the batch) / -3.2 (2024, before it): mid -1.6, band 1.6 + 0.5.
+# h12, lock: about 0 both cycles; band 0.25 (about) rounded to 0.3.
+drift_pts = { h1 = -1.5, h3 = -2.75, h6 = -1.6, h12 = 0.0, lock = 0.0 }
+band_pts = { h1 = 5.0, h3 = 1.75, h6 = 2.1, h12 = 0.3, lock = 0.3 }
+notes = "An overnight trap, not a lock trap: 2 to 4 pts more R than final while Milwaukee's absentee batch is out, with real error risk (door seals Nov 2024, ballot shortages Apr 2025, flash drives Aug 2026). AB 617 died, so 2026 rules equal 2024."
+source = "count-order-IA-GA-WI-2026-10-06.md: Wisconsin; count-order-and-detector-2026-10-06.md Lock-time drift summary (WI)"
+
+[states.ME]
+name = "Maine"
+poll_close_utc = "2026-11-04T01:00:00Z"   # 8:00 pm ET
+lock_h = 16.0
+final_h = 48.0                            # round-one count; RCV tabulation the following week if needed
+share_counted_at_lock = "75 to 90%"
+report_first = ["machine-count cities (Portland, South Portland, Lewiston, Bangor) and Cumberland suburbs", "small hand-count towns in the 2nd District (through Wednesday afternoon)"]
+# h1, h3, h6: ME-02 2024 D lead from cities, +2.5 to +5.5 est. over +1 to +6: mid 4, band 1.5 + 0.5
+#   at every point (the values are below 5 pts).
+# h12: interpolated toward the lock, 2.2, band 1.0 + 0.5.
+# lock: pre-registered +0.5 to +1.5 (2024 ME-02 about +1.1): mid 1.0, band 0.5 + 0.25. Remaining
+#   count favours R: the opposite sign to every western state.
+drift_pts = { h1 = 4.0, h3 = 4.0, h6 = 4.0, h12 = 2.2, lock = 1.0 }
+band_pts = { h1 = 2.0, h3 = 2.0, h6 = 2.0, h12 = 1.5, lock = 0.75 }
+notes = "The rare state whose lock print overstates the Democrat. Statewide races and ME-02 share the row. If a federal race is under 50% at the lock, resolution waits for RCV the following week. Senate has only two qualified candidates (Collins vs Troy Jackson); governor general has no RCV."
+source = "count-order-and-detector-2026-10-06.md: Maine; Lock-time drift summary (ME)"
+
+# ── Fast-count states: first-hour mirages, lock within about 0.3 ───────────────────────────────
+
+[states.NC]
+name = "North Carolina"
+poll_close_utc = "2026-11-04T00:30:00Z"   # 7:30 pm ET
+lock_h = 16.5
+final_h = 48.0                            # SB 747: no mail grace period
+share_counted_at_lock = "about 99%"
+report_first = ["mail and early in person (first batch 7:40 to 8:15 pm)", "election day precincts (essentially complete by midnight)", "provisionals and UOCAVA"]
+# h1: first hour D +15 to +23 (2022; Budd led within about 90 minutes): mid 19, band 4 + 1.0.
+# h3: about 0 est. (2022) / about +0.5 est. (2024): mid 0.25, band 0.25 + 0.5.
+# h6: +0.8 at the 2024 call (+3.8), about 0 to +0.2 at the lock: 0.1, band 0.5 (est.).
+# h12, lock: about 0 to +0.2 (2022) / about +0.1 (2024); pre-registered 0: band 0.1 + 0.25, rounded 0.3.
+drift_pts = { h1 = 19.0, h3 = 0.25, h6 = 0.1, h12 = 0.05, lock = 0.0 }
+band_pts = { h1 = 5.0, h3 = 0.75, h6 = 0.5, h12 = 0.3, lock = 0.3 }
+notes = "Largest early blue mirage after Arizona's, gone by +2 h. No lock-time bias; the intra-night trade is fading the first-hour D lead. Senate open (Cooper vs Whatley) is the state's key lock-time market."
+source = "count-order-and-detector-2026-10-06.md: North Carolina; Lock-time drift summary (NC)"
+
+[states.OH]
+name = "Ohio"
+poll_close_utc = "2026-11-04T00:30:00Z"   # 7:30 pm ET
+lock_h = 16.5
+final_h = 336.0                           # official canvass about two weeks later adds provisionals and late mail
+share_counted_at_lock = "about 98%"
+report_first = ["absentee and early in person (right after 7:30 pm)", "election day precincts (pull R by 9:30 to 10 pm)", "Cuyahoga and Franklin election day precincts last; canvass adds provisionals and late mail"]
+# h1: first-hour batch +11 to +21 est. (2022) / +5 to +9 est. (2024): mid 13, band 8 + 1.0.
+# h3: -0.8 at +3.75 (2022) / about -1.4 at +4 (2024): mid -1.1, band 0.3 + 0.25.
+# h6, h12: interpolated toward the lock: -0.7 (band 0.5 est.), -0.4 (band 0.4 est.).
+# lock: about -0.2 (2022) / about -0.4 (2024), pre-registered -0.3 est.: band 0.1 + 0.5.
+drift_pts = { h1 = 13.0, h3 = -1.1, h6 = -0.7, h12 = -0.4, lock = -0.3 }
+band_pts = { h1 = 9.0, h3 = 0.55, h6 = 0.5, h12 = 0.4, lock = 0.6 }
+notes = "Fast first-hour blue mirage; by +4 h the count is 90%+ and about 1 pt more R than final; the canvass adds D-leaning provisionals. Races: Senate special (Husted vs Brown), Governor open (Ramaswamy vs Acton)."
+source = "count-order-and-detector-2026-10-06.md: Ohio; Lock-time drift summary (OH)"
+
+[states.TX]
+name = "Texas"
+poll_close_utc = "2026-11-04T01:00:00Z"   # 7:00 pm CT (memos' hour zero; El Paso and Hudspeth close at 9 pm ET)
+lock_h = 16.0
+final_h = 48.0                            # civilian mail received by 5 pm the next day
+share_counted_at_lock = "about 99%"
+report_first = ["early in person (the majority) and early-counted mail", "election day precincts (Harris often finishes Wednesday morning)", "El Paso, an hour later"]
+# h1: +0.9 (2022, sourced) / 0 to +2 est. (2024): mid 1.0, band 1.0 + 0.5.
+# h3: about 0 both cycles: 0, band 0.25 + 0.25.
+# h6, h12, lock: final within about 0.3: 0, band 0.3.
+drift_pts = { h1 = 1.0, h3 = 0.0, h6 = 0.0, h12 = 0.0, lock = 0.0 }
+band_pts = { h1 = 1.5, h3 = 0.5, h6 = 0.3, h12 = 0.3, lock = 0.3 }
+notes = "Near drift-neutral from about +2 h; the first early-vote print is a fair read because Republicans now vote early too. Races: Senate (Paxton vs Talarico), Governor, House seats under the 2025 map."
+source = "count-order-and-detector-2026-10-06.md: Texas; Lock-time drift summary (TX)"
+
+[states.NH]
+name = "New Hampshire"
+poll_close_utc = "2026-11-04T01:00:00Z"   # 8:00 pm ET (memos' hour zero; some towns close at 7 pm)
+lock_h = 16.0
+final_h = 48.0                            # no post-election mail
+share_counted_at_lock = "about 99%"
+report_first = ["Manchester, Nashua and machine-count towns (by 10 to 11 pm)", "small hand-count towns in the North Country and western hills (after midnight, some Wednesday)"]
+# h1: +1 to +2 D before hand-count towns (summary): mid 1.5, band 0.5 + 0.5.
+# h3: +2.2 at 64% (2022, sourced) / about +0.5 (2024): mid 1.35, band 0.85 + 0.25.
+# h6: +0.5 to +1 est. (2022) / about 0 est. (2024): mid 0.5, band 0.5 + 0.5.
+# h12: interpolated, 0.2, band 0.5. lock: about +0.1 / about 0, pre-registered 0: band 0.3.
+drift_pts = { h1 = 1.5, h3 = 1.35, h6 = 0.5, h12 = 0.2, lock = 0.0 }
+band_pts = { h1 = 1.0, h3 = 1.1, h6 = 1.0, h12 = 0.5, lock = 0.3 }
+notes = "Small early D drift while the cities and college towns are in; effectively final by the lock. Races: Senate open (Pappas), Governor (Ayotte), NH-01, NH-02."
+source = "count-order-and-detector-2026-10-06.md: New Hampshire; Lock-time drift summary (NH)"
+
+[states.KS]
+name = "Kansas"
+poll_close_utc = "2026-11-04T01:00:00Z"   # 7:00 pm CT (memos' hour zero; four western counties close at 9 pm ET)
+lock_h = 16.0
+final_h = 240.0                           # provisionals at canvass; SB 4 removed the three-day mail grace period
+share_counted_at_lock = "about 97%"
+report_first = ["advance (mail and early in person) ballots", "election day precincts (Johnson County sometimes slow)", "provisionals at canvass"]
+# h1: D lead on advance ballots, +3 to +8 est. (2022): mid 5.5, band 2.5 + 1.0.
+# h3: not observed (between the first-hour D lead and the late-Tuesday print): 0, band 2.0 (est.).
+# h6, h12, lock: 2022 -0.8 (more than 95% counted, +4 to +16); 2026 without the grace period
+#   -0.3 to -0.5 est.: mid -0.4, band 0.1 + 0.5. No direction.
+drift_pts = { h1 = 5.5, h3 = 0.0, h6 = -0.4, h12 = -0.4, lock = -0.4 }
+band_pts = { h1 = 3.5, h3 = 2.0, h6 = 0.6, h12 = 0.6, lock = 0.6 }
+notes = "The 2022 lock print was about 0.8 pt more R than final, from three-day grace ballots and provisionals. SB 4 (2025) ends the grace period, so expect a smaller post-lock D tail. Races: Governor open, KS-03, Senate (Marshall)."
+source = "count-order-and-detector-2026-10-06.md: Kansas; Lock-time drift summary (KS)"
+
+[states.IA]
+name = "Iowa"
+poll_close_utc = "2026-11-04T02:00:00Z"   # 8:00 pm CT
+lock_h = 15.0
+final_h = 24.0                            # mail due by close (SF 413); no post-election trickle
+share_counted_at_lock = "99.5 to 100%"
+report_first = ["whole absentee file as one batch at or after 8 pm CT", "election day precincts (last units rural, slightly R)"]
+# h1: +1 to +3 (2022) / 0 to +1 (2024): mid 1.5, band 1.5 + 0.25. (The first 15 minutes run +4 to +10
+#     est. in 2022; the h1 row of the memo is used, as it is a separate row there.)
+# h3: about 0 both cycles: 0, band 0.25 + 0.25. h6: +-0.3: 0, band 0.3. h12: +-0.2. lock: +-0.1, band
+#     0.1 + 0.1 for "about".
+drift_pts = { h1 = 1.5, h3 = 0.0, h6 = 0.0, h12 = 0.0, lock = 0.0 }
+band_pts = { h1 = 1.75, h3 = 0.5, h6 = 0.3, h12 = 0.2, lock = 0.2 }
+notes = "No blue shift after midnight; the last reporting units are rural and move slightly R. HF 954 and HF 928 change registration checks and recounts, not the count profile. Races: Senate open (Turek vs Hinson), Governor open, IA-01, IA-03."
+source = "count-order-IA-GA-WI-2026-10-06.md: Iowa; count-order-and-detector-2026-10-06.md Lock-time drift summary (IA)"
+
+[states.SC]
+name = "South Carolina"
+poll_close_utc = "2026-11-04T00:00:00Z"   # 7:00 pm ET
+lock_h = 17.0
+final_h = 48.0                            # mail due by close
+share_counted_at_lock = "about 99%"
+report_first = ["election day precincts (R-leaning) can post first", "big-county early-vote batches from Richland, Charleston, Greenville (11 pm, midnight or later)"]
+# No hour-by-hour prints were found. h1, h3: the 8 to 11 pm print can be -2 to -5 est.: mid -3.5,
+#   band 1.5 + 0.5. h6: normalizes after midnight: 0, band 1.0 (est.). h12, lock: within about
+#   0.2 est.: 0, band 0.3.
+drift_pts = { h1 = -3.5, h3 = -3.5, h6 = 0.0, h12 = 0.0, lock = 0.0 }
+band_pts = { h1 = 2.0, h3 = 2.0, h6 = 1.0, h12 = 0.3, lock = 0.3 }
+notes = "Reverse of most states: early in-person ballots cannot be tabulated before close, so big counties drop them late. Every number here is an estimate; the memo omits the table rather than invent prints. Races not competitive in models."
+source = "count-order-and-detector-2026-10-06.md: South Carolina; Lock-time drift summary (SC)"
+
+[states.NE]
+name = "Nebraska"
+poll_close_utc = "2026-11-04T02:00:00Z"   # 8:00 pm CT (memos' hour zero; the Panhandle closes at 10 pm ET)
+lock_h = 15.0
+final_h = 96.0                            # Douglas County counts Election Day drop-offs and provisionals over days
+share_counted_at_lock = "about 98% statewide"
+report_first = ["Douglas (Omaha) and Lancaster (Lincoln) early ballots", "rural counties through the night", "Douglas Election Day drop-offs and provisionals over the following days"]
+# h1: +9 to +15 est. (2024 Senate, Osborn minus Fischer): mid 12, band 3 + 1.0.
+# h3: about +1.6 ("midnight" may be CT, not ET): band 0.25 + 0.75 for the timing.
+# h6, h12: interpolated toward the lock: 1.0 (band 0.8 est.), 0.6 (band 0.6 est.).
+# lock: about +0.5 est., pre-registered +0.5 statewide: band 0.5. No direction.
+drift_pts = { h1 = 12.0, h3 = 1.6, h6 = 1.0, h12 = 0.6, lock = 0.5 }
+band_pts = { h1 = 4.0, h3 = 1.0, h6 = 0.8, h12 = 0.6, lock = 0.5 }
+notes = "Early independent/Democratic mirage, mostly gone by +3 h. Senate (Ricketts vs Osborn, independent) is an independent-major race: the D minus R margin here means the non-Republican side minus R."
+source = "count-order-and-detector-2026-10-06.md: Nebraska; Lock-time drift summary (NE)"
+
+[states.NE.races."2026-HOUSE-NE-02"]
+# Multi-day count; the sign of the remaining drift is not established (2024 tail favoured Bacon
+# slightly, est., no number): lock drift 0, band 0.5 (est.) + 0.5 (multi-day count).
+drift_pts = { h1 = 12.0, h3 = 1.6, h6 = 0.5, h12 = 0.0, lock = 0.0 }
+band_pts = { h1 = 4.0, h3 = 1.5, h6 = 1.0, h12 = 1.0, lock = 1.0 }
+notes = "NE-02 stayed open until Friday in 2024 (AP call 6:11 pm ET Fri Nov 8); the lock print is not final."
+
+[states.GA]
+name = "Georgia"
+poll_close_utc = "2026-11-04T00:00:00Z"   # 7:00 pm ET
+lock_h = 17.0
+final_h = 48.0
+share_counted_at_lock = "about 99%"
+report_first = ["small rural counties post everything within an hour (first print R-skewed)", "metro early and absentee (8 to 9 pm)", "metro election day precincts (until 11 pm to 1 am)"]
+# h1: first print D +14 / drift +13 (2022) or R +24 / drift -22 (2024): mid -4.5, band 17.5. No direction.
+# h3 (10 pm): metro tail still out, -0.5 to -1.5 toward the 11 pm prints: mid -1.0, band 0.5 + 0.5.
+# h6 (1 am): 2022 at 12:39 am about -0.65 to -1.25 (sourced), 2024 at 12:44 am about +0.2: mid -0.5,
+#     band 0.75 + 0.25 rounded 1.0. h12: 9:45 am 2022 -0.05: 0, band 0.2. lock: about -0.1 / 0: 0, band 0.2.
+drift_pts = { h1 = -4.5, h3 = -1.0, h6 = -0.5, h12 = 0.0, lock = 0.0 }
+band_pts = { h1 = 17.5, h3 = 1.0, h6 = 1.0, h12 = 0.2, lock = 0.2 }
+notes = "The metro Atlanta tail adds +0.5 to +1.5 D between 11 pm and morning; the lock residual is near 0. SB 3EX (June 2026): a margin of 0.5% or less forces a hand recount in eight statewide offices, so a close Senate or governor race cannot resolve before Nov 4. Fulton withheld all results until its last precinct closed in the May 2026 primary."
+source = "count-order-IA-GA-WI-2026-10-06.md: Georgia; count-order-and-detector-2026-10-06.md Lock-time drift summary (GA)"

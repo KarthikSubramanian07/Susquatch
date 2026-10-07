@@ -670,6 +670,137 @@ stale until then; that is expected. `enr-capture` ignores the schedule.
   election-night orders are counted as fully bought, so the cap can only bind harder. `crates/live/tests/session.rs` drives a real
   `NeedleState` into the engine: a posterior with edge produces a filled buy on the mock exchange, heartbeat silence cancels the working
   order and blocks new ones despite fresh size on the book, and trading resumes only after the resume streak and a fresh posterior.
+- **Count-order playbook (EXP-006):** see §7. The table's numbers are estimates from two cycles of press prints. The gate has run in unit
+  tests, one end-to-end session test and the drill in §7, never against a live night. In states whose 2026 prior is MIXED (CA, NV, PA
+  among them), the needle carries each county's counted lean into its uncounted ballots. The table is used there only as a direction
+  check and band, as everywhere else, so some lock-time edge is left unused. Using it as an adjustment in those races would need a
+  per-race "typed prior" flag that rust-live does not have.
+
+---
+
+## 7. Count-order playbook and the lock-time rule (EXP-006)
+
+The contest ranks on the **final** count, and trading stops at the Nov 4 16:55Z gate, before the slow states finish. The playbook writes
+down, before the night, how each state's partial count is biased hour by hour, so the executor can tell a real move from a count-order
+artefact and can buy the side the uncounted vote favours in the states that are still counting at the lock.
+
+### The table: `config/count_order.toml`
+
+- **Contents.** One row per state for the 18 researched states (AK, AZ, CA, GA, IA, KS, ME, MI, NC, NE, NH, NV, OH, PA, SC, TX, WA, WI).
+  Each row has the poll close (UTC, one of that state's closings in `config/poll_closing.toml`), `lock_h` (hours to the 17:00Z lock),
+  `final_h` (when the count is essentially complete), the vote types in reporting order, the share counted at the lock, notes, and the
+  memo section the numbers come from. Race-level overrides cover CA House seats (`2026-HOUSE-CA-*`), WA-03, AZ governor and NE-02.
+- **Drift and band.** `drift_pts` and `band_pts` are registered at +1, +3, +6, +12 h and at the lock. Drift is the reported D−R
+  margin at that hour minus the final margin, so a negative drift means the count still to come favours the Democrat.
+- **Interpolation.** Values are linear between points. The first value holds from poll close to +1 h; it is the first-hour mirage, as
+  the memos report it. After the lock the values go linearly to zero at `final_h`. Nothing is registered before poll close.
+- **Bands.** One rule, written in the file header: half the range of the memos' numbers at that hour, plus 0.5 pt for an estimate
+  (1.0 pt for a first-hour estimate of 5 pts or more) and 0.25 pt for an "about" print. A ranged value uses its midpoint; "no direction"
+  is drift 0 with the band. A drift has a **direction** only when `|drift| > band`.
+- **Parsers.** `crates/core/src/count_order.rs` reads and validates the table: lock hours against the poll closes, bands non-negative,
+  overrides of the same state, unknown keys refused. Its tests check that the shipped file parses, carries the memo headlines, and agrees
+  with `poll_closing.toml`. `py/susq/replay/count_order.py` reads the same file for drills and is tested to interpolate identically.
+
+| State | Lock drift ± band (pts) | Count still to come favours | Lock rule eligible |
+|---|---|---|---|
+| CA statewide / CA House seats | −3.0 ± 0.65 / −3.0 ± 1.5 | D | yes |
+| NV | −2.0 ± 0.75 | D | yes |
+| PA | −1.5 ± 1.0 | D | yes (but 90 to 97% counted, so usually above the reported-share bar) |
+| ME (statewide and ME-02) | +1.0 ± 0.75 | R | no (under 1.5 pts) |
+| AZ / AZ governor | +0.25 ± 1.5 / +0.75 ± 1.0 | neither | no |
+| WA / WA-03 | 0 ± 0.5 / 0 ± 5 | neither | no |
+| AK | 0 ± 1.0 (RCV Nov 18) | neither | no |
+| MI, WI, KS, OH, NE, NC, TX, NH, IA, SC, GA | within ±0.5 | neither | no |
+
+The overnight traps carry directions at their hours. MI is −4.1 ± 2.6 at +3 h and WI −2.75 ± 1.75 at +3 h (both favour D until Wayne and
+Milwaukee report). NC's first hour is +19 ± 5 (favours R), and GA's first print is −4.5 ± 17.5 (no direction).
+
+### Why the table is a direction check, not an adjustment
+
+The needle's `margin_mean` is already a projection of the final margin. `cpp/needle/src/model.cpp` adds every county's expected remaining
+votes at the prior's vote-type offset (`NeedlePrior.vote_types[].margin_offset`, with `typical_report_order` from
+`py/susq/replay/conventions.py` deciding which types an untyped tally contains), shifted by what that county's reported votes taught it.
+
+Where the prior is split by vote type, subtracting the registered drift from `margin_mean` would count the remaining-vote lean twice.
+Among the 18 states that is AK, AZ, IA, NC and SC, plus GA in 2022, because MEDSL splits their history by method (§3).
+
+The other states, including the lock-rule states CA, NV and PA, get one MIXED type per county. There the needle still projects where
+the uncounted vote is, and Los Angeles or Clark counted last is weighted as such. Within a county, though, it carries the lean of the
+ballots already counted into the ones still out, shrunk toward the prior while little is counted. In those states the posterior leans
+toward the print, the same way the table registers.
+
+The executor cannot tell typed priors from untyped ones per race; the posterior carries no such flag. So it uses the table the same way
+everywhere, only to:
+
+1. **Check direction.** Does the buy agree with the registered direction of the count still to come? YES on a DEM leg or NO on a REP leg
+   leans D.
+2. **Price a band.** If not, how much extra edge must the buy show? The band covers what the needle cannot know: the lean between
+   early and late ballots of one type, or of one county under a MIXED prior. Examples are late Clark mail, Maricopa late earlies and the
+   California tail.
+
+This can only refuse trades. The needle's threshold is never relaxed below its normal level, so the table never buys more than the needle
+alone would justify. In MIXED-prior states the needle probably understates the side the count still favours. That costs some lock-rule
+edge but does not add risk. Applying a shrunk drift in MIXED races only is a possible follow-up; it would need the prior to tell rust-live
+which races are typed (§6).
+
+### The gate (`[strategies.en] count_order_enabled`, default on)
+
+- **Agrees with the registered direction:** the normal threshold, `max(min_edge_pts, se_mult × SE)`.
+- **Against it, or no registered direction:** the threshold plus `band_prob`. This is the band converted to probability through the
+  posterior: `|Phi(m / sd) − Phi((m ∓ band) / sd)|`, with the margin moved by the band against the buy. A gated buy without a usable
+  `margin_sd` is refused.
+- **Not gated:** races in states outside the table, and every race before its state's poll close, trade on the threshold alone.
+- **Rolls** are never gated.
+- **Journal.** Every order the executor sends is journalled as an `en_order` event. The event carries the registered profile, the hours
+  after close, the drift, band and direction, whether the buy agreed, the band it paid, and the threshold and required edge. Refusals are
+  debug notes in the rust-live log.
+
+### The lock-time rule (`lock_rule_enabled`, default on)
+
+From `lock_window_start` (2026-11-04T14:00:00Z, three hours before the gate), a race qualifies when all of these hold:
+
+- the posterior counts below `lock_max_reported_frac` (0.85);
+- the registered lock drift is at least `lock_min_drift_pts` (1.5);
+- the band is smaller than the drift.
+
+A qualifying race may be bought on the side the remaining count favours, at the normal threshold. The executor may use the needle's last
+posterior for that race even when the needle has been quiet on it for longer than `[needle] posterior_max_age_s` (600 s). Counties in
+those states post once a day, so by Wednesday morning their last posterior is hours old though nothing has changed.
+
+The safety conditions:
+
+- The needle as a whole must be healthy. A watchdog trip clears every stored posterior, so nothing survives an outage.
+- The posterior must be no older than `lock_posterior_max_age_s` (3 h, at least `posterior_max_age_s`).
+- Disputed races are skipped (and resting orders on them are cancelled), and so are races whose feed is stale.
+- Quiet posteriors are never rolled on.
+- Size is the normal per-order size, under the night budget and every risk cap.
+
+These posteriors reach the executor through `NeedleSnapshot::quiet_posteriors` and `NeedleView.quiet_posteriors`. rust-live passes them
+only while the lock rule is on, and keeps those races' books fresh. `crates/live/tests/session.rs`
+(`lock_rule_buys_a_trailing_nevada_democrat_on_a_quiet_needle_only_when_on`) shows the whole rule end to end. Nevada is 60% counted with
+the Democrat trailing on the print and projected D +3 ± 1.2. The needle stays quiet for two hours, then the Cup offers the Democrat at
+0.40. A buy fills with the rule on, and nothing is sent with it off.
+
+### Leader/contender switch (`contender_hedge_multiple`, default 0 = off)
+
+When equity ÷ 100,000 is at least the multiple, the executor opens no new positions and only rolls. It ships off because the field
+maximum on the night is not observed, so there is no honest multiple to switch at. Set it on the night only from a measured leaderboard,
+and record the reason in the experiment log.
+
+### Drill: gate off versus on
+
+```bash
+uv run python -m susq.replay drill-compare py/susq/replay/specs/sample_2022.toml   # reports/drills/<date>-count-order.md
+```
+
+This replays the spec once and runs the drill executor twice on the same record, with the gate off and on. It writes trades, P&L, false
+triggers and the race-sides the gate refused.
+
+Limits of this drill:
+
+- Its market is our own posterior delayed by `market_delay_s`. That book never extrapolates the partial count, so the drill measures
+  what the gate costs and cannot test the mispricing the gate is for.
+- The bundled fixture is 2022 only (GA, NH, ME). No 2024 fixture exists, so the spec's two-year comparison cannot be run from the repo.
 
 ## Sources (all accessed 2026-09-28)
 

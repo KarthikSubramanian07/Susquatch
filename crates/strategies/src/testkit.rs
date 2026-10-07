@@ -8,7 +8,7 @@ use susq_contracts::v1::{MarketMap, MarketRule, RacePosterior, TargetFile, Targe
 use susq_core::{Action, ExchangeId, MarketIndex, Pips, Side, config::FairCfg};
 use susq_platform::{ConstraintEval, NodeRole, Relationship, RelationshipNode, RelationshipType};
 
-use crate::snapshot::{FairQuote, IntentView, NS_PER_S, NeedleView, Snapshot};
+use crate::snapshot::{FairQuote, IntentView, NS_PER_S, NeedleView, QuietPosterior, Snapshot};
 
 /// 2026-10-08T00:00:00Z.
 pub const NOW_S: i64 = 1_791_417_600;
@@ -216,6 +216,7 @@ impl World {
             epoch: 1,
             disputed_races: Default::default(),
             stale_feed_races: Default::default(),
+            quiet_posteriors: Default::default(),
             posteriors: races
                 .iter()
                 .map(|&(race, p_dem, p_rep, n_batches)| {
@@ -232,6 +233,56 @@ impl World {
                 })
                 .collect(),
         });
+    }
+
+    /// Replace (or add) a race's actionable posterior in the installed needle view.
+    pub fn posterior(&mut self, post: RacePosterior) {
+        let n = self.needle.as_mut().expect("needle view installed");
+        n.quiet_posteriors.remove(&post.race_id);
+        n.posteriors.insert(post.race_id.clone(), post);
+    }
+
+    /// Move a race's posterior to the quiet set, as produced `age_s` seconds before now.
+    pub fn quiet(&mut self, post: RacePosterior, age_s: i64) {
+        let produced_at_ns = self.now_ns - age_s * NS_PER_S;
+        let n = self.needle.as_mut().expect("needle view installed");
+        n.posteriors.remove(&post.race_id);
+        n.quiet_posteriors.insert(
+            post.race_id.clone(),
+            QuietPosterior {
+                posterior: post,
+                produced_at_ns,
+            },
+        );
+    }
+
+    /// Move the clock (books and fair quotes keep their timestamps).
+    pub fn at_utc(&mut self, rfc3339: &str) {
+        let t: chrono_free::Instant = rfc3339.into();
+        self.now_ns = t.0;
+    }
+}
+
+/// RFC 3339 `YYYY-MM-DDTHH:MM:SSZ` to UTC nanoseconds, without a chrono dependency in this crate.
+mod chrono_free {
+    pub struct Instant(pub i64);
+
+    impl From<&str> for Instant {
+        fn from(s: &str) -> Self {
+            let n = |r: std::ops::Range<usize>| -> i64 { s[r].parse().expect("timestamp digits") };
+            assert!(s.len() == 20 && s.ends_with('Z'), "use YYYY-MM-DDTHH:MM:SSZ");
+            let (y, m, d) = (n(0..4), n(5..7), n(8..10));
+            // Days from 1970-01-01 (civil-from-days inverse, Howard Hinnant).
+            let y = if m <= 2 { y - 1 } else { y };
+            let era = y.div_euclid(400);
+            let yoe = y - era * 400;
+            let mp = (m + 9) % 12;
+            let doy = (153 * mp + 2) / 5 + d - 1;
+            let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+            let days = era * 146_097 + doe - 719_468;
+            let secs = days * 86_400 + n(11..13) * 3600 + n(14..16) * 60 + n(17..19);
+            Instant(secs * 1_000_000_000)
+        }
     }
 }
 

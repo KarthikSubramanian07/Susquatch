@@ -141,7 +141,8 @@ impl World {
                 .map(|(ex, _)| ex.clone()),
         );
         if let Some(n) = self.needle.as_ref().filter(|n| n.healthy) {
-            for race in n.posteriors.keys() {
+            // Quiet races too: the lock-time rule may trade them, so their books must stay fresh.
+            for race in n.posteriors.keys().chain(n.quiet_posteriors.keys()) {
                 out.extend(self.markets.exchanges_for_race(race).iter().cloned());
             }
         }

@@ -122,6 +122,30 @@ pub fn host_name() -> String {
         .unwrap_or_else(|| "localhost".into())
 }
 
+/// The count-order table (EXP-006) when the election-night executor will read it: enabled, with
+/// its gate or lock-time rule on. A missing or invalid table is a startup error, never a silent
+/// fallback to an ungated executor.
+pub fn load_count_order(
+    cfg: &Config,
+    home: &Path,
+) -> anyhow::Result<Option<Arc<susq_core::count_order::CountOrder>>> {
+    let en = &cfg.strategies.en;
+    if !(en.enabled && (en.count_order_enabled || en.lock_rule_enabled)) {
+        return Ok(None);
+    }
+    let path = home.join(&en.count_order_path);
+    let table = susq_core::count_order::CountOrder::load(&path)
+        .map_err(|e| anyhow::anyhow!("count-order table {}: {e}", path.display()))?;
+    tracing::info!(
+        path = %path.display(),
+        states = table.states.len(),
+        gate = en.count_order_enabled,
+        lock_rule = en.lock_rule_enabled,
+        "count-order playbook loaded"
+    );
+    Ok(Some(Arc::new(table)))
+}
+
 /// Build the gateway (with its OMS) and the engine.
 pub fn build(o: BuildOpts) -> anyhow::Result<Engine> {
     let cfg = &o.cfg;
@@ -177,7 +201,9 @@ pub fn build(o: BuildOpts) -> anyhow::Result<Engine> {
         retry: RetryPolicy::default(),
         oms: Arc::new(Mutex::new(oms)),
     });
+    let count_order = load_count_order(cfg, &o.home)?;
     Ok(Engine::new(EngineDeps {
+        count_order,
         cfg: o.cfg,
         home: o.home,
         clock: o.clock,
