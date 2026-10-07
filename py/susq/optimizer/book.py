@@ -20,6 +20,17 @@ For each scenario S:
 The chosen book then gets tie hygiene (non-round quantities plus one idiosyncratic leg, since
 everyone starts at exactly 100,000), locked flags (late-reporting core legs are held to the lock;
 early-reporting ones are election-night rolling fuel) and tranches.
+
+Robustness (EXP-004): with `robust_thresholds`, scenarios are also ranked under constant field
+assumptions (thin T = 1.5x, medium 5x, tail 20x: `ROBUST_ASSUMPTIONS`). The rule:
+
+* the fitted-T winner is committed when it is top-ranked under at least `MIN_TOP_UNDER` (2) of the
+  four rankings (fitted, thin, medium, tail);
+* otherwise the scenario top-ranked under the most rankings is committed, provided that count is at
+  least `MIN_TOP_UNDER`; ties go to the better position in the fitted ranking;
+* otherwise nothing is committed (no positions; the notes say why) and the book waits for more tape.
+
+The committed scenario's legs and quantities are always the ones found under the fitted T.
 """
 
 from __future__ import annotations
@@ -55,6 +66,50 @@ class ScenarioScore:
     closeness: float  # P(S) · E[min(M/T, 1) | S], the tie-breaker when every score is 0
 
 
+ROBUST_ASSUMPTIONS: dict[str, float] = {"thin": 1.5, "medium": 5.0, "tail": 20.0}
+MIN_TOP_UNDER = 2
+
+
+@dataclass(frozen=True)
+class Robustness:
+    """Which field assumptions the committed scenario is top-ranked under."""
+
+    tops: dict[str, str]  # assumption ("fitted", "thin", ...) -> its top-ranked scenario id
+    chosen: str | None
+    top_under: tuple[str, ...]
+    fallback: bool  # the fitted-T winner was not the one committed
+
+    def describe(self) -> str:
+        tops = ", ".join(f"{a}={sid}" for a, sid in self.tops.items())
+        if self.chosen is None:
+            return (
+                f"robustness: no scenario is top under >= {MIN_TOP_UNDER} of {len(self.tops)} field "
+                f"assumptions, nothing committed (tops: {tops})"
+            )
+        how = "fallback from the fitted winner" if self.fallback else "the fitted winner"
+        return (
+            f"robustness: {self.chosen} ({how}) is top under {len(self.top_under)}/{len(self.tops)} "
+            f"[{', '.join(self.top_under)}] (tops: {tops})"
+        )
+
+
+def robust_choice(rankings: Mapping[str, Sequence[ScenarioScore]]) -> Robustness:
+    """The robustness rule (module docstring) over rankings keyed by assumption, one of them "fitted"."""
+    tops = {a: r[0].scenario.scenario_id for a, r in rankings.items() if r}
+    under: dict[str, list[str]] = {}
+    for a, sid in tops.items():
+        under.setdefault(sid, []).append(a)
+    fitted = [s.scenario.scenario_id for s in rankings.get("fitted", ())]
+    order = {sid: i for i, sid in enumerate(fitted)}
+    first = fitted[0] if fitted else None
+    if first is not None and len(under.get(first, [])) >= MIN_TOP_UNDER:
+        return Robustness(tops, first, tuple(under[first]), False)
+    best = sorted(under, key=lambda sid: (-len(under[sid]), order.get(sid, len(order)), sid))
+    if best and len(under[best[0]]) >= MIN_TOP_UNDER:
+        return Robustness(tops, best[0], tuple(under[best[0]]), True)
+    return Robustness(tops, None, (), first is not None)
+
+
 @dataclass
 class OptimizerResult:
     best: ScenarioScore | None
@@ -64,6 +119,7 @@ class OptimizerResult:
     p_top3: float = 0.0
     book_cost: float = 0.0
     explanation: str = ""
+    robustness: Robustness | None = None
 
 
 def _floor_tick(p: float) -> float:
@@ -181,27 +237,36 @@ def build_book(
     equity: float = INITIAL_BALANCE,
     cluster_drift_pts: Mapping[str, float] | None = None,
     book_frac: float | None = None,
+    robust_thresholds: Mapping[str, FloatArray] | None = None,
 ) -> OptimizerResult:
     """Score scenarios and turn the best one into target positions.
 
     `book_frac` is the share of equity the book may spend (callers pass `cfg.book_frac_at(now)` so
     the early, smaller size applies before `early_until_utc`); it defaults to `cfg.book_frac`.
+    `robust_thresholds` (assumption name -> T per world) switches on the robustness rule.
     """
     frac = cfg.book_frac if book_frac is None else book_frac
-    ranked = score_scenarios(
-        legs,
-        outcomes,
-        scenarios,
-        threshold,
-        cfg,
-        equity=equity,
-        cluster_drift_pts=cluster_drift_pts,
-        book_frac=frac,
-    )
+
+    def rank(t: FloatArray) -> list[ScenarioScore]:
+        return score_scenarios(
+            legs, outcomes, scenarios, t, cfg, equity=equity, cluster_drift_pts=cluster_drift_pts,
+            book_frac=frac,
+        )  # fmt: skip
+
+    ranked = rank(threshold)
     best = ranked[0] if ranked else None
+    robust = None
+    if robust_thresholds and ranked:
+        robust = robust_choice({"fitted": ranked, **{a: rank(t) for a, t in robust_thresholds.items()}})
+        best = next((s for s in ranked if s.scenario.scenario_id == robust.chosen), None)
+        if best is None:
+            return OptimizerResult(None, ranked, explanation=robust.describe(), robustness=robust)
     if best is None or not best.legs:
         return OptimizerResult(
-            best, ranked, explanation=f"no scenario has any consistent, priced leg (book frac {frac:.0%})"
+            best,
+            ranked,
+            explanation=f"no scenario has any consistent, priced leg (book frac {frac:.0%})",
+            robustness=robust,
         )
 
     s = best.scenario
@@ -240,7 +305,9 @@ def build_book(
             f"P(M>T|S)={best.p_beat_given_s:.3f}, field exposure {best.exposure:+.2f}; "
             f"{len(positions)} legs costing {cost:,.0f} ({cost / equity:.0%} of equity, "
             f"book frac {frac:.0%}); unconditional P(1st)={pf:.4f}"
+            + (f"; {robust.describe()}" if robust else "")
         ),
+        robustness=robust,
     )
 
 

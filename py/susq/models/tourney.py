@@ -43,14 +43,13 @@ class FieldParams:
         return max(0, round(self.n_players * frac))
 
 
-def simulate_threshold(
-    outcomes: BoolArray, prices: FloatArray, params: FieldParams, *, seed: int = 0
-) -> FloatArray:
-    """Winning multiple T(ω) for each world. `outcomes` is (worlds, contracts), `prices` (contracts,)."""
-    rng = np.random.default_rng(seed)
-    worlds = outcomes.shape[0]
-    t = np.ones(worlds)
+def consensus_and_bot_max(worlds: int, params: FieldParams, rng: np.random.Generator) -> FloatArray:
+    """Per-world maximum of the passive (1.0), consensus-Kelly and bot players, world-independent.
 
+    Draws the Kelly maximum first and the bot maximum second, which is the order
+    `simulate_threshold` has always used, so its output is unchanged by the refactor.
+    """
+    t = np.ones(worlds)
     n_kelly = params.count(params.frac_kelly)
     if n_kelly:
         u = rng.random(worlds) ** (1.0 / n_kelly)
@@ -60,6 +59,15 @@ def simulate_threshold(
     if n_bot:
         u = rng.random(worlds) ** (1.0 / n_bot)
         t = np.maximum(t, np.exp(params.bot_log_mean + params.bot_log_sd * stats.norm.ppf(u)))
+    return t
+
+
+def simulate_threshold(
+    outcomes: BoolArray, prices: FloatArray, params: FieldParams, *, seed: int = 0
+) -> FloatArray:
+    """Winning multiple T(ω) for each world. `outcomes` is (worlds, contracts), `prices` (contracts,)."""
+    rng = np.random.default_rng(seed)
+    t = consensus_and_bot_max(outcomes.shape[0], params, rng)
 
     n_yolo = params.count(params.frac_yolo)
     if n_yolo and prices.size:

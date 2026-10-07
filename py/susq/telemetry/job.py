@@ -12,7 +12,7 @@ import polars as pl
 from susq.collectors.store import partition_days, read_snapshots
 from susq.mapping.io import load_best_map
 from susq.research_env import Paths, ResearchConfig, atomic_write_text
-from susq.telemetry import crowd, leaderboard
+from susq.telemetry import crowd, field, leaderboard
 from susq.telemetry.cupdata import read_leaderboard, read_prices
 
 CROWD_LOOKBACK = timedelta(days=14)
@@ -47,8 +47,9 @@ def read_reference_hourly(root: Path, *, since: date) -> pl.DataFrame:
 
 def run_telemetry(paths: Paths, cfg: ResearchConfig, *, now_ns: int) -> dict[str, Any]:
     cup = paths.data / "cup"
+    lb_frame = read_leaderboard(cup)
     lb = leaderboard.summarize(
-        read_leaderboard(cup),
+        lb_frame,
         lock_ns=int(cfg.lock_utc.timestamp() * 1e9),
         members=tournament_members(paths.status),
     )
@@ -63,9 +64,12 @@ def run_telemetry(paths: Paths, cfg: ResearchConfig, *, now_ns: int) -> dict[str
         if mm is not None
         else crowd.CrowdSummary()
     )
+    # EXP-004: the cheap-leg footprint of the trade tape (aggregates per contract side, folded per day).
+    footprint = field.build_footprint(field.read_tape_ladder(cup / "tape"), lb_frame, as_of_ns=now_ns)
     doc = {
         "produced_at_ns": now_ns,
         "leaderboard": lb.as_dict() if lb else None,
+        "field": footprint.as_dict(),
         "crowd": {
             "cluster_drift_pts": crowd_summary.cluster_drift_pts,
             "persistent_clusters": crowd_summary.persistent_clusters,

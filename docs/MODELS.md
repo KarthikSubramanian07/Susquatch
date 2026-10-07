@@ -238,6 +238,17 @@ lognormal bots, and every contract YOLO-eligible, with independent `Bernoulli(1 
 picks. They differ from §2.1–2.3 on purpose. Use the exact model for P(1st) of a candidate book and the
 sampled one where the research pipeline expects draws.
 
+### 2.6 Tape-fitted YOLO type (EXP-004, Python only)
+
+`py/susq/telemetry/field.py::tape_threshold` replaces the YOLO type's price prior with the Cup trade
+tape. Each contract side c gets a cheap-leg spend `S_c` (bought at side price ≤ 0.20), a price-weighted
+mean entry `p̄_c` and an all-in count `n_c = min(S_c / stake, n_hi)` (stake and n_hi from the
+leaderboard's high-turnover accounts). Per world, `T(ω) = max(floor, K(ω), max{1/p̄_c : c pays in ω,
+c held})`, with `c` held with probability `min(1, n_c)` and `K` the passive/consensus/bot maximum of
+§2.5 with `frac_yolo = 0` (`tourney.consensus_and_bot_max`, the same draws `simulate_threshold` makes
+before its YOLO step). The bot count comes from leaderboard `trades_count`. There is no native port;
+the research pipeline calls the Python function directly. RESEARCH.md has the full derivation.
+
 ---
 
 ## 3. `needle` — election-night county model
