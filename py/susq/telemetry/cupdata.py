@@ -6,6 +6,11 @@ Schemas (written by the bridge recorder):
                best_bid f64?, best_ask f64?, spread f64?
 * leaderboard: ts timestamp[us,UTC], rank i32, profile_id str, username str, pnl f64,
                trades_count i32, volume f64, win_rate f64?, roi f64, total i32, my_rank i32?
+* tape:        ts timestamp[us,UTC] (the trade's createdAt), exchange_id str, market_id str, trade_id str,
+               side str (YES/NO, the taker's space), price f64, size i64, volume f64?,
+               recorded_at timestamp[us,UTC]. Partitioned by the trade's day, so `since` bounds the
+               files opened. A pass cut short and repeated can write a trade twice; `read_tape`
+               drops repeats by trade_id.
 
 The directory layout under each root is the recorder's choice, so we read `**/*.parquet`.
 """
@@ -24,6 +29,9 @@ PRICE_COLUMNS = ("ts", "exchange_id", "market_id", "latest_price", "best_bid", "
 LEADERBOARD_COLUMNS = (
     "ts", "rank", "profile_id", "username", "pnl", "trades_count", "volume", "win_rate", "roi", "total",
     "my_rank",
+)  # fmt: skip
+TAPE_COLUMNS = (
+    "ts", "exchange_id", "market_id", "trade_id", "side", "price", "size", "volume", "recorded_at",
 )  # fmt: skip
 
 
@@ -80,6 +88,22 @@ def read_prices(
 
 def read_leaderboard(cup_dir: Path, *, since: datetime | None = None) -> pl.DataFrame:
     return read_tree(cup_dir / "leaderboard", since=since)
+
+
+def read_tape(cup_dir: Path, *, since: datetime | None = None) -> pl.DataFrame:
+    """The field's trade tape (one row per public trade), oldest first, unique by trade_id."""
+    df = read_tree(cup_dir / "tape", since=since)
+    if df.is_empty():
+        return df
+    return (
+        df.with_columns(
+            pl.col("exchange_id").cast(pl.Utf8),
+            pl.col("market_id").cast(pl.Utf8),
+            pl.col("trade_id").cast(pl.Utf8),
+        )
+        .sort("ts", "trade_id")
+        .unique(subset="trade_id", keep="first", maintain_order=True)
+    )
 
 
 def with_cup_mid(prices: pl.DataFrame) -> pl.DataFrame:

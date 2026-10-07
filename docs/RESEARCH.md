@@ -90,9 +90,14 @@ Things the live endpoints taught us on 2026-09-28 (all covered by tests with the
 | `data/kalshi` | ts, event_ticker, ticker, title, status, yes_bid, yes_ask, last, yes_bid_size, yes_ask_size, volume, volume_24h, open_interest, race_id, party |
 | `data/polymarket` | ts, event_slug, market_id, question, token_id, best_bid, best_ask, bid_size, ask_size, last, volume, source (`clob`/`gamma`), race_id, party |
 | `data/reference` | ts, venue, race_id, kind, party, venue_market_id, title, bid, ask, last, mid, spread, volume |
+| `data/cup/tape` | ts (trade `createdAt`), exchange_id, market_id, trade_id, side (`YES`/`NO`, the taker's space), price, size, volume, recorded_at |
 
 `ts` is `timestamp[us, UTC]`. Cup inputs, written by the bridge recorder, are read from
-`data/cup/{markets,prices,leaderboard}` with the schemas documented in `telemetry/cupdata.py`.
+`data/cup/{markets,prices,leaderboard,tape}` with the schemas documented in `telemetry/cupdata.py`.
+The tape is the field's actual positioning per market (which side was bought, at what price, in what
+size), which leaderboard marks cannot show; `cupdata.read_tape` returns it oldest first and unique by
+trade_id. The bridge records it every `[telemetry].tape_interval_s` (30 min) with at most
+`tape_max_requests_per_pass` reads per pass; `data/cup/tape/state.json` holds the per-exchange cursor.
 
 ## Mapping: one parser, exact joins, never auto-verified
 

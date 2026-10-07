@@ -722,7 +722,7 @@ mod tests {
         let scenario = &cfg.strategies.scenario;
         assert_eq!(
             scenario.start_utc.map(|t| t.to_rfc3339()).as_deref(),
-            Some("2026-10-07T16:00:00+00:00")
+            Some("2026-10-11T16:00:00+00:00")
         );
         assert_eq!(scenario.min_interval_s, 900);
         assert_eq!(scenario.max_hourly_notional_frac, 0.02);

@@ -377,6 +377,17 @@ class Bridge:
                 ),
                 "recorder-leaderboard",
             )
+            if cfg.tape_interval_s > 0:
+                self._spawn(
+                    self._every(
+                        cfg.tape_interval_s,
+                        lambda: self.recorder.record_tape(
+                            self.gateway, self.market, max_requests=cfg.tape_max_requests_per_pass
+                        ),
+                        "tape",
+                    ),
+                    "recorder-tape",
+                )
         await asyncio.gather(*self.tasks)
 
     def realtime_up(self) -> bool:
