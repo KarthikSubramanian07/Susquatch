@@ -771,6 +771,8 @@ async fn end_to_end_from_jurisdiction_to_county_results() {
             jitter_frac: 0.1,
             timeout: Duration::from_millis(500),
             max_backoff: Duration::from_millis(200),
+            idle_until: None,
+            idle_interval: Duration::from_secs(1800),
         },
     };
     let mut handle = spawn(ServiceConfig::default(), vec![task], tx, None);

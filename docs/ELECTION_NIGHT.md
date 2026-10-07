@@ -493,6 +493,10 @@ The first sample drill on 2026-09-28 used the reference backend, all three chaos
 
 ---
 
+**Pre-election pacing.** Until `[defaults] idle_until_utc` (Nov 3 21:00Z = 16:00 ET) every source polls at most every
+`idle_interval_s` (30 min), so weeks of paper running stay polite to state sites. The rust-live enr tiles therefore read
+stale until then; that is expected. `enr-capture` ignores the schedule.
+
 ## 6. Open issues and what is not verified
 
 - **CA SoS 2026 general test dates:** unverified (§1.1). The 2026 general endpoint CSVs are not posted yet.

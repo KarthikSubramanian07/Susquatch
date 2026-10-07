@@ -25,6 +25,8 @@ fn fast() -> SourceTiming {
         jitter_frac: 0.1,
         timeout: Duration::from_millis(300),
         max_backoff: Duration::from_millis(200),
+        idle_until: None,
+        idle_interval: Duration::from_secs(1800),
     }
 }
 

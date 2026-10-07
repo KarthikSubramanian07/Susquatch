@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::Path;
 use std::time::Duration;
 
+use chrono::{DateTime, Utc};
 use serde::Deserialize;
 
 use crate::adapters::json_map::JsonMapping;
@@ -98,6 +99,11 @@ impl EnrConfig {
                 )));
             }
         }
+        if !(self.defaults.idle_interval_s.is_finite() && self.defaults.idle_interval_s >= 1.0) {
+            return Err(ConfigError::Invalid(
+                "defaults.idle_interval_s must be >= 1".into(),
+            ));
+        }
         if !(0.0..1.0).contains(&self.defaults.jitter_frac) {
             return Err(ConfigError::Invalid(
                 "defaults.jitter_frac must be in [0, 1)".into(),
@@ -117,6 +123,8 @@ impl EnrConfig {
             jitter_frac: s.jitter_frac.unwrap_or(self.defaults.jitter_frac),
             timeout: Duration::from_millis(s.timeout_ms.unwrap_or(self.defaults.timeout_ms)),
             max_backoff: Duration::from_secs_f64(self.defaults.max_backoff_s.max(1.0)),
+            idle_until: self.defaults.idle_until_utc,
+            idle_interval: Duration::from_secs_f64(self.defaults.idle_interval_s.max(1.0)),
         }
     }
 
@@ -204,6 +212,13 @@ pub struct Defaults {
     pub confirm_corrections_after: u32,
     /// Split emitted batches so one bus message stays well under NATS' 1 MB default.
     pub max_results_per_batch: usize,
+    /// Before this instant every source polls at `idle_interval_s` at most often: weeks of
+    /// pre-election polling (the rust-live paper run, rehearsals) stay polite to state sites and
+    /// still exercise every adapter. `None`: always the source's own interval. `enr-capture`
+    /// clears it, since it only runs deliberately during test windows.
+    pub idle_until_utc: Option<DateTime<Utc>>,
+    /// Slowest pre-election cadence (seconds), see `idle_until_utc`.
+    pub idle_interval_s: f64,
 }
 
 impl Default for Defaults {
@@ -216,6 +231,8 @@ impl Default for Defaults {
             user_agent: "susquatch-enr/0.1 (+https://github.com/KarthikSubramanian07/Susquatch)".into(),
             confirm_corrections_after: 2,
             max_results_per_batch: 500,
+            idle_until_utc: None,
+            idle_interval_s: 1800.0,
         }
     }
 }
@@ -358,6 +375,9 @@ pub struct SourceTiming {
     pub jitter_frac: f64,
     pub timeout: Duration,
     pub max_backoff: Duration,
+    /// Poll no more often than `idle_interval` before this instant (`defaults.idle_until_utc`).
+    pub idle_until: Option<DateTime<Utc>>,
+    pub idle_interval: Duration,
 }
 
 /// Case- and whitespace-insensitive contest lookup.

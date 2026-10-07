@@ -44,7 +44,10 @@ async fn main() -> anyhow::Result<()> {
         )
         .init();
     let args = Args::parse();
-    let cfg = EnrConfig::load(&args.config).with_context(|| format!("loading {}", args.config.display()))?;
+    let mut cfg =
+        EnrConfig::load(&args.config).with_context(|| format!("loading {}", args.config.display()))?;
+    // Captures run deliberately during test windows: always at each source's own cadence.
+    cfg.defaults.idle_until_utc = None;
     let sources = susq_enr::build_sources(&cfg, &args.sources)?;
     anyhow::ensure!(!sources.is_empty(), "no enabled sources match");
     tracing::info!(n = sources.len(), out = %args.out.display(), "capturing");

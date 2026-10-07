@@ -20,6 +20,11 @@ timeout_ms = 8000
 max_backoff_s = 120.0
 confirm_corrections_after = 2   # a decrease must repeat on 2 consecutive polls to be applied
 max_results_per_batch = 500
+# Until 16:00 ET on Nov 3 every source polls at most every 30 min: the pre-election paper run and
+# rehearsals keep every adapter exercised without hammering state sites for four weeks. From then
+# on each source runs at its own interval. enr-capture ignores this (test-window captures).
+idle_until_utc = "2026-11-03T21:00:00Z"
+idle_interval_s = 1800.0
 
 [consistency]
 total_tol_frac = 0.02           # totals within 2 % are "the same count" ...
