@@ -1,0 +1,14 @@
+# Rebuilds the 2026 needle prior from the current fair values (ops/needle-prior.sh).
+[Unit]
+Description=Susquatch: rebuild the needle prior from current fair values
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+User=@SUSQ_USER@
+WorkingDirectory=@SUSQ_HOME@
+Environment=SUSQ_HOME=@SUSQ_HOME@
+ExecStart=@SUSQ_HOME@/ops/needle-prior.sh
+Nice=10
+TimeoutStartSec=20min
