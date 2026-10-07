@@ -58,7 +58,12 @@ urls = [
 # ── Clarity / Scytl ───────────────────────────────────────────────────────────────────────
 # 2024 South Carolina general (a real, final Clarity election) as the reference Clarity source:
 # enable it to exercise the adapter end to end. For 2026, replace the election id once SC
-# publishes it (the 2026 general is not listed yet: https://www.enr-scvotes.org/SC/elections.json).
+# publishes it and add [[races]] rows for 2026-SEN-SC and 2026-GOV-SC.
+# Checked 2026-10-06: https://www.enr-scvotes.org/SC/elections.json (and the same path on
+# results.enr.clarityelections.com) returns `[]`; scvotes.gov/election-results lists only 2026
+# primaries, runoffs and specials (latest 127227, State Senate 15 special primary); ids 127228 to
+# 127800 all 404 on current_ver.txt. Re-check from Oct 20; Clarity usually lists a general a few
+# weeks out.
 [[sources]]
 id = "clarity:SC"
 state = "SC"
@@ -70,6 +75,9 @@ detail = "xml"
 
 # Iowa runs Clarity on its own domain; election ids are listed at
 # https://electionresults.iowa.gov/IA/elections.json (126082 = 2026 primary).
+# Checked 2026-10-06: the list has four entries (126082 2026 Primary, 125665, 125502, 124196);
+# no 2026 general, and ids 126083 to 127800 all 404 on current_ver.txt. When it appears, set
+# base_url to .../IA/<id>, add [[races]] rows for 2026-SEN-IA and 2026-GOV-IA, and enable.
 [[sources]]
 id = "clarity:IA"
 state = "IA"
