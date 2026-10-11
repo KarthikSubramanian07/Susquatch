@@ -25,6 +25,15 @@
 //! cap. Buying NO requires the YES-equivalent price `1 − p_no` to be ≥ `max_entry_price`, i.e. the NO
 //! limit is `min(best NO ask, floor(1 − max_entry_price))`. A cap that yields no valid price (for
 //! example the proto default 0.0 on a YES buy) means no order.
+//!
+//! Per-order cap. Each tranche is clamped so `qty × limit ≤ [risk] max_order_notional_frac × equity`
+//! (set with [`ScenarioExecutor::with_max_order_notional_frac`]). Without the clamp a tranche over
+//! the cap is refused by risk on every decision, the gap never shrinks and the same oversized
+//! tranche is refused forever (rust-live paper, 2026-10-11: `order notional 2500.05 > 545.20`).
+//! When even one share is over the cap, nothing is sent and the decision says so.
+//!
+//! The bridge runs the same rule (`bridge_py/susq_bridge/strategies/scenario.py`);
+//! `tests/fixtures/scenario_tranches.json` holds both to the same tranches.
 
 use std::sync::Mutex;
 
@@ -33,7 +42,7 @@ use susq_core::{Action, ExchangeId, OrderBundle, Pips, Side, clock::to_ns, confi
 
 use crate::{
     Strategy,
-    draft::Draft,
+    draft::{Draft, shares_for_budget},
     snapshot::{Decision, NS_PER_S, Snapshot},
 };
 
@@ -55,6 +64,9 @@ struct Sent {
 #[derive(Debug)]
 pub struct ScenarioExecutor {
     pub cfg: ScenarioCfg,
+    /// `[risk] max_order_notional_frac`: each tranche's notional stays within this share of equity
+    /// (`None` = no clamp; rust-live always sets it).
+    pub max_order_notional_frac: Option<f64>,
     /// Tranches emitted in the trailing hour (pruned on every decision).
     sent: Mutex<Vec<Sent>>,
 }
@@ -84,8 +96,16 @@ impl ScenarioExecutor {
     pub fn new(cfg: ScenarioCfg) -> Self {
         Self {
             cfg,
+            max_order_notional_frac: None,
             sent: Mutex::new(Vec::new()),
         }
+    }
+
+    /// Clamp every tranche to the risk engine's per-order notional cap (a fraction of equity).
+    #[must_use]
+    pub fn with_max_order_notional_frac(mut self, frac: f64) -> Self {
+        self.max_order_notional_frac = Some(frac);
+        self
     }
 
     /// Drop emitted tranches older than an hour and return the trailing-hour notional.
@@ -204,11 +224,23 @@ impl ScenarioExecutor {
             return 0.0;
         };
         let price = book.touch(t.side, Action::Buy).map_or(cap, |ask| ask.min(cap));
+        let mut qty = t.qty;
+        if let Some(frac) = self.max_order_notional_frac {
+            let budget = frac * snap.equity.max(0.0);
+            let fits = shares_for_budget(budget, price);
+            if fits < 1 {
+                d.note(format!(
+                    "scenario {ex}: one share at {price} is over the per-order cap {budget:.2}, skipping"
+                ));
+                return 0.0;
+            }
+            qty = qty.min(fits);
+        }
         let draft = Draft {
             exchange: ex.clone(),
             side: t.side,
             action: Action::Buy,
-            qty: t.qty,
+            qty,
             price,
             fair_yes: None,
         };
@@ -216,8 +248,8 @@ impl ScenarioExecutor {
             return 0.0;
         };
         d.note(format!(
-            "scenario {ex}: buy {} x{} @ {price} toward {}",
-            t.side, t.qty, tp.target_qty
+            "scenario {ex}: buy {} x{qty} @ {price} toward {}",
+            t.side, tp.target_qty
         ));
         let notional = spec.max_notional();
         d.bundles.push(OrderBundle::single(spec));
@@ -263,6 +295,8 @@ impl Strategy for ScenarioExecutor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use susq_contracts::v1::TargetFile;
+
     use crate::testkit::{NOW_S, World, intent};
 
     fn exec() -> ScenarioExecutor {
@@ -528,5 +562,164 @@ mod tests {
         let d = exec().decide(&w.snap());
         assert!(d.bundles.is_empty());
         assert!(d.notes.iter().any(|n| n.contains("no fresh book")));
+    }
+
+    /// rust-live paper, 2026-10-11: `order blocked strategy="scenario" reason=risk: order notional
+    /// 2500.05 > 545.20`. Unclamped, a quarter of the gap is over the per-order cap on every decision,
+    /// risk refuses it, the gap never shrinks and the leg is never bought. Clamped, every tranche fits
+    /// the cap and the position reaches the target.
+    #[test]
+    fn per_order_cap_keeps_an_oversized_tranche_from_being_refused_forever() {
+        let equity = 27_260.0;
+        let cap = 0.02 * equity; // 545.20
+        let world = |pos: i64| {
+            let mut w = world();
+            w.equity = equity;
+            w.position("1", pos);
+            w.target("1", 10_000, 0.9, false);
+            w
+        };
+        let notional = |d: &Decision| d.bundles[0].legs[0].max_notional();
+        // The bug: the same tranche over the cap, decision after decision.
+        let unclamped = exec();
+        for _ in 0..3 {
+            let d = unclamped.decide(&world(0).snap());
+            assert!(notional(&d) > cap + 1e-9, "{}", notional(&d));
+        }
+        // The fix: under the cap every time, and the leg fills up to the target.
+        let e = ScenarioExecutor::new(ScenarioCfg::default()).with_max_order_notional_frac(0.02);
+        let mut pos = 0;
+        for _ in 0..50 {
+            let d = e.decide(&world(pos).snap());
+            if d.bundles.is_empty() {
+                break;
+            }
+            assert!(notional(&d) <= cap + 1e-9, "{}", notional(&d));
+            pos += d.bundles[0].legs[0].quantity.get();
+        }
+        assert_eq!(pos, 10_000);
+        // One share over the cap: nothing, with a note.
+        let mut w = world(0);
+        w.equity = 10.0;
+        let d = e.decide(&w.snap());
+        assert!(d.bundles.is_empty());
+        assert!(
+            d.notes.iter().any(|n| n.contains("over the per-order cap")),
+            "{:?}",
+            d.notes
+        );
+    }
+
+    /// `tests/fixtures/scenario_tranches.json` is also run through the bridge's executor
+    /// (`bridge_py/tests/test_scenario.py`): both traders must emit exactly these tranches.
+    #[test]
+    fn parity_fixture_shared_with_the_bridge() {
+        use serde_json::Value;
+        let fixture: Value =
+            serde_json::from_str(include_str!("../../../tests/fixtures/scenario_tranches.json"))
+                .expect("fixture parses");
+        let side = |s: &str| if s == "yes" { Side::Yes } else { Side::No };
+        let cfg_of = |v: &Value| -> ScenarioCfg { serde_json::from_value(v.clone()).expect("config") };
+
+        let tranches = fixture["tranches"].as_array().expect("tranches");
+        assert!(!tranches.is_empty());
+        for t in tranches {
+            let e = ScenarioExecutor::new(cfg_of(&t["config"]));
+            let got = e.tranche(
+                t["position"].as_i64().expect("position"),
+                t["target"].as_i64().expect("target"),
+            );
+            let want = (!t["expect"].is_null()).then(|| Tranche {
+                side: side(t["expect"]["side"].as_str().expect("side")),
+                qty: t["expect"]["qty"].as_i64().expect("qty"),
+                reduces: t["expect"]["reduces"].as_bool().expect("reduces"),
+            });
+            assert_eq!(got, want, "{t}");
+        }
+
+        let cases = fixture["cases"].as_array().expect("cases");
+        assert!(!cases.is_empty());
+        for case in cases {
+            let name = case["name"].as_str().expect("name");
+            let mut e = ScenarioExecutor::new(cfg_of(&case["config"]));
+            if let Some(frac) = case["max_order_notional_frac"].as_f64() {
+                e = e.with_max_order_notional_frac(frac);
+            }
+            for (i, step) in case["steps"].as_array().expect("steps").iter().enumerate() {
+                let mut w = World::new(step["equity"].as_f64().expect("equity"));
+                w.now_ns = step["now_s"].as_i64().expect("now_s") * NS_PER_S;
+                w.targets_increase_allowed = step["increase_allowed"].as_bool().expect("increase_allowed");
+                for (ex, m) in step["markets"].as_object().expect("markets") {
+                    w.rule(
+                        ex,
+                        &format!("m{ex}"),
+                        "",
+                        "",
+                        m["verified"].as_bool().expect("verified"),
+                    );
+                    if let Some(b) = m["book"].as_array() {
+                        let rung = |v: &Value| -> Vec<(u32, i64)> {
+                            v.as_u64().map(|p| (p as u32, 500)).into_iter().collect()
+                        };
+                        if m["stale"].as_bool().expect("stale") {
+                            w.stale_book(ex, &rung(&b[0]), &rung(&b[1]));
+                        } else {
+                            w.book(ex, &rung(&b[0]), &rung(&b[1]));
+                        }
+                    }
+                    w.position(ex, m["position"].as_i64().expect("position"));
+                    if m["live_intent"].as_bool().expect("live_intent") {
+                        w.intents.push(intent(
+                            &format!("scenario:{ex}:0"),
+                            NAME,
+                            ex,
+                            Side::Yes,
+                            Action::Buy,
+                            3200,
+                        ));
+                    }
+                }
+                if let Some(rows) = step["targets"].as_array() {
+                    w.targets = Some(TargetFile::default());
+                    for r in rows {
+                        w.target(
+                            r["exchange"].as_str().expect("exchange"),
+                            r["target_qty"].as_i64().expect("target_qty"),
+                            r["max_entry_price"].as_f64().expect("max_entry_price"),
+                            r["locked"].as_bool().expect("locked"),
+                        );
+                    }
+                }
+                let d = e.decide(&w.snap());
+                let got: Vec<(String, Side, i64, u32)> = d
+                    .bundles
+                    .iter()
+                    .flat_map(|b| &b.legs)
+                    .map(|l| (l.exchange_id.to_string(), l.side, l.quantity.get(), l.price.get()))
+                    .collect();
+                let want: Vec<(String, Side, i64, u32)> = step["expect"]
+                    .as_array()
+                    .expect("expect")
+                    .iter()
+                    .map(|o| {
+                        (
+                            o["exchange"].as_str().expect("exchange").to_owned(),
+                            side(o["side"].as_str().expect("side")),
+                            o["quantity"].as_i64().expect("quantity"),
+                            o["price"].as_u64().expect("price") as u32,
+                        )
+                    })
+                    .collect();
+                assert_eq!(got, want, "{name} step {i}: {:?}", d.notes);
+                for note in step["notes"].as_array().expect("notes") {
+                    let note = note.as_str().expect("note");
+                    assert!(
+                        d.notes.iter().any(|n| n.contains(note)),
+                        "{name} step {i}: no note with {note:?} in {:?}",
+                        d.notes
+                    );
+                }
+            }
+        }
     }
 }
