@@ -36,7 +36,9 @@ from susq_bridge.risk import RiskEngine
 from susq_bridge.status import StatusWriter
 from susq_bridge.strategies.farquote import FarQuoter
 from susq_bridge.strategies.racer import Racer
+from susq_bridge.strategies.scenario import ScenarioExecutor
 from susq_bridge.strategies.sniper import Sniper
+from susq_bridge.targets import TargetsReader
 
 __all__ = ["REALTIME_MARKET_CHANNELS", "Bridge", "BridgeError", "Loops"]
 
@@ -58,9 +60,11 @@ class Loops:
     racer: bool = True
     sniper: bool = True
     farquote: bool = True
+    scenario: bool = True
     recorder: bool = True
     realtime: bool = True
     sniper_interval_s: float = 5.0
+    scenario_interval_s: float = 30.0
     status_interval_s: float = 60.0
 
 
@@ -83,6 +87,7 @@ class Bridge:
     racer: Racer
     sniper: Sniper
     farquote: FarQuoter
+    scenario: ScenarioExecutor
     clock: Callable[[], datetime]
     realtime: RealtimeClient | None = None
     tasks: list[asyncio.Task[Any]] = field(default_factory=list)
@@ -171,6 +176,18 @@ class Bridge:
             racer=Racer(gateway, market, config.racer, clock=clock),
             sniper=Sniper(gateway, market, config.sniper, clock=clock, targets_dir=config.targets_dir),
             farquote=FarQuoter(gateway, market, config.farquote, clock=clock),
+            scenario=ScenarioExecutor(
+                gateway,
+                market,
+                config.scenario,
+                TargetsReader(
+                    config.targets_dir,
+                    tournament_slug=plat.tournament_slug,
+                    max_age_s=config.targets_max_age_s,
+                ),
+                max_order_notional_frac=config.risk.max_order_notional_frac,
+                clock=clock,
+            ),
             clock=clock,
         )
         journal.event(
@@ -358,6 +375,8 @@ class Bridge:
             self._spawn(self._every(loops.sniper_interval_s, self.sniper.scan, "sniper"), "sniper")
         if loops.farquote and cfg.farquote.enabled:
             self._spawn(self._every(cfg.farquote.interval_s, self.farquote.scan, "farquote"), "farquote")
+        if loops.scenario and cfg.scenario.enabled:
+            self._spawn(self._every(loops.scenario_interval_s, self.scenario.scan, "scenario"), "scenario")
         if loops.recorder:
             self._spawn(
                 self._until_ok(lambda: self.recorder.snapshot_markets(self.gateway, self.market), "markets"),

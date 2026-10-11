@@ -127,8 +127,8 @@ def first_trade_cmd(home: HomeOpt = None) -> None:
         raise typer.Exit(code=1)
 
 
-def _loops(racer: bool, sniper: bool, recorder: bool, realtime: bool) -> Loops:
-    return Loops(racer=racer, sniper=sniper, recorder=recorder, realtime=realtime)
+def _loops(racer: bool, sniper: bool, recorder: bool, realtime: bool, scenario: bool = True) -> Loops:
+    return Loops(racer=racer, sniper=sniper, recorder=recorder, realtime=realtime, scenario=scenario)
 
 
 @app.command()
@@ -136,15 +136,16 @@ def run(
     home: HomeOpt = None,
     racer: Annotated[bool, typer.Option(help="Constraints racer")] = True,
     sniper: Annotated[bool, typer.Option(help="Stale-order sniper")] = True,
+    scenario: Annotated[bool, typer.Option(help="Scenario executor (EXP-008)")] = True,
     recorder: Annotated[bool, typer.Option(help="Market-data recorder")] = True,
     realtime: Annotated[bool, typer.Option(help="Supabase Realtime (polling fallback otherwise)")] = True,
 ) -> None:
-    """Run racer + sniper + recorder + reconcile + status until interrupted."""
+    """Run racer + sniper + scenario + recorder + reconcile + status until interrupted."""
     config = _config(home)
 
     async def go(bridge: Bridge) -> None:
         _apply_collateral(bridge, config, None)
-        await bridge.run(_loops(racer, sniper, recorder, realtime))
+        await bridge.run(_loops(racer, sniper, recorder, realtime, scenario))
 
     try:
         asyncio.run(_with_bridge(config, go))
@@ -271,7 +272,7 @@ def record(
         await bridge.recorder.record_prices(bridge.market)
         await bridge.recorder.record_leaderboard(bridge.gateway)
         if loop:
-            await bridge.run(Loops(racer=False, sniper=False, realtime=False))
+            await bridge.run(Loops(racer=False, sniper=False, scenario=False, realtime=False))
 
     try:
         asyncio.run(_with_bridge(config, go))
