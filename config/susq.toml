@@ -221,6 +221,10 @@ early_book_frac = 0.20             # EXP-002: sized to free cash (was 0.30); bou
 early_until_utc = "2026-10-21T16:00:00Z"   # full size from here (Oct 21 12:00 EDT)
 max_legs = 12                      # most legs in one scenario book
 max_leg_frac = 0.12                # most equity in any single leg
+# EXP-009 scenario hysteresis: keep the current targets' scenario unless a challenger's score (closeness
+# while every score is 0) beats it by more than this fraction, or the incumbent is top under no field
+# assumption. The executor never reduces dropped legs, so every flip orphans a book and spends cash twice.
+switch_margin = 0.25
 
 [needle]
 # Liveness: no healthy needle message (heartbeat or posterior) for this long = unhealthy. The watchdog then

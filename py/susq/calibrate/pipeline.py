@@ -18,7 +18,7 @@ from typing import Any
 import numpy as np
 
 from susq.calibrate.job import CalibrationResult, run_calibration, write_outputs
-from susq.calibrate.targets import InputRef, build_target_file, write_targets
+from susq.calibrate.targets import InputRef, build_target_file, read_current, write_targets
 from susq.collectors.quotes import RefQuote
 from susq.collectors.store import partition_files
 from susq.contracts import targets_pb2
@@ -118,6 +118,16 @@ def robust_thresholds(worlds: int) -> dict[str, FloatArray]:
     return {name: np.full(worlds, t) for name, t in ROBUST_ASSUMPTIONS.items()}
 
 
+def incumbent_scenario(targets_dir: Path) -> str | None:
+    """The scenario the current targets file committed (EXP-009); None if absent or unreadable."""
+    try:
+        tf = read_current(targets_dir)
+    except Exception:
+        log.warning("current targets file unreadable; no incumbent scenario", exc_info=True)
+        return None
+    return (tf.tourney.scenario or None) if tf is not None else None
+
+
 def _input_refs(paths: Paths, now_ns: int) -> list[InputRef]:
     refs: list[InputRef] = []
     ref_files = partition_files(paths.data / "reference")
@@ -189,6 +199,7 @@ def run_targets(
         cluster_drift_pts=drift,
         book_frac=book_frac,
         robust_thresholds=robust_thresholds(threshold.shape[0]),
+        incumbent=incumbent_scenario(paths.targets),
     )
     tourney = targets_pb2.TourneyEstimate(
         p_first=result.p_first,
