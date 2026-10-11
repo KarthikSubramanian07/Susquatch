@@ -27,6 +27,7 @@ __all__ = [
     "PlatformConfig",
     "RacerConfig",
     "RiskConfig",
+    "ScenarioConfig",
     "SniperConfig",
     "load_config",
 ]
@@ -132,6 +133,23 @@ class FarQuoteConfig:
 
 
 @dataclass(frozen=True)
+class ScenarioConfig:
+    """``[strategies.scenario]``; the defaults are Rust's ``ScenarioCfg`` defaults."""
+
+    enabled: bool = True
+    #: Fraction of the remaining gap to target worked per tranche.
+    tranche_frac: float = 0.25
+    min_tranche_qty: int = 1
+    order_ttl_s: float = 120.0
+    #: No tranche before this instant; None = immediately.
+    start_utc: datetime | None = None
+    #: Minimum seconds between two tranches on the same exchange.
+    min_interval_s: float = 0.0
+    #: Stop once tranches sent in the trailing hour exceed this share of equity; 1.0 = no cap.
+    max_hourly_notional_frac: float = 1.0
+
+
+@dataclass(frozen=True)
 class BridgeConfig:
     home: Path
     platform: PlatformConfig
@@ -162,6 +180,9 @@ class BridgeConfig:
     tape_max_requests_per_pass: int
     env: Mapping[str, str] = field(repr=False)
     api_key: str = field(default="", repr=False)
+    scenario: ScenarioConfig = field(default_factory=ScenarioConfig)
+    #: ``[targets] max_age_h``: a target file older than this blocks exposure increases.
+    targets_max_age_s: float = 36 * 3600.0
 
     @property
     def intents_path(self) -> Path:
@@ -214,6 +235,10 @@ def load_config(home: Path | None = None, env: Mapping[str, str] | None = None) 
     racer = strategies.get("racer", {})
     sniper = strategies.get("sniper", {})
     farquote = strategies.get("farquote", {})
+    targets = raw.get("targets", {})
+    targets_max_age_h = float(targets.get("max_age_h", 36))
+    if not (math.isfinite(targets_max_age_h) and targets_max_age_h > 0):
+        raise ValueError(f"[targets] max_age_h = {targets_max_age_h} must be > 0")
     state_dir = path(paths["state"])
     collateral = risk.get("use_collateral_buying_power", False)
     if collateral not in (True, False, "auto"):
@@ -278,7 +303,9 @@ def load_config(home: Path | None = None, env: Mapping[str, str] | None = None) 
         status_path=path(paths["status"]),
         market_map_path=path(paths["market_map"]),
         fair_path=state_dir / "fair_live.json",
-        targets_dir=path(str(raw.get("targets", {}).get("dir", "targets"))),
+        targets_dir=path(str(targets.get("dir", "targets"))),
+        targets_max_age_s=targets_max_age_h * 3600.0,
+        scenario=_scenario(strategies.get("scenario", {})),
         leaderboard_interval_s=float(raw.get("telemetry", {}).get("leaderboard_interval_s", 3600)),
         price_snapshot_interval_s=float(raw.get("telemetry", {}).get("price_snapshot_interval_s", 60)),
         tape_interval_s=float(raw.get("telemetry", {}).get("tape_interval_s", 1800)),
@@ -309,4 +336,29 @@ def _sniper(raw: Mapping[str, Any]) -> SniperConfig:
     h = cfg.unwind_max_haircut_pts
     if not (math.isfinite(h) and 0.0 <= h <= 100.0):
         raise ValueError(f"[strategies.sniper] unwind_max_haircut_pts = {h} must be in [0, 100]")
+    return cfg
+
+
+def _scenario(raw: Mapping[str, Any]) -> ScenarioConfig:
+    """``[strategies.scenario]``; missing keys take the defaults Rust's ``ScenarioCfg`` also uses."""
+    start = raw.get("start_utc")
+    if isinstance(start, str):
+        start = _utc(start)
+    elif isinstance(start, datetime) and start.tzinfo is None:
+        raise ValueError(f"[strategies.scenario] start_utc must carry a timezone: {start!r}")
+    cfg = ScenarioConfig(
+        enabled=bool(raw.get("enabled", True)),
+        tranche_frac=float(raw.get("tranche_frac", 0.25)),
+        min_tranche_qty=int(raw.get("min_tranche_qty", 1)),
+        order_ttl_s=float(raw.get("order_ttl_s", 120)),
+        start_utc=start,
+        min_interval_s=float(raw.get("min_interval_s", 0)),
+        max_hourly_notional_frac=float(raw.get("max_hourly_notional_frac", 1.0)),
+    )
+    # The same checks rust-live's Config::validate makes (and u64 fields cannot be negative there).
+    v = cfg.max_hourly_notional_frac
+    if not (math.isfinite(v) and 0.0 <= v <= 1.0):
+        raise ValueError(f"[strategies.scenario] max_hourly_notional_frac = {v} must be a fraction in [0, 1]")
+    if cfg.min_interval_s < 0 or cfg.order_ttl_s < 0 or cfg.min_tranche_qty < 0:
+        raise ValueError("[strategies.scenario] min_interval_s, order_ttl_s and min_tranche_qty must be >= 0")
     return cfg
