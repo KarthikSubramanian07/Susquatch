@@ -105,13 +105,15 @@ def test_optimizer_section_is_read_from_toml(home, tmp_path) -> None:
     opt = cfg.optimizer
     assert (opt.book_frac, opt.early_book_frac, opt.max_legs, opt.max_leg_frac) == (0.60, 0.20, 12, 0.12)
     assert opt.early_until_utc == datetime(2026, 10, 21, 16, tzinfo=UTC)
+    assert opt.switch_margin == 0.25  # EXP-009
     custom = tmp_path / "custom.toml"
     custom.write_text(
         "[optimizer]\nbook_frac = 0.5\nearly_book_frac = 0.2\nearly_until_utc = 2026-10-15T12:00:00Z\n"
-        "max_legs = 8\nmax_leg_frac = 0.1\n"
+        "max_legs = 8\nmax_leg_frac = 0.1\nswitch_margin = 0.4\n"
     )
     opt = ResearchConfig.from_toml(custom).optimizer
     assert (opt.book_frac, opt.early_book_frac, opt.max_legs, opt.max_leg_frac) == (0.5, 0.2, 8, 0.1)
+    assert opt.switch_margin == 0.4
     assert opt.early_until_utc == datetime(2026, 10, 15, 12, tzinfo=UTC)  # a TOML datetime literal works too
     assert opt.min_lift == ResearchConfig().optimizer.min_lift  # keys not in the table keep their defaults
     assert ResearchConfig.from_mapping({}).optimizer == ResearchConfig().optimizer

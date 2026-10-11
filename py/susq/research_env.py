@@ -34,7 +34,8 @@ class FairConfig:
 
 @dataclass(frozen=True)
 class OptimizerConfig:
-    """Scenario-book knobs (SPEC §3 Phase 2); `[optimizer]` in susq.toml overrides the first five."""
+    """Scenario-book knobs (SPEC §3 Phase 2); `[optimizer]` in susq.toml overrides the first five and
+    `switch_margin`."""
 
     book_frac: float = 0.60  # 50-70% of capital in the scenario book, once the field has shown itself
     # Buy the book gradually at a smaller size first (from Oct 7), full size from Oct 21 16:00Z.
@@ -47,6 +48,9 @@ class OptimizerConfig:
     idiosyncratic_frac: float = 0.015
     crowding_lambda: float = 0.5  # T inflation per unit of field exposure to a scenario
     price_slippage_ticks: int = 2
+    # EXP-009 hysteresis: a challenger replaces the incumbent scenario only when its score (closeness while
+    # every score is 0) beats the incumbent's by more than this fraction.
+    switch_margin: float = 0.25
 
     def book_frac_at(self, now: datetime) -> float:
         """The share of equity the book may spend at `now`: smaller before `early_until_utc`."""
@@ -93,6 +97,7 @@ class ResearchConfig:
             else opt_default.early_until_utc,
             max_legs=int(opt_raw.get("max_legs", opt_default.max_legs)),
             max_leg_frac=float(opt_raw.get("max_leg_frac", opt_default.max_leg_frac)),
+            switch_margin=float(opt_raw.get("switch_margin", opt_default.switch_margin)),
         )
         lock = raw.get("calendar", {}).get("lock_utc")
         tele = raw.get("telemetry", {})
