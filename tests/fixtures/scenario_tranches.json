@@ -1,0 +1,1439 @@
+{
+  "about": "EXP-008 parity fixture: rust-live (crates/strategies/src/scenario_executor.rs) and the bridge (bridge_py/tests/test_scenario.py) must turn every case into exactly these tranches. `tranches` is the pure sizing rule (position, target -> side, qty, reduces). In `cases` each executor is built once from `config` (missing keys take the ScenarioCfg defaults) and `max_order_notional_frac` (the [risk] per-order cap; null = no clamp), then runs every step in order, so pacing memory carries across steps. Per step: books are YES-space [best bid, best ask] pips (a null side is empty, a null book is missing), `stale` books are older than the freshness limit, `live_intent` means a scenario order is already working there, `targets` null means no target file, and `increase_allowed` false means the target file is stale or invalid. `expect` lists the orders in emission order (side-relative limit pips); every `notes` entry must be a substring of some note of that decision.",
+  "tranches": [
+    {
+      "config": {},
+      "position": 0,
+      "target": 100,
+      "expect": {
+        "side": "yes",
+        "qty": 25,
+        "reduces": false
+      }
+    },
+    {
+      "config": {},
+      "position": 0,
+      "target": -3,
+      "expect": {
+        "side": "no",
+        "qty": 1,
+        "reduces": false
+      }
+    },
+    {
+      "config": {},
+      "position": 90,
+      "target": 100,
+      "expect": {
+        "side": "yes",
+        "qty": 3,
+        "reduces": false
+      }
+    },
+    {
+      "config": {},
+      "position": 100,
+      "target": 0,
+      "expect": {
+        "side": "no",
+        "qty": 25,
+        "reduces": true
+      }
+    },
+    {
+      "config": {},
+      "position": 10,
+      "target": -200,
+      "expect": {
+        "side": "no",
+        "qty": 10,
+        "reduces": true
+      }
+    },
+    {
+      "config": {},
+      "position": -40,
+      "target": 300,
+      "expect": {
+        "side": "yes",
+        "qty": 40,
+        "reduces": true
+      }
+    },
+    {
+      "config": {},
+      "position": -80,
+      "target": -20,
+      "expect": {
+        "side": "yes",
+        "qty": 15,
+        "reduces": true
+      }
+    },
+    {
+      "config": {},
+      "position": 7,
+      "target": 7,
+      "expect": null
+    },
+    {
+      "config": {
+        "min_tranche_qty": 40
+      },
+      "position": 0,
+      "target": 100,
+      "expect": {
+        "side": "yes",
+        "qty": 40,
+        "reduces": false
+      }
+    },
+    {
+      "config": {
+        "min_tranche_qty": 40
+      },
+      "position": 0,
+      "target": 30,
+      "expect": {
+        "side": "yes",
+        "qty": 30,
+        "reduces": false
+      }
+    },
+    {
+      "config": {
+        "tranche_frac": 0.1
+      },
+      "position": 0,
+      "target": 1234,
+      "expect": {
+        "side": "yes",
+        "qty": 124,
+        "reduces": false
+      }
+    },
+    {
+      "config": {
+        "tranche_frac": 1.0
+      },
+      "position": -5,
+      "target": 995,
+      "expect": {
+        "side": "yes",
+        "qty": 5,
+        "reduces": true
+      }
+    },
+    {
+      "config": {
+        "tranche_frac": 0.0
+      },
+      "position": 0,
+      "target": 7,
+      "expect": {
+        "side": "yes",
+        "qty": 1,
+        "reduces": false
+      }
+    }
+  ],
+  "cases": [
+    {
+      "name": "yes_takes_the_ask_within_the_cap",
+      "config": {},
+      "max_order_notional_frac": null,
+      "steps": [
+        {
+          "now_s": 1791417600,
+          "equity": 100000.0,
+          "increase_allowed": true,
+          "markets": {
+            "1": {
+              "verified": true,
+              "book": [
+                3000,
+                3200
+              ],
+              "stale": false,
+              "position": 0,
+              "live_intent": false
+            }
+          },
+          "targets": [
+            {
+              "exchange": "1",
+              "target_qty": 100,
+              "max_entry_price": 0.35,
+              "locked": false
+            }
+          ],
+          "expect": [
+            {
+              "exchange": "1",
+              "side": "yes",
+              "quantity": 25,
+              "price": 3200
+            }
+          ],
+          "notes": []
+        }
+      ]
+    },
+    {
+      "name": "yes_rests_at_the_cap_below_the_ask",
+      "config": {},
+      "max_order_notional_frac": null,
+      "steps": [
+        {
+          "now_s": 1791417600,
+          "equity": 100000.0,
+          "increase_allowed": true,
+          "markets": {
+            "1": {
+              "verified": true,
+              "book": [
+                3000,
+                3200
+              ],
+              "stale": false,
+              "position": 0,
+              "live_intent": false
+            }
+          },
+          "targets": [
+            {
+              "exchange": "1",
+              "target_qty": 100,
+              "max_entry_price": 0.25,
+              "locked": false
+            }
+          ],
+          "expect": [
+            {
+              "exchange": "1",
+              "side": "yes",
+              "quantity": 25,
+              "price": 2500
+            }
+          ],
+          "notes": []
+        }
+      ]
+    },
+    {
+      "name": "yes_rests_at_the_cap_on_an_empty_ask",
+      "config": {},
+      "max_order_notional_frac": null,
+      "steps": [
+        {
+          "now_s": 1791417600,
+          "equity": 100000.0,
+          "increase_allowed": true,
+          "markets": {
+            "1": {
+              "verified": true,
+              "book": [
+                3000,
+                null
+              ],
+              "stale": false,
+              "position": 0,
+              "live_intent": false
+            }
+          },
+          "targets": [
+            {
+              "exchange": "1",
+              "target_qty": 100,
+              "max_entry_price": 0.35,
+              "locked": false
+            }
+          ],
+          "expect": [
+            {
+              "exchange": "1",
+              "side": "yes",
+              "quantity": 25,
+              "price": 3500
+            }
+          ],
+          "notes": []
+        }
+      ]
+    },
+    {
+      "name": "no_is_capped_at_one_minus_max_entry",
+      "config": {},
+      "max_order_notional_frac": null,
+      "steps": [
+        {
+          "now_s": 1791417600,
+          "equity": 100000.0,
+          "increase_allowed": true,
+          "markets": {
+            "1": {
+              "verified": true,
+              "book": [
+                3000,
+                3200
+              ],
+              "stale": false,
+              "position": 0,
+              "live_intent": false
+            }
+          },
+          "targets": [
+            {
+              "exchange": "1",
+              "target_qty": -100,
+              "max_entry_price": 0.72,
+              "locked": false
+            }
+          ],
+          "expect": [
+            {
+              "exchange": "1",
+              "side": "no",
+              "quantity": 25,
+              "price": 2800
+            }
+          ],
+          "notes": []
+        }
+      ]
+    },
+    {
+      "name": "no_takes_the_no_ask_within_the_cap",
+      "config": {},
+      "max_order_notional_frac": null,
+      "steps": [
+        {
+          "now_s": 1791417600,
+          "equity": 100000.0,
+          "increase_allowed": true,
+          "markets": {
+            "1": {
+              "verified": true,
+              "book": [
+                3000,
+                3200
+              ],
+              "stale": false,
+              "position": 0,
+              "live_intent": false
+            }
+          },
+          "targets": [
+            {
+              "exchange": "1",
+              "target_qty": -100,
+              "max_entry_price": 0.25,
+              "locked": false
+            }
+          ],
+          "expect": [
+            {
+              "exchange": "1",
+              "side": "no",
+              "quantity": 25,
+              "price": 7000
+            }
+          ],
+          "notes": []
+        }
+      ]
+    },
+    {
+      "name": "flip_through_zero_stops_at_flat_then_opens_the_other_side",
+      "config": {},
+      "max_order_notional_frac": null,
+      "steps": [
+        {
+          "now_s": 1791417600,
+          "equity": 100000.0,
+          "increase_allowed": true,
+          "markets": {
+            "1": {
+              "verified": true,
+              "book": [
+                3000,
+                3200
+              ],
+              "stale": false,
+              "position": 10,
+              "live_intent": false
+            }
+          },
+          "targets": [
+            {
+              "exchange": "1",
+              "target_qty": -200,
+              "max_entry_price": 0.25,
+              "locked": false
+            }
+          ],
+          "expect": [
+            {
+              "exchange": "1",
+              "side": "no",
+              "quantity": 10,
+              "price": 7000
+            }
+          ],
+          "notes": []
+        },
+        {
+          "now_s": 1791417601,
+          "equity": 100000.0,
+          "increase_allowed": true,
+          "markets": {
+            "1": {
+              "verified": true,
+              "book": [
+                3000,
+                3200
+              ],
+              "stale": false,
+              "position": 0,
+              "live_intent": false
+            }
+          },
+          "targets": [
+            {
+              "exchange": "1",
+              "target_qty": -200,
+              "max_entry_price": 0.25,
+              "locked": false
+            }
+          ],
+          "expect": [
+            {
+              "exchange": "1",
+              "side": "no",
+              "quantity": 50,
+              "price": 7000
+            }
+          ],
+          "notes": []
+        }
+      ]
+    },
+    {
+      "name": "locked_leg_is_never_reduced_but_may_grow",
+      "config": {},
+      "max_order_notional_frac": null,
+      "steps": [
+        {
+          "now_s": 1791417600,
+          "equity": 100000.0,
+          "increase_allowed": true,
+          "markets": {
+            "1": {
+              "verified": true,
+              "book": [
+                3000,
+                3200
+              ],
+              "stale": false,
+              "position": 100,
+              "live_intent": false
+            }
+          },
+          "targets": [
+            {
+              "exchange": "1",
+              "target_qty": 50,
+              "max_entry_price": 0.9,
+              "locked": true
+            }
+          ],
+          "expect": [],
+          "notes": [
+            "locked leg, not reducing"
+          ]
+        },
+        {
+          "now_s": 1791417601,
+          "equity": 100000.0,
+          "increase_allowed": true,
+          "markets": {
+            "1": {
+              "verified": true,
+              "book": [
+                3000,
+                3200
+              ],
+              "stale": false,
+              "position": 100,
+              "live_intent": false
+            }
+          },
+          "targets": [
+            {
+              "exchange": "1",
+              "target_qty": 200,
+              "max_entry_price": 0.9,
+              "locked": true
+            }
+          ],
+          "expect": [
+            {
+              "exchange": "1",
+              "side": "yes",
+              "quantity": 25,
+              "price": 3200
+            }
+          ],
+          "notes": []
+        }
+      ]
+    },
+    {
+      "name": "stale_targets_block_increases_but_allow_reductions",
+      "config": {},
+      "max_order_notional_frac": null,
+      "steps": [
+        {
+          "now_s": 1791417600,
+          "equity": 100000.0,
+          "increase_allowed": false,
+          "markets": {
+            "1": {
+              "verified": true,
+              "book": [
+                3000,
+                3200
+              ],
+              "stale": false,
+              "position": 0,
+              "live_intent": false
+            }
+          },
+          "targets": [
+            {
+              "exchange": "1",
+              "target_qty": 100,
+              "max_entry_price": 0.9,
+              "locked": false
+            }
+          ],
+          "expect": [],
+          "notes": [
+            "not increasing exposure"
+          ]
+        },
+        {
+          "now_s": 1791417601,
+          "equity": 100000.0,
+          "increase_allowed": false,
+          "markets": {
+            "1": {
+              "verified": true,
+              "book": [
+                3000,
+                3200
+              ],
+              "stale": false,
+              "position": -80,
+              "live_intent": false
+            }
+          },
+          "targets": [
+            {
+              "exchange": "1",
+              "target_qty": -20,
+              "max_entry_price": 0.9,
+              "locked": false
+            }
+          ],
+          "expect": [
+            {
+              "exchange": "1",
+              "side": "yes",
+              "quantity": 15,
+              "price": 3200
+            }
+          ],
+          "notes": []
+        }
+      ]
+    },
+    {
+      "name": "skips_without_targets_unverified_worked_or_without_a_fresh_book",
+      "config": {},
+      "max_order_notional_frac": null,
+      "steps": [
+        {
+          "now_s": 1791417600,
+          "equity": 100000.0,
+          "increase_allowed": true,
+          "markets": {
+            "1": {
+              "verified": true,
+              "book": [
+                3000,
+                3200
+              ],
+              "stale": false,
+              "position": 0,
+              "live_intent": false
+            }
+          },
+          "targets": null,
+          "expect": [],
+          "notes": []
+        },
+        {
+          "now_s": 1791417601,
+          "equity": 100000.0,
+          "increase_allowed": true,
+          "markets": {
+            "1": {
+              "verified": false,
+              "book": [
+                3000,
+                3200
+              ],
+              "stale": false,
+              "position": 0,
+              "live_intent": false
+            }
+          },
+          "targets": [
+            {
+              "exchange": "1",
+              "target_qty": 100,
+              "max_entry_price": 0.9,
+              "locked": false
+            }
+          ],
+          "expect": [],
+          "notes": []
+        },
+        {
+          "now_s": 1791417602,
+          "equity": 100000.0,
+          "increase_allowed": true,
+          "markets": {
+            "1": {
+              "verified": true,
+              "book": [
+                3000,
+                3200
+              ],
+              "stale": false,
+              "position": 0,
+              "live_intent": true
+            }
+          },
+          "targets": [
+            {
+              "exchange": "1",
+              "target_qty": 100,
+              "max_entry_price": 0.9,
+              "locked": false
+            }
+          ],
+          "expect": [],
+          "notes": []
+        },
+        {
+          "now_s": 1791417603,
+          "equity": 100000.0,
+          "increase_allowed": true,
+          "markets": {
+            "1": {
+              "verified": true,
+              "book": [
+                3000,
+                3200
+              ],
+              "stale": true,
+              "position": 0,
+              "live_intent": false
+            }
+          },
+          "targets": [
+            {
+              "exchange": "1",
+              "target_qty": 100,
+              "max_entry_price": 0.9,
+              "locked": false
+            }
+          ],
+          "expect": [],
+          "notes": [
+            "no fresh book"
+          ]
+        },
+        {
+          "now_s": 1791417604,
+          "equity": 100000.0,
+          "increase_allowed": true,
+          "markets": {
+            "1": {
+              "verified": true,
+              "book": null,
+              "stale": false,
+              "position": 0,
+              "live_intent": false
+            }
+          },
+          "targets": [
+            {
+              "exchange": "1",
+              "target_qty": 100,
+              "max_entry_price": 0.9,
+              "locked": false
+            }
+          ],
+          "expect": [],
+          "notes": [
+            "no fresh book"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "nothing_before_start_utc",
+      "config": {
+        "start_utc": "2026-10-08T01:00:00Z"
+      },
+      "max_order_notional_frac": null,
+      "steps": [
+        {
+          "now_s": 1791417600,
+          "equity": 100000.0,
+          "increase_allowed": true,
+          "markets": {
+            "1": {
+              "verified": true,
+              "book": [
+                3000,
+                3200
+              ],
+              "stale": false,
+              "position": 0,
+              "live_intent": false
+            }
+          },
+          "targets": [
+            {
+              "exchange": "1",
+              "target_qty": 100,
+              "max_entry_price": 0.9,
+              "locked": false
+            }
+          ],
+          "expect": [],
+          "notes": [
+            "not started"
+          ]
+        },
+        {
+          "now_s": 1791421200,
+          "equity": 100000.0,
+          "increase_allowed": true,
+          "markets": {
+            "1": {
+              "verified": true,
+              "book": [
+                3000,
+                3200
+              ],
+              "stale": false,
+              "position": 0,
+              "live_intent": false
+            }
+          },
+          "targets": [
+            {
+              "exchange": "1",
+              "target_qty": 100,
+              "max_entry_price": 0.9,
+              "locked": false
+            }
+          ],
+          "expect": [
+            {
+              "exchange": "1",
+              "side": "yes",
+              "quantity": 25,
+              "price": 3200
+            }
+          ],
+          "notes": []
+        }
+      ]
+    },
+    {
+      "name": "min_interval_spaces_tranches_per_exchange",
+      "config": {
+        "min_interval_s": 900
+      },
+      "max_order_notional_frac": null,
+      "steps": [
+        {
+          "now_s": 1791417600,
+          "equity": 100000.0,
+          "increase_allowed": true,
+          "markets": {
+            "1": {
+              "verified": true,
+              "book": [
+                3000,
+                3200
+              ],
+              "stale": false,
+              "position": 0,
+              "live_intent": false
+            },
+            "2": {
+              "verified": true,
+              "book": [
+                3000,
+                3200
+              ],
+              "stale": false,
+              "position": 0,
+              "live_intent": false
+            }
+          },
+          "targets": [
+            {
+              "exchange": "1",
+              "target_qty": 100,
+              "max_entry_price": 0.9,
+              "locked": false
+            },
+            {
+              "exchange": "2",
+              "target_qty": 100,
+              "max_entry_price": 0.9,
+              "locked": false
+            }
+          ],
+          "expect": [
+            {
+              "exchange": "1",
+              "side": "yes",
+              "quantity": 25,
+              "price": 3200
+            },
+            {
+              "exchange": "2",
+              "side": "yes",
+              "quantity": 25,
+              "price": 3200
+            }
+          ],
+          "notes": []
+        },
+        {
+          "now_s": 1791418499,
+          "equity": 100000.0,
+          "increase_allowed": true,
+          "markets": {
+            "1": {
+              "verified": true,
+              "book": [
+                3000,
+                3200
+              ],
+              "stale": false,
+              "position": 25,
+              "live_intent": false
+            },
+            "2": {
+              "verified": true,
+              "book": [
+                3000,
+                3200
+              ],
+              "stale": false,
+              "position": 25,
+              "live_intent": false
+            }
+          },
+          "targets": [
+            {
+              "exchange": "1",
+              "target_qty": 100,
+              "max_entry_price": 0.9,
+              "locked": false
+            },
+            {
+              "exchange": "2",
+              "target_qty": 100,
+              "max_entry_price": 0.9,
+              "locked": false
+            }
+          ],
+          "expect": [],
+          "notes": [
+            "waiting"
+          ]
+        },
+        {
+          "now_s": 1791418499,
+          "equity": 100000.0,
+          "increase_allowed": true,
+          "markets": {
+            "1": {
+              "verified": true,
+              "book": [
+                3000,
+                3200
+              ],
+              "stale": false,
+              "position": 25,
+              "live_intent": false
+            },
+            "2": {
+              "verified": true,
+              "book": [
+                3000,
+                3200
+              ],
+              "stale": false,
+              "position": 25,
+              "live_intent": false
+            },
+            "3": {
+              "verified": true,
+              "book": [
+                3000,
+                3200
+              ],
+              "stale": false,
+              "position": 0,
+              "live_intent": false
+            }
+          },
+          "targets": [
+            {
+              "exchange": "1",
+              "target_qty": 100,
+              "max_entry_price": 0.9,
+              "locked": false
+            },
+            {
+              "exchange": "2",
+              "target_qty": 100,
+              "max_entry_price": 0.9,
+              "locked": false
+            },
+            {
+              "exchange": "3",
+              "target_qty": 100,
+              "max_entry_price": 0.9,
+              "locked": false
+            }
+          ],
+          "expect": [
+            {
+              "exchange": "3",
+              "side": "yes",
+              "quantity": 25,
+              "price": 3200
+            }
+          ],
+          "notes": [
+            "waiting"
+          ]
+        },
+        {
+          "now_s": 1791418500,
+          "equity": 100000.0,
+          "increase_allowed": true,
+          "markets": {
+            "1": {
+              "verified": true,
+              "book": [
+                3000,
+                3200
+              ],
+              "stale": false,
+              "position": 25,
+              "live_intent": false
+            },
+            "2": {
+              "verified": true,
+              "book": [
+                3000,
+                3200
+              ],
+              "stale": false,
+              "position": 25,
+              "live_intent": false
+            },
+            "3": {
+              "verified": true,
+              "book": [
+                3000,
+                3200
+              ],
+              "stale": false,
+              "position": 25,
+              "live_intent": false
+            }
+          },
+          "targets": [
+            {
+              "exchange": "1",
+              "target_qty": 100,
+              "max_entry_price": 0.9,
+              "locked": false
+            },
+            {
+              "exchange": "2",
+              "target_qty": 100,
+              "max_entry_price": 0.9,
+              "locked": false
+            },
+            {
+              "exchange": "3",
+              "target_qty": 100,
+              "max_entry_price": 0.9,
+              "locked": false
+            }
+          ],
+          "expect": [
+            {
+              "exchange": "1",
+              "side": "yes",
+              "quantity": 19,
+              "price": 3200
+            },
+            {
+              "exchange": "2",
+              "side": "yes",
+              "quantity": 19,
+              "price": 3200
+            }
+          ],
+          "notes": [
+            "waiting"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "hourly_notional_cap_pauses_and_releases_after_an_hour",
+      "config": {
+        "max_hourly_notional_frac": 0.005
+      },
+      "max_order_notional_frac": null,
+      "steps": [
+        {
+          "now_s": 1791417600,
+          "equity": 100000.0,
+          "increase_allowed": true,
+          "markets": {
+            "1": {
+              "verified": true,
+              "book": [
+                3000,
+                3200
+              ],
+              "stale": false,
+              "position": 0,
+              "live_intent": false
+            },
+            "2": {
+              "verified": true,
+              "book": [
+                3000,
+                3200
+              ],
+              "stale": false,
+              "position": 0,
+              "live_intent": false
+            }
+          },
+          "targets": [
+            {
+              "exchange": "1",
+              "target_qty": 10000,
+              "max_entry_price": 0.9,
+              "locked": false
+            },
+            {
+              "exchange": "2",
+              "target_qty": 10000,
+              "max_entry_price": 0.9,
+              "locked": false
+            }
+          ],
+          "expect": [
+            {
+              "exchange": "1",
+              "side": "yes",
+              "quantity": 2500,
+              "price": 3200
+            }
+          ],
+          "notes": [
+            "pausing"
+          ]
+        },
+        {
+          "now_s": 1791421199,
+          "equity": 100000.0,
+          "increase_allowed": true,
+          "markets": {
+            "1": {
+              "verified": true,
+              "book": [
+                3000,
+                3200
+              ],
+              "stale": false,
+              "position": 2500,
+              "live_intent": false
+            },
+            "2": {
+              "verified": true,
+              "book": [
+                3000,
+                3200
+              ],
+              "stale": false,
+              "position": 0,
+              "live_intent": false
+            }
+          },
+          "targets": [
+            {
+              "exchange": "1",
+              "target_qty": 10000,
+              "max_entry_price": 0.9,
+              "locked": false
+            },
+            {
+              "exchange": "2",
+              "target_qty": 10000,
+              "max_entry_price": 0.9,
+              "locked": false
+            }
+          ],
+          "expect": [],
+          "notes": [
+            "pausing"
+          ]
+        },
+        {
+          "now_s": 1791421200,
+          "equity": 100000.0,
+          "increase_allowed": true,
+          "markets": {
+            "1": {
+              "verified": true,
+              "book": [
+                3000,
+                3200
+              ],
+              "stale": false,
+              "position": 2500,
+              "live_intent": false
+            },
+            "2": {
+              "verified": true,
+              "book": [
+                3000,
+                3200
+              ],
+              "stale": false,
+              "position": 0,
+              "live_intent": false
+            }
+          },
+          "targets": [
+            {
+              "exchange": "1",
+              "target_qty": 10000,
+              "max_entry_price": 0.9,
+              "locked": false
+            },
+            {
+              "exchange": "2",
+              "target_qty": 10000,
+              "max_entry_price": 0.9,
+              "locked": false
+            }
+          ],
+          "expect": [
+            {
+              "exchange": "1",
+              "side": "yes",
+              "quantity": 1875,
+              "price": 3200
+            }
+          ],
+          "notes": [
+            "pausing"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "hourly_cap_with_unknown_equity_sends_one_tranche_then_waits",
+      "config": {
+        "max_hourly_notional_frac": 0.5
+      },
+      "max_order_notional_frac": null,
+      "steps": [
+        {
+          "now_s": 1791417600,
+          "equity": 0.0,
+          "increase_allowed": true,
+          "markets": {
+            "1": {
+              "verified": true,
+              "book": [
+                3000,
+                3200
+              ],
+              "stale": false,
+              "position": 0,
+              "live_intent": false
+            }
+          },
+          "targets": [
+            {
+              "exchange": "1",
+              "target_qty": 10000,
+              "max_entry_price": 0.9,
+              "locked": false
+            }
+          ],
+          "expect": [
+            {
+              "exchange": "1",
+              "side": "yes",
+              "quantity": 2500,
+              "price": 3200
+            }
+          ],
+          "notes": []
+        },
+        {
+          "now_s": 1791417601,
+          "equity": 0.0,
+          "increase_allowed": true,
+          "markets": {
+            "1": {
+              "verified": true,
+              "book": [
+                3000,
+                3200
+              ],
+              "stale": false,
+              "position": 2500,
+              "live_intent": false
+            }
+          },
+          "targets": [
+            {
+              "exchange": "1",
+              "target_qty": 10000,
+              "max_entry_price": 0.9,
+              "locked": false
+            }
+          ],
+          "expect": [],
+          "notes": [
+            "pausing"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "per_order_cap_clamps_the_tranche_so_risk_never_refuses_it_forever",
+      "config": {},
+      "max_order_notional_frac": 0.02,
+      "steps": [
+        {
+          "now_s": 1791417600,
+          "equity": 27260.0,
+          "increase_allowed": true,
+          "markets": {
+            "1": {
+              "verified": true,
+              "book": [
+                3000,
+                3200
+              ],
+              "stale": false,
+              "position": 0,
+              "live_intent": false
+            }
+          },
+          "targets": [
+            {
+              "exchange": "1",
+              "target_qty": 10000,
+              "max_entry_price": 0.9,
+              "locked": false
+            }
+          ],
+          "expect": [
+            {
+              "exchange": "1",
+              "side": "yes",
+              "quantity": 1703,
+              "price": 3200
+            }
+          ],
+          "notes": []
+        },
+        {
+          "now_s": 1791417601,
+          "equity": 27260.0,
+          "increase_allowed": true,
+          "markets": {
+            "1": {
+              "verified": true,
+              "book": [
+                3000,
+                3200
+              ],
+              "stale": false,
+              "position": 1703,
+              "live_intent": false
+            }
+          },
+          "targets": [
+            {
+              "exchange": "1",
+              "target_qty": 10000,
+              "max_entry_price": 0.9,
+              "locked": false
+            }
+          ],
+          "expect": [
+            {
+              "exchange": "1",
+              "side": "yes",
+              "quantity": 1703,
+              "price": 3200
+            }
+          ],
+          "notes": []
+        },
+        {
+          "now_s": 1791417602,
+          "equity": 27260.0,
+          "increase_allowed": true,
+          "markets": {
+            "1": {
+              "verified": true,
+              "book": [
+                3000,
+                3200
+              ],
+              "stale": false,
+              "position": 9000,
+              "live_intent": false
+            }
+          },
+          "targets": [
+            {
+              "exchange": "1",
+              "target_qty": 10000,
+              "max_entry_price": 0.9,
+              "locked": false
+            }
+          ],
+          "expect": [
+            {
+              "exchange": "1",
+              "side": "yes",
+              "quantity": 250,
+              "price": 3200
+            }
+          ],
+          "notes": []
+        }
+      ]
+    },
+    {
+      "name": "per_order_cap_on_a_no_tranche_uses_the_no_price",
+      "config": {},
+      "max_order_notional_frac": 0.02,
+      "steps": [
+        {
+          "now_s": 1791417600,
+          "equity": 27260.0,
+          "increase_allowed": true,
+          "markets": {
+            "1": {
+              "verified": true,
+              "book": [
+                3000,
+                3200
+              ],
+              "stale": false,
+              "position": 0,
+              "live_intent": false
+            }
+          },
+          "targets": [
+            {
+              "exchange": "1",
+              "target_qty": -10000,
+              "max_entry_price": 0.25,
+              "locked": false
+            }
+          ],
+          "expect": [
+            {
+              "exchange": "1",
+              "side": "no",
+              "quantity": 778,
+              "price": 7000
+            }
+          ],
+          "notes": []
+        }
+      ]
+    },
+    {
+      "name": "per_order_cap_below_one_share_skips_with_a_note",
+      "config": {},
+      "max_order_notional_frac": 0.02,
+      "steps": [
+        {
+          "now_s": 1791417600,
+          "equity": 10.0,
+          "increase_allowed": true,
+          "markets": {
+            "1": {
+              "verified": true,
+              "book": [
+                3000,
+                3200
+              ],
+              "stale": false,
+              "position": 0,
+              "live_intent": false
+            }
+          },
+          "targets": [
+            {
+              "exchange": "1",
+              "target_qty": 100,
+              "max_entry_price": 0.9,
+              "locked": false
+            }
+          ],
+          "expect": [],
+          "notes": [
+            "over the per-order cap"
+          ]
+        }
+      ]
+    }
+  ]
+}

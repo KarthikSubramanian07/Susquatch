@@ -195,7 +195,8 @@ impl Engine {
                 .with_collateral_buying_power(collateral_sizing),
             sniper: Sniper::new(cfg.strategies.sniper.clone()),
             mm: MarketMaker::new(cfg.strategies.mm.clone()),
-            scenario: ScenarioExecutor::new(cfg.strategies.scenario.clone()),
+            scenario: ScenarioExecutor::new(cfg.strategies.scenario.clone())
+                .with_max_order_notional_frac(cfg.risk.max_order_notional_frac),
             en: match d.count_order.clone() {
                 Some(table) => EnExecutor::new(cfg.strategies.en.clone()).with_count_order(table),
                 None => EnExecutor::new(cfg.strategies.en.clone()),

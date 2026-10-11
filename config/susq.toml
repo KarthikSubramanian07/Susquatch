@@ -137,6 +137,7 @@ interval_s = 600                  # top-up cadence: 30 writes/min is the whole a
 enabled = false                    # decided by the decision table after measure_day1
 
 [strategies.scenario]
+# Read by both traders: the bridge (live account, EXP-008) and rust-live. Tranches are also clamped to [risk] max_order_notional_frac.
 enabled = true
 tranche_frac = 0.25                # fraction of the remaining gap to target worked per tranche
 start_utc = "2026-10-11T16:00:00Z" # EXP-007: held until the tape-fitted threshold (was Oct 7); book bought gradually after
