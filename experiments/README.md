@@ -12,3 +12,4 @@ Copy `TEMPLATE.md` to `EXP-NNN-short-name.md`, fill in the hypothesis and metric
 | EXP-005 | Regional polling-miss scenarios and the 2022-prior detector | proposed | |
 | EXP-006 | Pre-registered count-order playbook for election night | shipped (gate, lock-time rule, contender switch off) | |
 | EXP-007 | Hold the scenario book until the threshold is fitted to the tape | shipped | |
+| EXP-009 | Scenario hysteresis: keep the incumbent unless a challenger is clearly better | running (approved 2026-10-11) | |
