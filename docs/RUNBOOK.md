@@ -52,6 +52,19 @@ rust-live carries on with the same rule; on the night it leaves the races the ne
 - **Act:** if it sells a scenario leg, or anything at a price below fair minus 2 pts, `touch ops/KILL`. To pause only
   the unwind, set `unwind_from_utc` to a later time in `config/susq.toml` and `make up` (or restart the trader).
 
+### From Oct 11 12:00 ET (16:00Z) to Nov 2: the scenario book on the live account (EXP-008)
+
+The bridge buys the target file's scenario legs in tranches from `[strategies.scenario] start_utc`, the same
+rule and section rust-live paper uses ([EXP-008](../experiments/EXP-008-scenario-book-on-the-bridge.md)).
+
+- **Normal:** *recent trades* shows `scenario` buys a few at a time, never above a leg's `max_entry_price`.
+  Each exchange gets at most one tranche per 15 minutes, and the trailing hour stays under 2% of equity.
+- **Look:** `grep -E 'scenario_(order|pass)' journal/$(date -u +%F)/bridge.journal.jsonl | tail`. A
+  `scenario_pass` line lists why legs waited (`not started`, `waiting`, `pausing`, `not increasing exposure`
+  when the target file is stale or invalid, `over the per-order cap`).
+- **Act:** if a tranche trades above its `max_entry_price`, `touch ops/KILL` (EXP-008's revert condition). To
+  pause only the scenario book, set `[strategies.scenario] enabled = false` and `make up`.
+
 ## 2. Election night: Nov 3 17:00 ET → Nov 4 11:55 ET
 
 DST ended Nov 1, so **ET = UTC−5** all night. The lock is **12:00 ET (17:00Z)**; the last order is **11:55 ET (16:55Z)**,

@@ -14,6 +14,8 @@ What it runs:
 | `first-trade` | The qualifying trade: exactly **1 YES share** near the mid of the most liquid market | `first_trade.py` |
 | constraints racer | Trades engine-reported relationship violations as hedged bundles, **but only after proving a guaranteed payoff** | `strategies/racer.py` |
 | stale-order sniper | Takes resting orders ≥ `min_edge_pts` through a **fresh, sane, human-verified** fair value | `strategies/sniper.py` |
+| far quoter | Rests cheap ladders far from fair on near-certain outcomes | `strategies/farquote.py` |
+| scenario executor | Buys the research scenario book (`targets/current.json`) in paced tranches under each leg's price cap; port of rust-live's executor (EXP-008) | `strategies/scenario.py` |
 | recorder | Cup prices, leaderboard and market lists to Parquet/JSON for research | `recorder.py` |
 | reconcile + status | Rebuilds its view from REST every 15 s and on every realtime resync; writes `state/status.json` | `oms.py`, `status.py` |
 
@@ -47,7 +49,7 @@ broker, and nothing reaches the exchange. That's the default, on purpose.
 | `susq-bridge open` | Polls for `SUSQ_API_KEY` (every 30 s), sleeps until `calendar.open_utc`, then `measure-day1` → `first-trade` (live only) → `run` | key |
 | `susq-bridge measure-day1` | All probes; write probes only in live mode | key (else a report of skips) |
 | `susq-bridge first-trade` | 1 share; pays the ask if the spread ≤ 2 ticks, else posts the mid for 60 s then pays the ask; records fees and valuation into DAY1 | live + lease |
-| `susq-bridge run [--no-racer] [--no-sniper] [--no-recorder] [--no-realtime]` | The long-running process | key |
+| `susq-bridge run [--no-racer] [--no-sniper] [--no-scenario] [--no-recorder] [--no-realtime]` | The long-running process | key |
 | `susq-bridge record [--loop]` | Recorder only (markets + node trees, prices, leaderboard) | key |
 | `susq-bridge cancel-all [--exchange ID]` | Tournament-scoped cancel-all, confirmed against `GET /orders?status=open` | lease |
 | `susq-bridge status [--refresh]` | Prints `state/status.json` (health, ACTION NEEDED) | — |
@@ -141,6 +143,19 @@ from `state/fair_live.json` younger than 60 s; never when the Cup mid is more th
 takes exactly the stale levels, sized so that a completely wrong fair loses under 1 % of bankroll.
 Orders whose fair input goes stale are cancelled by the reconcile loop.
 
+## The scenario executor (EXP-008)
+
+Reads `[strategies.scenario]` (the same section rust-live reads) and the last good target file. Each pass
+(every 30 s) it sends at most one buy per target leg: a quarter of the gap to target, never through zero,
+priced at the ask when that is within the leg's YES-space `max_entry_price` (NO buys: `1 - max_entry_price`)
+and resting at the cap otherwise. It waits for `start_utc`, keeps `min_interval_s` between tranches on one
+exchange, pauses once the trailing hour's tranches exceed `max_hourly_notional_frac` of equity, and clamps
+each tranche to `[risk] max_order_notional_frac` of equity. It only trades verified markets on a fresh book,
+never reduces a locked leg (those also go to the risk engine, which then refuses any strategy's order that
+would reduce one), and while the target file is stale or invalid it only reduces. Decisions are journaled as
+`scenario_pass` (when the notes change) and `scenario_order`. `tests/fixtures/scenario_tranches.json`
+holds it and rust-live to the same tranches.
+
 ## Files
 
 | Path | What |
@@ -149,6 +164,7 @@ Orders whose fair input goes stale are cancelled by the reconcile loop.
 | `state/bridge/intents.jsonl` | write-ahead intents, last line per `intent_id` wins |
 | `state/market_map.json` | input: verified market rules (`susq.v1.MarketMap`) |
 | `state/fair_live.json` | input: `TargetFile` with `header` + `fair`, rewritten every ~15 s |
+| `targets/current.json` | input: pointer to the research target file whose `positions` are the scenario book |
 | `state/status.json` | output: `StatusSnapshot` every minute |
 | `data/cup/{prices,leaderboard}/date=…/part-….parquet`, `data/cup/markets/` | research data |
 | `reports/DAY1.md`, `reports/day1.json`, `reports/first_trade.json` | day-one measurements (incl. the `collateral` verdict) |
