@@ -791,13 +791,19 @@ impl Engine {
             .cloned()
             .collect::<Vec<_>>();
         let todo = dirty.into_iter().chain(aging);
+        // Oct 9-11: eight throttled book reads held a step for over 120 s and the watchdog restarted
+        // the trader eleven times. Waiting on the book throttle is cancel-safe, so stop at the budget.
+        let budget = std::time::Duration::from_millis(self.d.cfg.live.book_refresh_budget_ms.max(1));
+        let deadline = tokio::time::Instant::now() + budget;
         for ex in todo.take(BOOKS_PER_STEP) {
-            match self.d.platform.orderbook(&self.world.tid, &ex, 50).await {
-                Ok(b) => self
+            let read = self.d.platform.orderbook(&self.world.tid, &ex, 50);
+            match tokio::time::timeout_at(deadline, read).await {
+                Err(_) => break,
+                Ok(Ok(b)) => self
                     .world
                     .books
                     .apply_snapshot(L2Book::from_api(&b, self.d.clock.now_ns())),
-                Err(e) => {
+                Ok(Err(e)) => {
                     self.platform_error("orderbook", &e, now);
                     break;
                 }

@@ -559,6 +559,10 @@ pub struct LiveCfg {
     /// REST reads serially under the per-account rate budget (about 1 req/s), so it must allow
     /// for far more than one tick.
     pub max_step_age_s: u64,
+    /// Order-book reads stop for the step once this much time has gone on them. Book reads have
+    /// their own throttle (about 15 a minute), so eight in one step could block the loop for 30 s
+    /// to 160 s; the rest wait for later steps, which keeps orders and the needle moving.
+    pub book_refresh_budget_ms: u64,
 }
 
 impl Default for LiveCfg {
@@ -570,6 +574,7 @@ impl Default for LiveCfg {
             tick_ms: 500,
             realtime_market_channels: 80,
             max_step_age_s: 120,
+            book_refresh_budget_ms: 3000,
         }
     }
 }
