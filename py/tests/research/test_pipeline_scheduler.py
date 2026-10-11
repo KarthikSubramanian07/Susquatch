@@ -9,6 +9,7 @@ from datetime import UTC, datetime, time, timedelta
 
 import polars as pl
 import pytest
+from susq.calibrate import pipeline
 from susq.calibrate.pipeline import run_targets
 from susq.calibrate.targets import read_current
 from susq.collectors.store import write_snapshot
@@ -86,6 +87,32 @@ def test_unverified_map_yields_fair_values_but_no_positions(home, quotes) -> Non
     assert tf.fair
     assert not tf.positions
     assert "0/" in run.notes  # no tradable legs
+
+
+def test_incumbent_scenario_is_read_from_the_current_targets_file(home, quotes, monkeypatch) -> None:
+    """EXP-009: run_targets hands the current targets file's scenario to build_book as the incumbent."""
+    _prepare_home(home, quotes, verify=True)
+    seen: list[str | None] = []
+    real = pipeline.build_book
+
+    def spy(*args, **kwargs):
+        seen.append(kwargs.get("incumbent"))
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(pipeline, "build_book", spy)
+    assert pipeline.incumbent_scenario(home.targets) is None  # no targets file yet
+    first = run_targets(home, home.load_config(), quotes, now_ns=NOW_NS, n_draws=10_000, seed=3)
+    tf = read_current(home.targets)
+    assert tf is not None
+    assert tf.tourney.scenario, first.notes
+    second = run_targets(home, home.load_config(), quotes, now_ns=NOW_NS + 10**9, n_draws=10_000, seed=3)
+    assert seen == [None, tf.tourney.scenario]
+    assert f"kept incumbent {tf.tourney.scenario}" in second.notes
+    after = read_current(home.targets)
+    assert after is not None
+    assert after.tourney.scenario == tf.tourney.scenario
+    (home.targets / "current.json").write_text("{not json")
+    assert pipeline.incumbent_scenario(home.targets) is None  # unreadable: no incumbent, no crash
 
 
 def test_research_context_fair_and_change_detection(home, quotes) -> None:
