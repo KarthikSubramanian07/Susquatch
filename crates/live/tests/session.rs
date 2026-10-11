@@ -22,7 +22,10 @@ use susq_live::{
 };
 use susq_oms::OrderState;
 use susq_platform::{
-    OrderStatusFilter, all_orders,
+    BatchRequest, BatchResponse, BulkPrices, CancelAllResponse, CancelOutcome, CancelScope, Collateral,
+    Constraints, Fill, Leaderboard, LeaderboardPeriod, Market, MarketStatusFilter, MultiLegRequest,
+    MultiLegResponse, OrderAck, OrderBook, OrderStatusFilter, Page, PlaceOrderRequest, PlatformAdapter,
+    PlatformResult, Pnl, PnlPeriod, Positions, RealtimeToken, Relationship, Tournament, all_orders,
     mock::{CALLER, MockConfig, MockPlatform},
     realtime::{BookDirty, MarketBatch, RealtimeEvent, ResyncReason, RtBook, RtLevel},
 };
@@ -1518,4 +1521,170 @@ async fn lock_rule_buys_a_trailing_california_house_democrat_only_when_on() {
         "with the lock rule off a quiet House posterior is never traded"
     );
     assert_eq!(s.paper_position(CA_22.ex).await, 0);
+}
+
+// ── Throttled order-book reads must not stall the loop ───────────────────────────────────────────
+
+/// Order-book reads that wait `delay` of real time first: what the book throttle (about 15 reads a
+/// minute, slower after a 429) does to a step that wants eight books.
+struct SlowBooks {
+    inner: Arc<MockPlatform>,
+    delay: Duration,
+}
+
+#[async_trait::async_trait]
+impl PlatformAdapter for SlowBooks {
+    async fn tournament(&self, slug: &str) -> PlatformResult<Tournament> {
+        self.inner.tournament(slug).await
+    }
+    async fn markets_page(
+        &self,
+        slug: &str,
+        status: MarketStatusFilter,
+        cursor: Option<&str>,
+    ) -> PlatformResult<Page<Market>> {
+        self.inner.markets_page(slug, status, cursor).await
+    }
+    async fn prices(&self, tid: &TournamentId, ids: &[ExchangeId]) -> PlatformResult<BulkPrices> {
+        self.inner.prices(tid, ids).await
+    }
+    async fn orderbook(
+        &self,
+        tid: &TournamentId,
+        exchange: &ExchangeId,
+        depth: u32,
+    ) -> PlatformResult<OrderBook> {
+        tokio::time::sleep(self.delay).await;
+        self.inner.orderbook(tid, exchange, depth).await
+    }
+    async fn place_order(&self, req: &PlaceOrderRequest) -> PlatformResult<OrderAck> {
+        self.inner.place_order(req).await
+    }
+    async fn place_batch(&self, req: &BatchRequest) -> PlatformResult<BatchResponse> {
+        self.inner.place_batch(req).await
+    }
+    async fn place_multi_leg(&self, req: &MultiLegRequest) -> PlatformResult<MultiLegResponse> {
+        self.inner.place_multi_leg(req).await
+    }
+    async fn cancel_order(&self, id: susq_core::OrderId) -> PlatformResult<CancelOutcome> {
+        self.inner.cancel_order(id).await
+    }
+    async fn cancel_all(&self, tid: &TournamentId, scope: &CancelScope) -> PlatformResult<CancelAllResponse> {
+        self.inner.cancel_all(tid, scope).await
+    }
+    async fn orders_page(
+        &self,
+        tid: &TournamentId,
+        status: OrderStatusFilter,
+        exchange: Option<&ExchangeId>,
+        cursor: Option<&str>,
+    ) -> PlatformResult<Page<susq_platform::Order>> {
+        self.inner.orders_page(tid, status, exchange, cursor).await
+    }
+    async fn positions(&self, slug: &str) -> PlatformResult<Positions> {
+        self.inner.positions(slug).await
+    }
+    async fn pnl(&self, slug: &str, period: PnlPeriod) -> PlatformResult<Pnl> {
+        self.inner.pnl(slug, period).await
+    }
+    async fn fills_page(&self, slug: &str, cursor: Option<&str>) -> PlatformResult<Page<Fill>> {
+        self.inner.fills_page(slug, cursor).await
+    }
+    async fn leaderboard(
+        &self,
+        slug: &str,
+        period: LeaderboardPeriod,
+        limit: u32,
+        offset: u32,
+    ) -> PlatformResult<Leaderboard> {
+        self.inner.leaderboard(slug, period, limit, offset).await
+    }
+    async fn relationships_page(
+        &self,
+        tid: &TournamentId,
+        cursor: Option<&str>,
+    ) -> PlatformResult<Page<Relationship>> {
+        self.inner.relationships_page(tid, cursor).await
+    }
+    async fn constraints(
+        &self,
+        tid: &TournamentId,
+        violations_only: bool,
+        min_violation: f64,
+    ) -> PlatformResult<Constraints> {
+        self.inner.constraints(tid, violations_only, min_violation).await
+    }
+    async fn realtime_token(&self) -> PlatformResult<RealtimeToken> {
+        self.inner.realtime_token().await
+    }
+    async fn collateral(&self, tid: &TournamentId) -> PlatformResult<Collateral> {
+        self.inner.collateral(tid).await
+    }
+}
+
+/// Oct 9-11: steps waiting on eight throttled book reads ran past the 120 s health limit and the
+/// watchdog restarted the paper trader eleven times. A step now spends at most the book budget on
+/// book reads, and the books it skipped arrive over the next steps.
+#[tokio::test(start_paused = true)]
+async fn throttled_book_reads_cannot_hold_a_step_past_the_budget() {
+    let home = tempfile::tempdir().expect("tmp");
+    let cfg = config();
+    let budget = Duration::from_millis(cfg.live.book_refresh_budget_ms);
+    let clock = ManualClock::at("2026-10-08T16:00:00Z".parse().expect("ts"));
+    let mock = Arc::new(MockPlatform::new(
+        Arc::new(clock.clone()),
+        MockConfig {
+            tournament_id: TID.into(),
+            slug: SLUG.into(),
+            starting_balance: 100_000.0,
+            member_count: 1200,
+            page_size: 200,
+            collateral: true,
+        },
+    ));
+    seed(&mock);
+    write_market_map(home.path(), &cfg);
+    let mut engine = build(BuildOpts {
+        cfg,
+        home: home.path().to_owned(),
+        mode: Mode::Paper,
+        clock: Arc::new(clock.clone()),
+        platform: Arc::new(SlowBooks {
+            inner: mock.clone(),
+            delay: Duration::from_secs(2),
+        }),
+        journal: Journal::discard(),
+        tournament: TournamentId::new(TID),
+        paper_balance: 100_000.0,
+        realtime: None,
+        needle: None,
+        enr: None,
+        host: "test".into(),
+        pid: 1,
+        kill: None,
+    })
+    .expect("engine");
+    engine.bootstrap().await;
+
+    // Eight books at 2 s each would hold one step for 16 s; each step stops at the budget and the
+    // books still arrive over the next steps, so the racer trades within a few of them.
+    let mut steps = 0;
+    while intents_of(&engine, "racer").is_empty() && steps < 6 {
+        clock.advance(Duration::from_secs(1));
+        let started = tokio::time::Instant::now();
+        engine.step().await;
+        let took = started.elapsed();
+        assert!(
+            took <= budget + Duration::from_secs(1),
+            "a step spent {took:?} on book reads, budget {budget:?}"
+        );
+        engine.settle().await;
+        steps += 1;
+    }
+    assert!(steps > 1, "the books took more than one step to arrive");
+    assert_eq!(
+        intents_of(&engine, "racer").len(),
+        3,
+        "the racer traded once its books arrived"
+    );
 }
