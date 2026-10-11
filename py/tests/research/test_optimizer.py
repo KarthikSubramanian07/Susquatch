@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+from dataclasses import replace
 from datetime import UTC, datetime
 
 import numpy as np
@@ -11,7 +13,14 @@ from susq.models.calibration import apply_mu, calibrate
 from susq.models.chamber import senate_dem_control, senate_seat_specs
 from susq.models.numpy_engine import NumpySimEngine
 from susq.models.types import RaceSpec, SimParams
-from susq.optimizer.book import TICK, build_book, score_scenarios
+from susq.optimizer.book import (
+    TICK,
+    Robustness,
+    ScenarioScore,
+    apply_hysteresis,
+    build_book,
+    score_scenarios,
+)
 from susq.optimizer.legs import Leg, leg_outcomes
 from susq.optimizer.scenarios import Scenario, scenario_grid
 from susq.research_env import OptimizerConfig
@@ -213,3 +222,123 @@ def test_early_book_frac_halves_the_spend(world, legs) -> None:
     assert "book frac 30%" in early.explanation
     assert "book frac 60%" in full.explanation
     assert build_book(kept, y, grid, t, CFG).book_cost == pytest.approx(full.book_cost)  # default: full
+
+
+# EXP-009 scenario hysteresis ----------------------------------------------------------------------
+
+
+def _ss(sid: str, score: float, closeness: float, legs: tuple[int, ...] = (0,)) -> ScenarioScore:
+    s = Scenario(sid, 5, {"national": 1}, np.ones(10, dtype=bool))
+    return ScenarioScore(s, 0.0, legs, tuple(10 for _ in legs), score, score, closeness)
+
+
+def _robust(*tops: str) -> Robustness:
+    names = ("fitted", "thin", "medium", "tail")
+    return Robustness(dict(zip(names, tops, strict=True)), tops[0], (), False)
+
+
+def test_hysteresis_keeps_the_incumbent_within_the_margin() -> None:
+    # The Oct 9 flip: closeness 0.00077 vs 0.00071 is an 8% edge, well inside 25%.
+    inc, chal = _ss("A", 0.0, 0.00071), _ss("B", 0.0, 0.00077)
+    best, h = apply_hysteresis(chal, [chal, inc], "A", 0.25, _robust("B", "A", "B", "A"))
+    assert best is inc
+    assert h.kept
+    assert h.challenger == "B"
+    assert h.margin == pytest.approx(0.00077 / 0.00071 - 1)
+    assert h.describe() == "kept incumbent A (challenger B margin 0.08)"
+
+
+def test_hysteresis_switches_beyond_the_margin() -> None:
+    inc, chal = _ss("A", 0.0, 0.0010), _ss("B", 0.0, 0.0013)
+    best, h = apply_hysteresis(chal, [chal, inc], "A", 0.25, None)
+    assert best is chal
+    assert not h.kept
+    assert h.margin == pytest.approx(0.3)
+    assert h.describe() == "switched from A (to B, closeness margin 0.30)"
+    edge = _ss("B", 0.0, 0.00125)  # exactly at the margin is not "more than" the margin
+    best, h = apply_hysteresis(edge, [edge, inc], "A", 0.25, None)
+    assert best is inc
+    assert h.kept
+
+
+def test_hysteresis_uses_score_once_any_score_is_nonzero() -> None:
+    # Closeness favours the incumbent, but the challenger's score is 50% better: switch.
+    inc, chal = _ss("A", 0.010, 0.0020), _ss("B", 0.015, 0.0010)
+    best, h = apply_hysteresis(chal, [chal, inc], "A", 0.25, None)
+    assert best is chal
+    assert h.describe() == "switched from A (to B, score margin 0.50)"
+    # A nonzero challenger score against a zero incumbent score always switches (the EXP-009 revert case).
+    zero = _ss("A", 0.0, 0.0030)
+    best, h = apply_hysteresis(chal, [chal, zero], "A", 0.25, None)
+    assert best is chal
+    assert h.margin == math.inf
+    # Within the margin on score: kept, even though the challenger is far ahead on closeness.
+    close = _ss("B", 0.011, 0.0100)
+    best, h = apply_hysteresis(close, [close, inc], "A", 0.25, None)
+    assert best is inc
+    assert h.kept
+    assert h.margin == pytest.approx(0.1)
+
+
+def test_hysteresis_switches_when_the_incumbent_is_top_under_no_assumption() -> None:
+    inc, chal = _ss("A", 0.0, 0.00071), _ss("B", 0.0, 0.00077)
+    best, h = apply_hysteresis(chal, [chal, inc], "A", 0.25, _robust("B", "B", "C", "C"))
+    assert best is chal
+    assert h.describe() == "switched from A (top under no field assumption)"
+
+
+def test_hysteresis_with_a_missing_or_legless_incumbent_takes_the_pick() -> None:
+    chal = _ss("B", 0.0, 0.0010)
+    best, h = apply_hysteresis(chal, [chal], "GONE", 0.25, None)
+    assert best is chal
+    assert h.describe() == "switched from GONE (no longer in the scenario grid)"
+    legless = _ss("A", 0.0, 0.0010, legs=())
+    best, h = apply_hysteresis(chal, [chal, legless], "A", 0.25, None)
+    assert best is chal
+    assert not h.kept
+
+
+def test_hysteresis_holds_the_incumbent_when_robustness_commits_nothing() -> None:
+    inc, top = _ss("A", 0.0, 0.0010), _ss("B", 0.0, 0.0011)
+    best, h = apply_hysteresis(None, [top, inc], "A", 0.25, _robust("B", "A", "C", "D"))
+    assert best is inc
+    assert h.kept
+    assert h.challenger == "B"
+    best, h = apply_hysteresis(inc, [inc, top], "A", 0.25, None)
+    assert best is inc
+    assert h.describe() == "kept incumbent A (still the pick)"
+
+
+def test_build_book_keeps_or_switches_from_the_incumbent(world, legs) -> None:
+    specs, draws = world
+    y, kept = leg_outcomes(draws, specs, legs)
+    grid, t = scenario_grid(draws), np.full(draws.n, 1.4)
+    free = build_book(kept, y, grid, t, CFG)
+    assert free.best is not None
+    assert free.hysteresis is None
+    top = free.best.scenario.scenario_id
+    runner_up = next(s for s in free.ranked[1:] if s.legs)
+    rid = runner_up.scenario.scenario_id
+
+    sticky = build_book(kept, y, grid, t, replace(CFG, switch_margin=1e9), incumbent=rid)
+    assert sticky.best is not None
+    assert sticky.best.scenario.scenario_id == rid
+    assert (sticky.best.legs, sticky.best.qty) == (runner_up.legs, runner_up.qty)
+    assert sticky.hysteresis is not None
+    assert sticky.hysteresis.kept
+    assert f"kept incumbent {rid} (challenger {top} margin" in sticky.explanation
+    core = {p.exchange_id for p in sticky.positions if p.tranche != "T3"}
+    assert core == {kept[j].exchange_id for j in runner_up.legs}  # the incumbent's own book
+    assert all(p.rationale.startswith(f"{rid}:") for p in sticky.positions if p.tranche != "T3")
+    again = build_book(kept, y, grid, t, replace(CFG, switch_margin=1e9), incumbent=rid)
+    assert again.positions == sticky.positions  # deterministic
+
+    eager = build_book(kept, y, grid, t, replace(CFG, switch_margin=-1.0), incumbent=rid)
+    assert eager.best is not None
+    assert eager.best.scenario.scenario_id == top
+    assert eager.positions == free.positions
+    assert f"switched from {rid} (to {top}," in eager.explanation
+
+    same = build_book(kept, y, grid, t, CFG, incumbent=top)
+    assert same.positions == free.positions
+    assert f"kept incumbent {top} (still the pick)" in same.explanation

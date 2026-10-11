@@ -31,6 +31,20 @@ assumptions (thin T = 1.5x, medium 5x, tail 20x: `ROBUST_ASSUMPTIONS`). The rule
 * otherwise nothing is committed (no positions; the notes say why) and the book waits for more tape.
 
 The committed scenario's legs and quantities are always the ones found under the fitted T.
+
+Hysteresis (EXP-009): given `incumbent` (the scenario of the current targets file), the incumbent stays
+committed unless
+
+* the challenger (the scenario the rules above would commit) beats it by more than `switch_margin`,
+  measured as `challenger / incumbent - 1` on score, or on closeness while both scores are 0; or
+* the robustness rule ran and the incumbent is top-ranked under none of its rankings; or
+* the incumbent is no longer in the scenario grid, or has no consistent, priced leg left.
+
+When the robustness rule commits nothing, the fitted winner is the challenger, so an incumbent that is
+still top under some ranking keeps its book rather than leaving an empty target.
+
+Near-tied scenarios otherwise swap run to run, and the executor never reduces a leg that drops out of
+the targets, so each flip orphans a book and spends cash on the next one.
 """
 
 from __future__ import annotations
@@ -110,6 +124,61 @@ def robust_choice(rankings: Mapping[str, Sequence[ScenarioScore]]) -> Robustness
     return Robustness(tops, None, (), first is not None)
 
 
+@dataclass(frozen=True)
+class Hysteresis:
+    """What the EXP-009 incumbent rule decided."""
+
+    incumbent: str
+    kept: bool
+    challenger: str | None  # the scenario weighed against the incumbent (None: there was no contest)
+    margin: float  # challenger / incumbent - 1 on the compared metric (0 when there was no contest)
+    reason: str
+
+    def describe(self) -> str:
+        if self.kept and self.challenger is None:
+            return f"kept incumbent {self.incumbent} (still the pick)"
+        if self.kept:
+            return f"kept incumbent {self.incumbent} (challenger {self.challenger} margin {self.margin:.2f})"
+        return f"switched from {self.incumbent} ({self.reason})"
+
+
+def _margin(challenger: ScenarioScore, incumbent: ScenarioScore) -> tuple[float, str]:
+    """(challenger / incumbent - 1, metric): on score when either is nonzero, otherwise on closeness."""
+    metric = "score" if challenger.score > 0 or incumbent.score > 0 else "closeness"
+    c, i = getattr(challenger, metric), getattr(incumbent, metric)
+    if i <= 0:
+        return (math.inf if c > 0 else 0.0), metric
+    return c / i - 1.0, metric
+
+
+def apply_hysteresis(
+    pick: ScenarioScore | None,
+    ranked: Sequence[ScenarioScore],
+    incumbent: str,
+    switch_margin: float,
+    robust: Robustness | None,
+) -> tuple[ScenarioScore | None, Hysteresis]:
+    """The EXP-009 rule (module docstring): the scenario to commit, and why."""
+    inc = next((s for s in ranked if s.scenario.scenario_id == incumbent), None)
+    if inc is None:
+        return pick, Hysteresis(incumbent, False, None, 0.0, "no longer in the scenario grid")
+    if not inc.legs:
+        return pick, Hysteresis(incumbent, False, None, 0.0, "no consistent, priced leg left")
+    if robust is not None and incumbent not in robust.tops.values():
+        return pick, Hysteresis(incumbent, False, None, 0.0, "top under no field assumption")
+    # When the robustness rule commits nothing, the fitted winner is the challenger: holding the
+    # incumbent's book is no worse than an empty target, since dropped legs are never reduced anyway.
+    challenger = pick if pick is not None else (ranked[0] if ranked else None)
+    if challenger is None or challenger.scenario.scenario_id == incumbent:
+        return inc, Hysteresis(incumbent, True, None, 0.0, "still the pick")
+    margin, metric = _margin(challenger, inc)
+    cid = challenger.scenario.scenario_id
+    how = f"{metric} margin {margin:.2f}"
+    if margin > switch_margin:
+        return challenger, Hysteresis(incumbent, False, cid, margin, f"to {cid}, {how}")
+    return inc, Hysteresis(incumbent, True, cid, margin, how)
+
+
 @dataclass
 class OptimizerResult:
     best: ScenarioScore | None
@@ -120,6 +189,7 @@ class OptimizerResult:
     book_cost: float = 0.0
     explanation: str = ""
     robustness: Robustness | None = None
+    hysteresis: Hysteresis | None = None
 
 
 def _floor_tick(p: float) -> float:
@@ -238,12 +308,14 @@ def build_book(
     cluster_drift_pts: Mapping[str, float] | None = None,
     book_frac: float | None = None,
     robust_thresholds: Mapping[str, FloatArray] | None = None,
+    incumbent: str | None = None,
 ) -> OptimizerResult:
     """Score scenarios and turn the best one into target positions.
 
     `book_frac` is the share of equity the book may spend (callers pass `cfg.book_frac_at(now)` so
     the early, smaller size applies before `early_until_utc`); it defaults to `cfg.book_frac`.
     `robust_thresholds` (assumption name -> T per world) switches on the robustness rule.
+    `incumbent` (the current targets file's scenario id) switches on the EXP-009 hysteresis rule.
     """
     frac = cfg.book_frac if book_frac is None else book_frac
 
@@ -259,14 +331,23 @@ def build_book(
     if robust_thresholds and ranked:
         robust = robust_choice({"fitted": ranked, **{a: rank(t) for a, t in robust_thresholds.items()}})
         best = next((s for s in ranked if s.scenario.scenario_id == robust.chosen), None)
-        if best is None:
-            return OptimizerResult(None, ranked, explanation=robust.describe(), robustness=robust)
+    hyst = None
+    if incumbent:
+        best, hyst = apply_hysteresis(best, ranked, incumbent, cfg.switch_margin, robust)
+    kept_note = f"; {hyst.describe()}" if hyst else ""
+    if best is None and robust is not None:
+        return OptimizerResult(
+            None, ranked, explanation=robust.describe() + kept_note, robustness=robust, hysteresis=hyst
+        )
     if best is None or not best.legs:
         return OptimizerResult(
             best,
             ranked,
-            explanation=f"no scenario has any consistent, priced leg (book frac {frac:.0%})",
+            explanation=f"no scenario has any consistent, priced leg (book frac {frac:.0%})"
+            + (f"; {robust.describe()}" if robust else "")
+            + kept_note,
             robustness=robust,
+            hysteresis=hyst,
         )
 
     s = best.scenario
@@ -306,8 +387,10 @@ def build_book(
             f"{len(positions)} legs costing {cost:,.0f} ({cost / equity:.0%} of equity, "
             f"book frac {frac:.0%}); unconditional P(1st)={pf:.4f}"
             + (f"; {robust.describe()}" if robust else "")
+            + kept_note
         ),
         robustness=robust,
+        hysteresis=hyst,
     )
 
 
