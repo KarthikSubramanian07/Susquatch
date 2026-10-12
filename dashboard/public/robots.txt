@@ -1,3 +1,16 @@
 # Private dashboard. Nothing here is for indexing.
+# Link-preview crawlers may read the public login page and its share card, so a pasted link unfurls.
+User-agent: LinkedInBot
+User-agent: Twitterbot
+User-agent: facebookexternalhit
+User-agent: Slackbot
+User-agent: Slackbot-LinkExpanding
+User-agent: Discordbot
+User-agent: TelegramBot
+Allow: /$
+Allow: /login
+Allow: /og.png
+Disallow: /
+
 User-agent: *
 Disallow: /

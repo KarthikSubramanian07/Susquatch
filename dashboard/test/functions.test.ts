@@ -6,6 +6,7 @@ import * as push from "../functions/api/push.ts";
 import * as status from "../functions/api/status.ts";
 import * as summary from "../functions/api/summary.ts";
 import { safeEqual } from "../src/auth.ts";
+import { isPreviewBot } from "../src/share.ts";
 import { KEYS, LIMITS, type StatusRecord } from "../src/model.ts";
 import { FakeKV, PASSWORD, TOKEN, basic, bearer, call, fixtureText, makeEnv } from "./fakes.ts";
 
@@ -49,6 +50,45 @@ describe("middleware", () => {
   it("serves robots.txt without credentials", async () => {
     const res = await call(async () => new Response("User-agent: *\nDisallow: /"), { url: `${U}/robots.txt` }, env, { middleware });
     assert.equal(res.status, 200);
+  });
+
+  describe("link previews", () => {
+    const LI = { "User-Agent": "LinkedInBot/1.0 (compatible; Mozilla/5.0; Apache-HttpClient +http://www.linkedin.com)", Accept: "*/*" };
+
+    it("sends a preview crawler from / to the public login page, never the dashboard", async () => {
+      const res = await call(page, { url: `${U}/`, headers: LI }, env, { middleware });
+      assert.equal(res.status, 302);
+      assert.equal(res.headers.get("Location"), `${U}/login`);
+    });
+
+    it("serves the login page and share card to a crawler without noindex", async () => {
+      for (const path of ["/login", "/og.png"]) {
+        const res = await call(page, { url: `${U}${path}`, headers: LI }, env, { middleware });
+        assert.equal(res.status, 200, path);
+        assert.equal(res.headers.get("X-Robots-Tag"), null, path);
+      }
+    });
+
+    it("keeps noindex on the share pages for everyone else", async () => {
+      const res = await call(page, { url: `${U}/login` }, env, { middleware });
+      assert.equal(res.headers.get("X-Robots-Tag"), "noindex, nofollow, noarchive");
+    });
+
+    it("still refuses a crawler anything private", async () => {
+      for (const path of ["/api/status", "/app.js", "/index.html"]) {
+        const res = await call(page, { url: `${U}${path}`, headers: LI }, env, { middleware });
+        assert.notEqual(res.status, 200, path);
+        assert.equal(res.headers.get("X-Robots-Tag"), "noindex, nofollow, noarchive", path);
+      }
+    });
+
+    it("recognizes the common unfurlers and not ordinary browsers", () => {
+      const ua = (s: string) => new Request(U, { headers: { "User-Agent": s } });
+      for (const s of ["Twitterbot/1.0", "facebookexternalhit/1.1", "Slackbot-LinkExpanding 1.0", "Discordbot/2.0", "WhatsApp/2.23"]) {
+        assert.equal(isPreviewBot(ua(s)), true, s);
+      }
+      assert.equal(isPreviewBot(ua("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Chrome/130.0")), false);
+    });
   });
 
   it("fails closed when secrets are missing or weak", async () => {
