@@ -23,5 +23,12 @@ divided by the best challenger's at each run (target at least 0.8 on every run).
 the challenger's P(M>T|S) is nonzero and the incumbent's is zero.
 
 ## Result
+Interim, 2026-10-14: the rule did not hold. From Oct 12 13:30Z to Oct 13 19:58Z the targets switched scenario five
+times, every time on the escape clause ("top under none of the four threshold assumptions"), never on the margin. With
+four near-tied N9 variants, Monte Carlo noise is enough to leave the incumbent second under every assumption. The live
+book now holds legs from three scenarios: TN-05 D, SC Governor D and Rhode Island Senate D are current; Alabama
+Governor D and Louisiana Senate D are orphaned (about 1,500 at cost). Fix (PR #86): the escape clause now fires only
+when the incumbent is more than `switch_margin` behind the top scenario under every assumption, using the same
+measure as the margin test. This must be live before the book grows to full size on Oct 21.
 
 ## Decision
