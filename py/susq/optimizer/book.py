@@ -37,7 +37,8 @@ committed unless
 
 * the challenger (the scenario the rules above would commit) beats it by more than `switch_margin`,
   measured as `challenger / incumbent - 1` on score, or on closeness while both scores are 0; or
-* the robustness rule ran and the incumbent is top-ranked under none of its rankings; or
+* the robustness rule ran and the incumbent is near the top of none of its rankings (within
+  `switch_margin` of that ranking's top scenario, by the same measure); or
 * the incumbent is no longer in the scenario grid, or has no consistent, priced leg left.
 
 When the robustness rule commits nothing, the fitted winner is the challenger, so an incumbent that is
@@ -92,6 +93,8 @@ class Robustness:
     chosen: str | None
     top_under: tuple[str, ...]
     fallback: bool  # the fitted-T winner was not the one committed
+    # assumption -> scenario id -> its score under that assumption (for the hysteresis near-top test)
+    scores: dict[str, dict[str, ScenarioScore]] = field(default_factory=dict)
 
     def describe(self) -> str:
         tops = ", ".join(f"{a}={sid}" for a, sid in self.tops.items())
@@ -110,6 +113,7 @@ class Robustness:
 def robust_choice(rankings: Mapping[str, Sequence[ScenarioScore]]) -> Robustness:
     """The robustness rule (module docstring) over rankings keyed by assumption, one of them "fitted"."""
     tops = {a: r[0].scenario.scenario_id for a, r in rankings.items() if r}
+    scores = {a: {s.scenario.scenario_id: s for s in r} for a, r in rankings.items() if r}
     under: dict[str, list[str]] = {}
     for a, sid in tops.items():
         under.setdefault(sid, []).append(a)
@@ -117,11 +121,11 @@ def robust_choice(rankings: Mapping[str, Sequence[ScenarioScore]]) -> Robustness
     order = {sid: i for i, sid in enumerate(fitted)}
     first = fitted[0] if fitted else None
     if first is not None and len(under.get(first, [])) >= MIN_TOP_UNDER:
-        return Robustness(tops, first, tuple(under[first]), False)
+        return Robustness(tops, first, tuple(under[first]), False, scores)
     best = sorted(under, key=lambda sid: (-len(under[sid]), order.get(sid, len(order)), sid))
     if best and len(under[best[0]]) >= MIN_TOP_UNDER:
-        return Robustness(tops, best[0], tuple(under[best[0]]), True)
-    return Robustness(tops, None, (), first is not None)
+        return Robustness(tops, best[0], tuple(under[best[0]]), True, scores)
+    return Robustness(tops, None, (), first is not None, scores)
 
 
 @dataclass(frozen=True)
@@ -151,6 +155,22 @@ def _margin(challenger: ScenarioScore, incumbent: ScenarioScore) -> tuple[float,
     return c / i - 1.0, metric
 
 
+def _near_top(robust: Robustness, incumbent: str, switch_margin: float) -> bool:
+    """Whether the incumbent is top, or within `switch_margin` of the top, under some field assumption.
+
+    Being strictly top is too strict a test with four near-tied scenarios: Monte Carlo noise alone reorders
+    them, and the Oct 12 to 13 runs switched five times on that test alone, each switch orphaning legs.
+    """
+    if incumbent in robust.tops.values():
+        return True
+    for a, top in robust.tops.items():
+        by_id = robust.scores.get(a, {})
+        inc, best = by_id.get(incumbent), by_id.get(top)
+        if inc is not None and best is not None and _margin(best, inc)[0] <= switch_margin:
+            return True
+    return False
+
+
 def apply_hysteresis(
     pick: ScenarioScore | None,
     ranked: Sequence[ScenarioScore],
@@ -164,8 +184,8 @@ def apply_hysteresis(
         return pick, Hysteresis(incumbent, False, None, 0.0, "no longer in the scenario grid")
     if not inc.legs:
         return pick, Hysteresis(incumbent, False, None, 0.0, "no consistent, priced leg left")
-    if robust is not None and incumbent not in robust.tops.values():
-        return pick, Hysteresis(incumbent, False, None, 0.0, "top under no field assumption")
+    if robust is not None and not _near_top(robust, incumbent, switch_margin):
+        return pick, Hysteresis(incumbent, False, None, 0.0, "near the top under no field assumption")
     # When the robustness rule commits nothing, the fitted winner is the challenger: holding the
     # incumbent's book is no worse than an empty target, since dropped legs are never reduced anyway.
     challenger = pick if pick is not None else (ranked[0] if ranked else None)

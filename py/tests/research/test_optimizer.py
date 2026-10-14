@@ -19,6 +19,7 @@ from susq.optimizer.book import (
     ScenarioScore,
     apply_hysteresis,
     build_book,
+    robust_choice,
     score_scenarios,
 )
 from susq.optimizer.legs import Leg, leg_outcomes
@@ -284,7 +285,35 @@ def test_hysteresis_switches_when_the_incumbent_is_top_under_no_assumption() -> 
     inc, chal = _ss("A", 0.0, 0.00071), _ss("B", 0.0, 0.00077)
     best, h = apply_hysteresis(chal, [chal, inc], "A", 0.25, _robust("B", "B", "C", "C"))
     assert best is chal
-    assert h.describe() == "switched from A (top under no field assumption)"
+    assert h.describe() == "switched from A (near the top under no field assumption)"
+
+
+def _robust_scored(tops: tuple[str, ...], *scored: ScenarioScore) -> Robustness:
+    names = ("fitted", "thin", "medium", "tail")
+    by_id = {s.scenario.scenario_id: s for s in scored}
+    return Robustness(dict(zip(names, tops, strict=True)), tops[0], (), False, {a: by_id for a in names})
+
+
+def test_hysteresis_keeps_an_incumbent_near_the_top_under_some_assumption() -> None:
+    # The Oct 13 04:58Z flip: A was top under no assumption, but only 8% behind B and C.
+    inc, chal, other = _ss("A", 0.0, 0.00071), _ss("B", 0.0, 0.00077), _ss("C", 0.0, 0.00076)
+    robust = _robust_scored(("B", "B", "C", "C"), inc, chal, other)
+    best, h = apply_hysteresis(chal, [chal, other, inc], "A", 0.25, robust)
+    assert best is inc
+    assert h.kept
+    # Far behind every top: switch.
+    far = _ss("A", 0.0, 0.00050)
+    robust = _robust_scored(("B", "B", "C", "C"), far, chal, other)
+    best, h = apply_hysteresis(chal, [chal, other, far], "A", 0.25, robust)
+    assert best is chal
+    assert h.describe() == "switched from A (near the top under no field assumption)"
+
+
+def test_robust_choice_records_every_ranking() -> None:
+    a, b = _ss("A", 0.0, 0.002), _ss("B", 0.0, 0.001)
+    r = robust_choice({"fitted": [a, b], "thin": [b, a]})
+    assert set(r.scores) == {"fitted", "thin"}
+    assert r.scores["thin"]["A"] is a
 
 
 def test_hysteresis_with_a_missing_or_legless_incumbent_takes_the_pick() -> None:
