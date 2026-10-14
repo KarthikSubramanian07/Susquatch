@@ -107,6 +107,10 @@ prune() {  # prune <dir> <keep>
     rclone deletefile "$BACKUP_PREFIX/$dir/$obj"
     rclone deletefile "$BACKUP_PREFIX/$dir/$obj.sha256" 2>/dev/null || true
   done
+  # B2 keeps every deleted object as a hidden old version by default, and those still count against the 10 GB
+  # free tier (5.5 GB of them had filled it by Oct 14). Remove old versions for good; current names have no -v.
+  rclone delete --s3-versions --include '*-v[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]-*' \
+    "$BACKUP_PREFIX/$dir/" 2>/dev/null || true
 }
 # Make room before measuring: keep one fewer daily than configured, so tonight's makes KEEP_DAILY.
 prune daily "$((KEEP_DAILY > 1 ? KEEP_DAILY - 1 : 1))"
