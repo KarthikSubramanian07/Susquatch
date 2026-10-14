@@ -156,11 +156,14 @@ fi
 # ── files tree, then upload, promote, prune ──
 # Size-only comparison: the bulk is append-only (new parquet partitions, newly compressed journal days), and it
 # avoids a metadata request per object. copy, not sync: a file deleted on the server stays in the bucket.
+# --s3-no-head skips rclone's HEAD after every upload: on a no-card B2 account those are capped at 2,500 a day,
+# and the first run (about 34,000 files) hit the cap and got 403 for everything after it.
 if [ -d "$SUSQ_HOME/data" ]; then
-  rclone copy "$SUSQ_HOME/data" "$BACKUP_PREFIX/files/data" --size-only
+  rclone copy "$SUSQ_HOME/data" "$BACKUP_PREFIX/files/data" --size-only --s3-no-head --s3-no-check-bucket
 fi
 if [ -d "$SUSQ_HOME/journal" ]; then
-  rclone copy "$SUSQ_HOME/journal" "$BACKUP_PREFIX/files/journal" --size-only --include '*.zst'
+  rclone copy "$SUSQ_HOME/journal" "$BACKUP_PREFIX/files/journal" --size-only --include '*.zst' \
+    --s3-no-head --s3-no-check-bucket
 fi
 rclone copyto "$ARCHIVE" "$BACKUP_PREFIX/daily/$NAME"
 rclone copyto "$ARCHIVE.sha256" "$BACKUP_PREFIX/daily/$NAME.sha256"
