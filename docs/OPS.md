@@ -209,13 +209,16 @@ exactly the split brain a local lease can't see. Keep the Mac awake on election 
 
 [`ops/backup.sh`](../ops/backup.sh), nightly at 07:30 UTC (03:30 ET):
 
-- `tar` of `state/ journal/ data/ reports/ targets/` → `zstd -12` → `susq-<UTC>.tar.zst` + `.sha256`, uploaded with
-  rclone's S3 backend to `<bucket>/susquatch/daily/` on Backblaze B2. Credentials come from env (no `rclone.conf`
-  on disk).
-- Retention: **7 dailies**; Sunday's copy is promoted to `weekly/` and **4 weeklies** are kept. Every object is a full
-  snapshot, so there are no delta chains to compact and any single object restores on its own. (Raw collector deltas
-  are compacted into daily Parquet by the collectors themselves, before they ever reach a backup.)
-- **Quota guard:** the whole bucket is measured first. If `used + archive ≥ 80 %` of B2's free 10 GB, or if the bucket **can't be
+- The append-only bulk, `data/` and the journal days already compressed to `.zst`, is copied file by file to
+  `<bucket>/susquatch/files/` (size-only, never re-uploaded, never deleted from the bucket).
+- Everything else, `state/ reports/ targets/` and the journal days still being written, is `tar` → `zstd -12` →
+  `susq-<UTC>.tar.zst` + `.sha256` in `<bucket>/susquatch/daily/`, a few MB a night. Both go through rclone's S3
+  backend to Backblaze B2. Credentials come from env (no `rclone.conf` on disk). Full daily snapshots reached 1.7 GB
+  by Oct 13 and four of them filled the free tier, hence the split.
+- Retention: **2 dailies**; Sunday's copy is promoted to `weekly/` and **1 weekly** is kept. Old archives are pruned
+  before the guard measures, keeping one fewer daily than configured so tonight's makes the count. A restore is the
+  files tree plus one archive (`ops/restore.sh` fetches both).
+- **Quota guard:** the whole bucket is measured first. If `used + new files + archive ≥ 80 %` of B2's free 10 GB, or if the bucket **can't be
   measured**, the upload is refused, the archive stays in `ops/state/backup-staging/`, and an ACTION NEEDED item
   appears. The item clears itself on the next good backup.
 - Never backed up: `.env`, `ops/` (so never `ops/GO_LIVE`). A restored host comes back **in paper mode** until you re-arm it.

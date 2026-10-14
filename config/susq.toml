@@ -260,5 +260,6 @@ priority_window_end_utc = "2026-11-04T17:00:00Z"
 backup_max_age_h = 30
 r2_quota_bytes = 10_000_000_000
 r2_guard_frac = 0.80
-backup_keep_daily = 7
-backup_keep_weekly = 4
+# The archives are small since the incremental files tree (ops/backup.sh); the bulk is stored once.
+backup_keep_daily = 2
+backup_keep_weekly = 1
