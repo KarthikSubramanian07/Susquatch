@@ -93,10 +93,12 @@ def test_incumbent_scenario_is_read_from_the_current_targets_file(home, quotes, 
     """EXP-009: run_targets hands the current targets file's scenario to build_book as the incumbent."""
     _prepare_home(home, quotes, verify=True)
     seen: list[str | None] = []
+    held: list[dict[str, str]] = []
     real = pipeline.build_book
 
     def spy(*args, **kwargs):
         seen.append(kwargs.get("incumbent"))
+        held.append(kwargs.get("incumbent_legs"))
         return real(*args, **kwargs)
 
     monkeypatch.setattr(pipeline, "build_book", spy)
@@ -107,12 +109,14 @@ def test_incumbent_scenario_is_read_from_the_current_targets_file(home, quotes, 
     assert tf.tourney.scenario, first.notes
     second = run_targets(home, home.load_config(), quotes, now_ns=NOW_NS + 10**9, n_draws=10_000, seed=3)
     assert seen == [None, tf.tourney.scenario]
+    assert held == [{}, {p.exchange_id: p.tranche for p in tf.positions}]
     assert f"kept incumbent {tf.tourney.scenario}" in second.notes
     after = read_current(home.targets)
     assert after is not None
     assert after.tourney.scenario == tf.tourney.scenario
     (home.targets / "current.json").write_text("{not json")
     assert pipeline.incumbent_scenario(home.targets) is None  # unreadable: no incumbent, no crash
+    assert pipeline.incumbent_legs(home.targets) == {}
 
 
 def test_research_context_fair_and_change_detection(home, quotes) -> None:

@@ -44,6 +44,10 @@ committed unless
 When the robustness rule commits nothing, the fitted winner is the challenger, so an incumbent that is
 still top under some ranking keeps its book rather than leaving an empty target.
 
+Legs are sticky the same way: a leg of the current targets file has its in-scenario value per SUSQie
+boosted by `switch_margin` when legs are ranked, and its idiosyncratic T3 leg is kept while it still
+qualifies, so ask moves of a tick or two do not swap one leg for a near-identical one.
+
 Near-tied scenarios otherwise swap run to run, and the executor never reduces a leg that drops out of
 the targets, so each flip orphans a book and spends cash on the next one.
 """
@@ -52,7 +56,7 @@ from __future__ import annotations
 
 import hashlib
 import math
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -247,10 +251,14 @@ def score_scenarios(
     equity: float = INITIAL_BALANCE,
     cluster_drift_pts: Mapping[str, float] | None = None,
     book_frac: float | None = None,
+    sticky: Collection[str] = (),
 ) -> list[ScenarioScore]:
-    """Score every scenario, best first. `book_frac` (default `cfg.book_frac`) is the spend cap."""
+    """Score every scenario, best first. `book_frac` (default `cfg.book_frac`) is the spend cap.
+
+    `sticky` exchange ids (the current book's legs) rank as if `switch_margin` more valuable."""
     budget = (cfg.book_frac if book_frac is None else book_frac) * equity
     asks = np.array([leg.ask for leg in legs])
+    boost = np.array([1.0 + cfg.switch_margin if leg.exchange_id in sticky else 1.0 for leg in legs])
     uncond = outcomes.mean(axis=0) if legs else np.zeros(0)
     scored: list[ScenarioScore] = []
     for s in scenarios:
@@ -259,7 +267,10 @@ def score_scenarios(
         eligible = np.flatnonzero(
             (cond >= cfg.min_leg_prob_in_scenario) & (cond >= cfg.min_lift * np.maximum(uncond, 1e-9))
         )
-        ranked = [int(j) for j in eligible[np.argsort(-(cond[eligible] / asks[eligible]), kind="stable")]]
+        ranked = [
+            int(j)
+            for j in eligible[np.argsort(-(cond[eligible] * boost[eligible] / asks[eligible]), kind="stable")]
+        ]
         e = exposure(s.signs, cluster_drift_pts or {})
         t_s = threshold[s.mask] * (1 + cfg.crowding_lambda * e)
         idx, qty, p_beat, close = _best_concentration(
@@ -302,15 +313,21 @@ def _non_round(qty: int, key: str) -> int:
 
 
 def _idiosyncratic_leg(
-    legs: Sequence[Leg], outcomes: BoolArray, mask: BoolArray, taken: set[int]
+    legs: Sequence[Leg],
+    outcomes: BoolArray,
+    mask: BoolArray,
+    taken: set[int],
+    keep: Collection[str] = (),
 ) -> int | None:
-    """The mid-priced leg whose odds move least between S and not-S."""
+    """The mid-priced leg whose odds move least between S and not-S; a qualifying `keep` leg wins."""
     best, best_gap = None, math.inf
     uncond = outcomes.mean(axis=0)
     cond = outcomes[mask].mean(axis=0)
     for j, leg in enumerate(legs):
         if j in taken or not (0.15 <= leg.ask <= 0.85):
             continue
+        if leg.exchange_id in keep:
+            return j
         gap = abs(float(cond[j] - uncond[j]))
         if gap < best_gap:
             best, best_gap = j, gap
@@ -329,6 +346,7 @@ def build_book(
     book_frac: float | None = None,
     robust_thresholds: Mapping[str, FloatArray] | None = None,
     incumbent: str | None = None,
+    incumbent_legs: Mapping[str, str] | None = None,
 ) -> OptimizerResult:
     """Score scenarios and turn the best one into target positions.
 
@@ -336,13 +354,16 @@ def build_book(
     the early, smaller size applies before `early_until_utc`); it defaults to `cfg.book_frac`.
     `robust_thresholds` (assumption name -> T per world) switches on the robustness rule.
     `incumbent` (the current targets file's scenario id) switches on the EXP-009 hysteresis rule.
+    `incumbent_legs` (exchange id -> tranche of the current targets file) makes those legs sticky.
     """
     frac = cfg.book_frac if book_frac is None else book_frac
+    held = incumbent_legs or {}
+    sticky = {x for x, tr in held.items() if tr != "T3"}
 
     def rank(t: FloatArray) -> list[ScenarioScore]:
         return score_scenarios(
             legs, outcomes, scenarios, t, cfg, equity=equity, cluster_drift_pts=cluster_drift_pts,
-            book_frac=frac,
+            book_frac=frac, sticky=sticky,
         )  # fmt: skip
 
     ranked = rank(threshold)
@@ -378,7 +399,8 @@ def build_book(
     half = math.ceil(len(by_value) / 2)
     tranche = {j: ("T1" if rank < half else "T2") for rank, j in enumerate(by_value)}
 
-    idio = _idiosyncratic_leg(legs, outcomes, s.mask, set(idx))
+    keep_t3 = {x for x, tr in held.items() if tr == "T3"}
+    idio = _idiosyncratic_leg(legs, outcomes, s.mask, set(idx), keep_t3)
     if idio is not None:
         q = int(cfg.idiosyncratic_frac * equity / legs[idio].ask)
         q = _depth_capped(legs[idio], _non_round(max(1, q), f"{legs[idio].exchange_id}/idio"))

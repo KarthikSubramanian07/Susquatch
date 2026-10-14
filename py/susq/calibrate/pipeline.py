@@ -128,6 +128,16 @@ def incumbent_scenario(targets_dir: Path) -> str | None:
     return (tf.tourney.scenario or None) if tf is not None else None
 
 
+def incumbent_legs(targets_dir: Path) -> dict[str, str]:
+    """Exchange id -> tranche of the current targets file's legs (EXP-009 leg stickiness); {} if absent."""
+    try:
+        tf = read_current(targets_dir)
+    except Exception:
+        log.warning("current targets file unreadable; no incumbent legs", exc_info=True)
+        return {}
+    return {p.exchange_id: p.tranche for p in tf.positions} if tf is not None else {}
+
+
 def _input_refs(paths: Paths, now_ns: int) -> list[InputRef]:
     refs: list[InputRef] = []
     ref_files = partition_files(paths.data / "reference")
@@ -200,6 +210,7 @@ def run_targets(
         book_frac=book_frac,
         robust_thresholds=robust_thresholds(threshold.shape[0]),
         incumbent=incumbent_scenario(paths.targets),
+        incumbent_legs=incumbent_legs(paths.targets),
     )
     tourney = targets_pb2.TourneyEstimate(
         p_first=result.p_first,

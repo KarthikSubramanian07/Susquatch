@@ -31,4 +31,10 @@ Governor D and Louisiana Senate D are orphaned (about 1,500 at cost). Fix (PR #8
 when the incumbent is more than `switch_margin` behind the top scenario under every assumption, using the same
 measure as the margin test. This must be live before the book grows to full size on Oct 21.
 
+Second leak, found while verifying PR #86 on the VM: with the scenario kept, the legs still changed, because legs are
+ranked by in-scenario probability per SUSQie at the current ask and a one-tick move reorders near-equal legs. The
+06:07Z run kept the scenario but replaced SC Governor D (19,418 shares held) with a new leg. Fix (PR #87): legs of the
+current targets file rank as if `switch_margin` more valuable, and the T3 idiosyncratic leg is kept while it still
+qualifies.
+
 ## Decision
