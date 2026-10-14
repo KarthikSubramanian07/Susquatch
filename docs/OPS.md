@@ -105,7 +105,7 @@ Compose itself (`restart: unless-stopped`).
 | Workers KV writes | 1,000/day | ≤ 732/day (push budget 800 hard-capped at 720 by cadence, +2 summary, +kill) | pusher's daily budget; Functions refuse pushes < 100 s apart |
 | Workers KV reads | 100,000/day | ~18,000/day | |
 | Pages | 500 builds/month | 0 (direct upload) | |
-| Backblaze B2 | 10 GB stored, free forever, no card: uploads stop at the cap instead of billing; transactions free | a few hundred MB | `backup.sh` refuses at 80 % (or when it can't measure) |
+| Backblaze B2 | 10 GB stored, free forever, no card: uploads stop at the cap instead of billing; transactions free | a few hundred MB | `backup.sh` refuses at 80 %, counting B2's hidden old versions (or when it can't measure) |
 | Claude routines | Pro 5/day | ~1.1/day (daily + weekly) | extra usage OFF (human check) |
 
 `make costs` prints this with live numbers wherever a free API can see them (GitHub billing with a `Plan: read` token,

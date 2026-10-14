@@ -103,9 +103,14 @@ backup_remote_init() {
   command -v rclone >/dev/null 2>&1 || die "rclone not installed (ops/install.sh installs it)"
 }
 
-# Bytes used in the whole bucket (every project shares the 10 GB free tier), or empty on failure.
+# Bytes used in the whole bucket (every project shares the 10 GB free tier), or empty on failure. Counts the hidden
+# old versions B2 keeps after a delete, because they fill the cap too; falls back to live objects only when the
+# remote can't list versions.
 remote_bytes() {
-  rclone size --json "$BACKUP_REMOTE" 2>/dev/null | sed -n 's/.*"bytes":[ ]*\([0-9][0-9]*\).*/\1/p'
+  local out
+  out="$(rclone size --json --s3-versions "$BACKUP_REMOTE" 2>/dev/null | sed -n 's/.*"bytes":[ ]*\([0-9][0-9]*\).*/\1/p')"
+  [ -n "$out" ] || out="$(rclone size --json "$BACKUP_REMOTE" 2>/dev/null | sed -n 's/.*"bytes":[ ]*\([0-9][0-9]*\).*/\1/p')"
+  echo "$out"
 }
 
 # docker compose for this stack. The project directory is the checkout, so paths in ops/compose.yaml are
