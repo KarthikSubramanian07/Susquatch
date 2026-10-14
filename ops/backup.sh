@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Nightly backup: tar + zstd of state/ journal/ data/ reports/ targets/ -> the S3 backup bucket
+# Nightly backup of state/ journal/ data/ reports/ targets/ -> the S3 backup bucket
 # (Backblaze B2, 10 GB free and no card; Cloudflare R2 also works, see backup_remote_init in ops/lib.sh).
 #
 #   ops/backup.sh            # run a backup now (what the nightly timer runs; also `make backup`)
@@ -8,9 +8,12 @@
 #
 # Layout in the bucket:   <prefix>/daily/susq-<UTC>.tar.zst (+ .sha256)   newest backup_keep_daily kept
 #                         <prefix>/weekly/susq-<UTC>.tar.zst              Sunday copies, backup_keep_weekly kept
-# Every backup is a full snapshot, so there are no deltas to chain and any single object restores alone.
+#                         <prefix>/files/{data,journal}/...                the append-only bulk, one object per file
+# An archive (tar + zstd) holds state/, reports/, targets/ and the journal days not yet compressed. The bulk only
+# grows, so it is copied file by file and never re-uploaded; a restore is the files tree plus one archive. Full
+# daily snapshots reached 1.7 GB by Oct 13 and four of them filled the free tier.
 #
-# Quota guard: the B2 free tier is 10 GB. If (bucket bytes + this archive) would reach r2_guard_frac (80%) of
+# Quota guard: the B2 free tier is 10 GB. If (bucket bytes + new files + this archive) would reach r2_guard_frac (80%) of
 # r2_quota_bytes, the upload is REFUSED, the archive is kept locally, and an ACTION NEEDED item is filed.
 # If the bucket can't be measured, the upload is refused too: never spend money on a guess.
 #
@@ -66,8 +69,11 @@ PY
 }
 
 # ── build the archive ──
+# The archive holds what changes: state, reports, targets and the journal days still being written. The bulk
+# that only grows (data/, and journal days already compressed to .zst) is uploaded once, file by file, to
+# <prefix>/files/ (see "files tree" below), so a nightly archive is megabytes rather than a full multi-GB copy.
 DIRS=""
-for d in state journal data reports targets; do
+for d in state journal reports targets; do
   [ -d "$SUSQ_HOME/$d" ] && DIRS="$DIRS $d"
 done
 [ -n "$DIRS" ] || die "nothing to back up under $SUSQ_HOME"
@@ -80,7 +86,7 @@ log "archiving:$DIRS"
 TAR_FLAGS=""
 if tar --version 2>/dev/null | grep -q GNU; then TAR_FLAGS="--warning=no-file-changed"; fi  # BSD tar: no such flag, no such exit code
 # shellcheck disable=SC2086  # word-splitting DIRS and TAR_FLAGS is intended
-{ tar -C "$SUSQ_HOME" $TAR_FLAGS -cf - $DIRS || [ "$?" -eq 1 ]; } | zstd -q -T0 -12 -o "$ARCHIVE" -f
+{ tar -C "$SUSQ_HOME" $TAR_FLAGS --exclude='*.zst' -cf - $DIRS || [ "$?" -eq 1 ]; } | zstd -q -T0 -12 -o "$ARCHIVE" -f
 SUM="$(sha256_of "$ARCHIVE")"
 printf '%s  %s\n' "$SUM" "$NAME" > "$ARCHIVE.sha256"
 BYTES="$(file_bytes "$ARCHIVE")"
@@ -91,8 +97,40 @@ if [ "$DRY_RUN" = 1 ]; then
   log "dry run: not uploading"; rm -f "$ARCHIVE" "$ARCHIVE.sha256"; exit 0
 fi
 
-# ── quota guard ──
 backup_remote_init
+
+prune() {  # prune <dir> <keep>
+  local dir="$1" keep="$2" old
+  old="$(rclone lsf "$BACKUP_PREFIX/$dir/" --include 'susq-*.tar.zst' 2>/dev/null | sort -r | tail -n +"$((keep + 1))" || true)"
+  for obj in $old; do
+    log "prune $dir/$obj"
+    rclone deletefile "$BACKUP_PREFIX/$dir/$obj"
+    rclone deletefile "$BACKUP_PREFIX/$dir/$obj.sha256" 2>/dev/null || true
+  done
+}
+# Make room before measuring: keep one fewer daily than configured, so tonight's makes KEEP_DAILY.
+prune daily "$((KEEP_DAILY > 1 ? KEEP_DAILY - 1 : 1))"
+prune weekly "$KEEP_WEEKLY"
+
+# Bytes of the files tree not yet in the bucket (local total minus remote total; files are only added).
+local_bulk_bytes() {
+  local d n total=0
+  for d in data journal; do
+    [ -d "$SUSQ_HOME/$d" ] || continue
+    if [ "$d" = journal ]; then
+      n="$(rclone size --json --include '*.zst' "$SUSQ_HOME/$d" 2>/dev/null | sed -n 's/.*"bytes":[ ]*\([0-9][0-9]*\).*/\1/p')"
+    else
+      n="$(rclone size --json "$SUSQ_HOME/$d" 2>/dev/null | sed -n 's/.*"bytes":[ ]*\([0-9][0-9]*\).*/\1/p')"
+    fi
+    total=$((total + ${n:-0}))
+  done
+  echo "$total"
+}
+remote_files_bytes() {
+  rclone size --json "$BACKUP_PREFIX/files" 2>/dev/null | sed -n 's/.*"bytes":[ ]*\([0-9][0-9]*\).*/\1/p'
+}
+
+# ── quota guard ──
 USED="$(remote_bytes || true)"
 if [ -z "$USED" ]; then
   action_raise r2-quota "Backups paused: could not measure the backup bucket (credentials or network). Newest archive kept on the server in ops/state/backup-staging/."
@@ -100,15 +138,26 @@ if [ -z "$USED" ]; then
   die "could not measure bucket usage; refusing to upload"
 fi
 LIMIT="$(python3 -c "print(int($QUOTA * $GUARD))")"
-if [ $((USED + BYTES)) -ge "$LIMIT" ]; then
-  PCT="$(python3 -c "print(round(100 * ($USED + $BYTES) / $QUOTA))")"
+REMOTE_FILES="$(remote_files_bytes || true)"
+PENDING=$(( $(local_bulk_bytes) - ${REMOTE_FILES:-0} ))
+[ "$PENDING" -gt 0 ] || PENDING=0
+if [ $((USED + PENDING + BYTES)) -ge "$LIMIT" ]; then
+  PCT="$(python3 -c "print(round(100 * ($USED + $PENDING + $BYTES) / $QUOTA))")"
   action_raise r2-quota "Backups paused: the backup bucket would be at ${PCT}% of the 10 GB free tier (guard is $(python3 -c "print(round($GUARD*100))")%). Prune old objects or lower retention in config/susq.toml. Newest archive kept locally."
   record "last_result=refused-quota" "bucket_bytes=$USED"
   ops_event "backup refused: bucket quota guard (${PCT}%)"
-  log "REFUSED: $USED + $BYTES >= $LIMIT"; exit 3
+  log "REFUSED: $USED + $PENDING (new files) + $BYTES >= $LIMIT"; exit 3
 fi
 
-# ── upload, promote, prune ──
+# ── files tree, then upload, promote, prune ──
+# Size-only comparison: the bulk is append-only (new parquet partitions, newly compressed journal days), and it
+# avoids a metadata request per object. copy, not sync: a file deleted on the server stays in the bucket.
+if [ -d "$SUSQ_HOME/data" ]; then
+  rclone copy "$SUSQ_HOME/data" "$BACKUP_PREFIX/files/data" --size-only
+fi
+if [ -d "$SUSQ_HOME/journal" ]; then
+  rclone copy "$SUSQ_HOME/journal" "$BACKUP_PREFIX/files/journal" --size-only --include '*.zst'
+fi
 rclone copyto "$ARCHIVE" "$BACKUP_PREFIX/daily/$NAME"
 rclone copyto "$ARCHIVE.sha256" "$BACKUP_PREFIX/daily/$NAME.sha256"
 if [ "$DOW" = 7 ]; then
@@ -116,15 +165,6 @@ if [ "$DOW" = 7 ]; then
   rclone copyto "$BACKUP_PREFIX/daily/$NAME.sha256" "$BACKUP_PREFIX/weekly/$NAME.sha256"
 fi
 
-prune() {  # prune <dir> <keep>
-  local dir="$1" keep="$2" old
-  old="$(rclone lsf "$BACKUP_PREFIX/$dir/" --include 'susq-*.tar.zst' 2>/dev/null | sort -r | tail -n +"$((keep + 1))")"
-  for obj in $old; do
-    log "prune $dir/$obj"
-    rclone deletefile "$BACKUP_PREFIX/$dir/$obj"
-    rclone deletefile "$BACKUP_PREFIX/$dir/$obj.sha256" 2>/dev/null || true
-  done
-}
 prune daily "$KEEP_DAILY"
 prune weekly "$KEEP_WEEKLY"
 

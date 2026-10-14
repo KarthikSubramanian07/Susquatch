@@ -83,6 +83,12 @@ if [ -n "$EXISTING" ]; then
   log "previous data moved to $ASIDE"
 fi
 
+# The append-only bulk (data/, compressed journal days) lives in <prefix>/files/ since the incremental backups;
+# archives from before that carry it inside the tar and have no files tree to fetch.
+if rclone lsf "$BACKUP_PREFIX/files/" >/dev/null 2>&1 && [ -n "$(rclone lsf "$BACKUP_PREFIX/files/" 2>/dev/null)" ]; then
+  log "fetching the files tree"
+  rclone copy "$BACKUP_PREFIX/files" "$SUSQ_HOME" --size-only
+fi
 zstd -q -dc "$STAGING/$NAME" | tar -C "$SUSQ_HOME" -xf -
 rm -f "$STAGING/$NAME" "$STAGING/$NAME.sha256"
 for d in state journal data reports targets ops/state; do mkdir -p "$SUSQ_HOME/$d"; done

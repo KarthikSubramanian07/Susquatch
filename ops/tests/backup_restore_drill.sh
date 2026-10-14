@@ -46,6 +46,8 @@ H1="$WORK/home1"; mkhome "$H1"
 mkdir -p "$H1/state/bridge" "$H1/journal/2026-10-05" "$H1/data/kalshi" "$H1/reports" "$H1/targets"
 echo '{"header":{"seq":"7"},"mode":"paper"}' > "$H1/state/status.json"
 head -c 300000 /dev/urandom | base64 > "$H1/journal/2026-10-05/bridge.journal.jsonl"
+mkdir -p "$H1/journal/2026-10-04"
+head -c 100000 /dev/urandom > "$H1/journal/2026-10-04/bridge.journal.jsonl.zst"  # a compacted day
 head -c 200000 /dev/urandom > "$H1/data/kalshi/prices.parquet"
 echo "# Day 1" > "$H1/reports/DAY1.md"
 
@@ -55,8 +57,12 @@ for day in 01 02 03 04 05 06 07 08 09 10 11; do
   SUSQ_HOME="$H1" SUSQ_BACKUP_TS="202610${day}T073000Z" SUSQ_BACKUP_DOW="$dow" "$H1/ops/backup.sh" 2>/dev/null
 done
 B="$WORK/s3/drill-bucket/susquatch"
-check "retention keeps 7 dailies" [ "$(count "$B/daily" 'susq-*.tar.zst')" = 7 ]
-check "Sundays promoted to weekly" [ "$(count "$B/weekly" 'susq-*.tar.zst')" = 2 ]
+check "retention keeps 2 dailies" [ "$(count "$B/daily" 'susq-*.tar.zst')" = 2 ]
+check "Sundays promoted to weekly, 1 kept" [ "$(count "$B/weekly" 'susq-*.tar.zst')" = 1 ]
+check "bulk uploaded once as files" [ -f "$B/files/data/kalshi/prices.parquet" ]
+check "compressed journal days go to files" [ -f "$B/files/journal/2026-10-04/bridge.journal.jsonl.zst" ]
+check "raw journal days stay in the archive" [ ! -e "$B/files/journal/2026-10-05/bridge.journal.jsonl" ]
+check "archives leave the bulk out" sh -c "! zstd -q -dc '$B/daily/susq-20261011T073000Z.tar.zst' | tar -tf - | grep -q -e '^data/' -e '[.]zst\$'"
 check "checksums uploaded next to archives" [ -f "$B/daily/susq-20261011T073000Z.tar.zst.sha256" ]
 check "backup.json records success + bucket bytes" python3 -c "
 import json, sys
@@ -95,7 +101,7 @@ check "no .env restored (secrets live outside backups)" [ ! -e "$H2/.env" ]
 
 echo "restore over existing data"
 echo "diverged" > "$H2/state/status.json"
-SUSQ_HOME="$H2" "$H2/ops/restore.sh" --no-start --yes --archive susq-20261009T073000Z.tar.zst 2>/dev/null
+SUSQ_HOME="$H2" "$H2/ops/restore.sh" --no-start --yes --archive susq-20261011T073000Z.tar.zst 2>/dev/null
 ASIDE="$(find "$H2" -maxdepth 1 -name '.pre-restore-*' | head -n1)"
 check "previous data moved aside, not deleted" [ "$(cat "$ASIDE/state/status.json")" = "diverged" ]
 check "named archive restored" diff "$H1/state/status.json" "$H2/state/status.json"
