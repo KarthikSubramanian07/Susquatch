@@ -185,6 +185,45 @@ def test_concentrating_in_cheap_legs_beats_spreading() -> None:
     assert score.score == pytest.approx(s.prob)
 
 
+def test_a_held_leg_beats_a_slightly_better_one() -> None:
+    """EXP-009 stickiness: a one-tick ask move must not swap a held leg for a near-identical one."""
+    rng = np.random.default_rng(1)
+    n = 20_000
+    in_s = rng.random(n) < 0.2
+    y = np.column_stack([in_s, in_s])
+    legs = [
+        Leg("held", "h", "h", "r", "DEM", 0.050, None, 0.05, 0.06, ("national",), "TX", "race_party", True),
+        Leg("new", "n", "n", "r", "DEM", 0.045, None, 0.05, 0.06, ("national",), "TX", "race_party", True),
+    ]
+    s = Scenario("S", 0, {"national": -1}, in_s)
+    cfg = OptimizerConfig(max_legs=1, max_leg_frac=0.35, min_leg_prob_in_scenario=0.3, min_lift=1.0)
+    (plain,) = score_scenarios(legs, y, [s], np.full(n, 50.0), cfg)
+    assert plain.legs == (1,)  # 10% cheaper wins on its own
+    (kept,) = score_scenarios(legs, y, [s], np.full(n, 50.0), cfg, sticky={"held"})
+    assert kept.legs == (0,)  # within the 25% margin the held leg stays
+    much = [
+        legs[0],
+        Leg("new", "n", "n", "r", "DEM", 0.035, None, 0.05, 0.06, ("national",), "TX", "race_party", True),
+    ]
+    (moved,) = score_scenarios(much, y, [s], np.full(n, 50.0), cfg, sticky={"held"})
+    assert moved.legs == (1,)  # 30% cheaper is worth the switch
+
+
+def test_build_book_keeps_the_held_t3_leg(world, legs) -> None:
+    specs, draws = world
+    y, kept = leg_outcomes(draws, specs, legs)
+    grid, t = scenario_grid(draws), np.full(draws.n, 1.4)
+    base = build_book(kept, y, grid, t, CFG)
+    taken = {p.exchange_id for p in base.positions if p.tranche != "T3"}
+    mids = [g.exchange_id for g in kept if 0.15 <= g.ask <= 0.85 and g.exchange_id not in taken]
+    t3 = [p.exchange_id for p in base.positions if p.tranche == "T3"]
+    alt = next((x for x in mids if x not in t3), None)
+    if alt is None:
+        pytest.skip("fixture has a single mid-priced leg")
+    again = build_book(kept, y, grid, t, CFG, incumbent_legs={alt: "T3"})
+    assert [p.exchange_id for p in again.positions if p.tranche == "T3"] == [alt]
+
+
 def test_book_is_deterministic_and_handles_empty_input(world, legs) -> None:
     specs, draws = world
     y, kept = leg_outcomes(draws, specs, legs)
