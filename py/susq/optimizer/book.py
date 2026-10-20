@@ -45,8 +45,15 @@ When the robustness rule commits nothing, the fitted winner is the challenger, s
 still top under some ranking keeps its book rather than leaving an empty target.
 
 Legs are sticky the same way: a leg of the current targets file has its in-scenario value per SUSQie
-boosted by `switch_margin` when legs are ranked, and its idiosyncratic T3 leg is kept while it still
+boosted by `switch_margin` when scenarios are scored, and its idiosyncratic T3 leg is kept while it still
 qualifies, so ask moves of a tick or two do not swap one leg for a near-identical one.
+
+Leg lock (EXP-010): the boost alone still let legs swap on bigger ask and fair moves (eleven leg changes in
+six days from Oct 14), so the committed scenario's book is rebuilt with its legs in three tiers: legs of
+the current targets file first, then legs the account already holds long, then the rest, each tier
+ranked by value. Every current leg that is still consistent with the scenario stays in the book; a leg
+leaves only when it stops being consistent or the scenario changes. Held legs come before new ones, so
+cash tops up shares already owned instead of opening a fresh leg.
 
 Near-tied scenarios otherwise swap run to run, and the executor never reduces a leg that drops out of
 the targets, so each flip orphans a book and spends cash on the next one.
@@ -241,6 +248,13 @@ def _multiple(outcomes: BoolArray, idx: Sequence[int], qty: Sequence[int], cash:
     return np.asarray((cash + payoff) / INITIAL_BALANCE, dtype=np.float64)
 
 
+def _eligible(cond: FloatArray, uncond: FloatArray, cfg: OptimizerConfig) -> np.ndarray:
+    """Indices of the legs consistent with a scenario: likely enough in it, and likelier than overall."""
+    return np.flatnonzero(
+        (cond >= cfg.min_leg_prob_in_scenario) & (cond >= cfg.min_lift * np.maximum(uncond, 1e-9))
+    )
+
+
 def score_scenarios(
     legs: Sequence[Leg],
     outcomes: BoolArray,
@@ -264,9 +278,7 @@ def score_scenarios(
     for s in scenarios:
         y_s = outcomes[s.mask]
         cond = y_s.mean(axis=0) if legs else np.zeros(0)
-        eligible = np.flatnonzero(
-            (cond >= cfg.min_leg_prob_in_scenario) & (cond >= cfg.min_lift * np.maximum(uncond, 1e-9))
-        )
+        eligible = _eligible(cond, uncond, cfg)
         ranked = [
             int(j)
             for j in eligible[np.argsort(-(cond[eligible] * boost[eligible] / asks[eligible]), kind="stable")]
@@ -290,10 +302,11 @@ def _best_concentration(
     cfg: OptimizerConfig,
     *,
     budget: float,
+    min_k: int = 1,
 ) -> tuple[list[int], list[int], float, float]:
-    """(legs, qty, P(M > T | S), E[min(M/T, 1) | S]) for the best top-k prefix of `ranked`."""
+    """(legs, qty, P(M > T | S), E[min(M/T, 1) | S]) for the best top-k prefix of `ranked`, k >= `min_k`."""
     best: tuple[list[int], list[int], float, float] = ([], [], 0.0, 0.0)
-    for k in range(1, len(ranked) + 1):
+    for k in range(min(max(1, min_k), len(ranked) + 1), len(ranked) + 1):
         idx = list(ranked[:k])
         qty = _allocate(legs, idx, budget, equity, cfg)
         cost = sum(q * legs[j].ask for j, q in zip(idx, qty, strict=True))
@@ -303,6 +316,44 @@ def _best_concentration(
         if (p_beat, close) > (best[2], best[3]):
             best = (idx, qty, p_beat, close)
     return best
+
+
+def _lock_legs(
+    best: ScenarioScore,
+    legs: Sequence[Leg],
+    outcomes: BoolArray,
+    threshold: FloatArray,
+    cfg: OptimizerConfig,
+    *,
+    equity: float,
+    budget: float,
+    current: Collection[str],
+    held_long: Collection[str],
+) -> tuple[ScenarioScore, tuple[str, ...]]:
+    """EXP-010: rebuild `best`'s book with current legs first, then held legs, then the rest.
+
+    Returns the rebuilt score and the exchange ids of the current legs it kept."""
+    s = best.scenario
+    y_s = outcomes[s.mask]
+    cond, uncond = y_s.mean(axis=0), outcomes.mean(axis=0)
+    asks = np.array([leg.ask for leg in legs])
+    eligible = _eligible(cond, uncond, cfg)
+    by_value = [int(j) for j in eligible[np.argsort(-(cond[eligible] / asks[eligible]), kind="stable")]]
+
+    def tier(j: int) -> int:
+        x = legs[j].exchange_id
+        return 0 if x in current else 1 if x in held_long else 2
+
+    ranked = sorted(by_value, key=tier)[: cfg.max_legs]  # stable: value order within each tier
+    kept = [j for j in ranked if tier(j) == 0]
+    if not kept and not any(tier(j) == 1 for j in ranked):
+        return best, ()
+    t_s = threshold[s.mask] * (1 + cfg.crowding_lambda * best.exposure)
+    idx, qty, p_beat, close = _best_concentration(
+        legs, y_s, ranked, t_s, equity, cfg, budget=budget, min_k=len(kept)
+    )
+    rebuilt = ScenarioScore(s, best.exposure, tuple(idx), tuple(qty), p_beat, s.prob * p_beat, s.prob * close)
+    return rebuilt, tuple(legs[j].exchange_id for j in kept)
 
 
 def _non_round(qty: int, key: str) -> int:
@@ -347,6 +398,7 @@ def build_book(
     robust_thresholds: Mapping[str, FloatArray] | None = None,
     incumbent: str | None = None,
     incumbent_legs: Mapping[str, str] | None = None,
+    held_long: Collection[str] = (),
 ) -> OptimizerResult:
     """Score scenarios and turn the best one into target positions.
 
@@ -354,7 +406,9 @@ def build_book(
     the early, smaller size applies before `early_until_utc`); it defaults to `cfg.book_frac`.
     `robust_thresholds` (assumption name -> T per world) switches on the robustness rule.
     `incumbent` (the current targets file's scenario id) switches on the EXP-009 hysteresis rule.
-    `incumbent_legs` (exchange id -> tranche of the current targets file) makes those legs sticky.
+    `incumbent_legs` (exchange id -> tranche of the current targets file) makes those legs sticky and
+    locks them into the book while they stay consistent (EXP-010); `held_long` (exchange ids the account
+    holds YES shares in) ranks those legs ahead of new ones.
     """
     frac = cfg.book_frac if book_frac is None else book_frac
     held = incumbent_legs or {}
@@ -391,6 +445,12 @@ def build_book(
             hysteresis=hyst,
         )
 
+    best, locked = _lock_legs(
+        best, legs, outcomes, threshold, cfg, equity=equity, budget=frac * equity,
+        current=sticky, held_long=set(held_long),
+    )  # fmt: skip
+    if locked:
+        kept_note += f"; leg lock kept {', '.join(sorted(locked))}"
     s = best.scenario
     cond, uncond = outcomes[s.mask].mean(axis=0), outcomes.mean(axis=0)
     idx = list(best.legs)

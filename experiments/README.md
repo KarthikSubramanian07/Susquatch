@@ -14,3 +14,4 @@ Copy `TEMPLATE.md` to `EXP-NNN-short-name.md`, fill in the hypothesis and metric
 | EXP-007 | Hold the scenario book until the threshold is fitted to the tape | shipped | |
 | EXP-008 | Scenario book on the bridge (live account) | running (approved 2026-10-11) | |
 | EXP-009 | Scenario hysteresis: keep the incumbent unless a challenger is clearly better | running (approved 2026-10-11) | |
+| EXP-010 | Leg lock: keep the scenario book's legs, prefer legs already held | running (approved 2026-10-20) | |
