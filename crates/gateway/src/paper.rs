@@ -4,10 +4,15 @@
 //! matching engine. Before each paper write, and on [`PaperBroker::refresh_resting`], the live
 //! book of the exchange is fetched and installed as the "market" owner's liquidity, so a paper order
 //! fills exactly as far as the live book would let it, and resting paper orders fill when the live
-//! book later trades through them. Paper fills never consume live liquidity (it is re-read each
+//! book later trades through them. Books the engine reads for its own decisions are installed too
+//! ([`PaperBroker::install`]), so one throttled read serves both. Paper fills never consume live liquidity (it is re-read each
 //! time), which is the usual optimism of paper trading; the journal marks every paper write.
 
-use std::{collections::BTreeSet, sync::Arc};
+use std::{
+    collections::{BTreeSet, HashMap},
+    sync::Arc,
+    time::Duration,
+};
 
 use async_trait::async_trait;
 use parking_lot::Mutex;
@@ -33,6 +38,9 @@ pub struct PaperBroker {
     /// without this the same resting level would fill us again on every mirror, and a sniper would
     /// buy the same stale order every cycle (seen on the first paper run: 26 identical fills).
     consumed: Mutex<Vec<Consumed>>,
+    /// When each exchange's live book was last installed (engine clock), so resting orders are
+    /// re-mirrored stalest first and books read for another reason count as fresh.
+    mirrored_at: Mutex<HashMap<ExchangeId, i64>>,
 }
 
 /// One paper taker fill, remembered for [`CONSUMED_TTL_NS`] so the mirrored book is thinned by it.
@@ -95,6 +103,7 @@ impl PaperBroker {
             tid,
             clock,
             consumed: Mutex::new(Vec::new()),
+            mirrored_at: Mutex::new(HashMap::new()),
         }
     }
 
@@ -102,6 +111,13 @@ impl PaperBroker {
     /// orders), minus whatever our own recent paper fills already took from it.
     pub async fn mirror(&self, exchange: &ExchangeId) -> PlatformResult<()> {
         let book = self.live.orderbook(&self.tid, exchange, DEPTH).await?;
+        self.install(exchange, &book);
+        Ok(())
+    }
+
+    /// Install a live book of `exchange` that was read elsewhere (the engine's own book refresh), as
+    /// [`PaperBroker::mirror`] does after its read.
+    pub fn install(&self, exchange: &ExchangeId, book: &OrderBook) {
         let levels = |v: &[BookLevel]| -> Vec<(Pips, i64)> {
             v.iter()
                 .filter_map(|l| Some((Pips::from_f64(l.price).ok()?, l.quantity.max(0.0).floor() as i64)))
@@ -115,7 +131,9 @@ impl PaperBroker {
         thin(&mut bids, taken_bids);
         thin(&mut asks, taken_asks);
         self.engine.replace_liquidity(MARKET, exchange, &bids, &asks);
-        Ok(())
+        self.mirrored_at
+            .lock()
+            .insert(exchange.clone(), self.clock.now_ns());
     }
 
     /// Shares our unexpired paper fills took from `exchange`'s live (bids, asks).
@@ -158,17 +176,43 @@ impl PaperBroker {
         Ok(())
     }
 
-    /// Re-mirror every exchange where we have resting paper orders, so they fill when the live book
-    /// moves through them. Returns the number of exchanges refreshed.
-    pub async fn refresh_resting(&self) -> PlatformResult<usize> {
+    /// Exchanges with resting paper orders whose book is older than `min_age_ns`, stalest first
+    /// (never mirrored before anything else).
+    pub fn resting_due(&self, min_age_ns: i64) -> Vec<ExchangeId> {
+        let now = self.clock.now_ns();
         let exchanges: BTreeSet<ExchangeId> = self
             .engine
             .open_orders_of(CALLER)
             .into_iter()
             .map(|o| o.exchange_id)
             .collect();
-        self.mirror_all(&exchanges).await?;
-        Ok(exchanges.len())
+        let mirrored = self.mirrored_at.lock();
+        let mut due: Vec<(i64, ExchangeId)> = exchanges
+            .into_iter()
+            .map(|ex| (mirrored.get(&ex).copied().unwrap_or(i64::MIN), ex))
+            .filter(|(at, _)| now.saturating_sub(*at) >= min_age_ns)
+            .collect();
+        due.sort();
+        due.into_iter().map(|(_, ex)| ex).collect()
+    }
+
+    /// Re-mirror exchanges where we have resting paper orders, so they fill when the live book moves
+    /// through them: stalest first, skipping books installed within `min_age_ns`, and stopping once
+    /// `budget` has gone on the reads. Book reads are throttled to about 15 a minute and paper writes
+    /// wait on the same throttle, so mirroring every resting exchange in one go held the engine's
+    /// step for minutes (Oct 14-20: 60 watchdog restarts); the rest wait for later steps. Waiting on
+    /// the throttle is cancel-safe. Returns the number of exchanges refreshed.
+    pub async fn refresh_resting(&self, min_age_ns: i64, budget: Duration) -> PlatformResult<usize> {
+        let deadline = tokio::time::Instant::now() + budget;
+        let mut refreshed = 0;
+        for ex in self.resting_due(min_age_ns) {
+            match tokio::time::timeout_at(deadline, self.mirror(&ex)).await {
+                Err(_) => break,
+                Ok(r) => r?,
+            }
+            refreshed += 1;
+        }
+        Ok(refreshed)
     }
 
     /// Paper position (for tests and status).
@@ -306,6 +350,8 @@ mod tests {
     use chrono::{DateTime, Utc};
     use susq_core::{Action, ManualClock, Qty, Side};
 
+    const BUDGET: Duration = Duration::from_secs(3);
+
     fn t0() -> DateTime<Utc> {
         "2026-10-02T12:00:00Z".parse().expect("ts")
     }
@@ -391,7 +437,7 @@ mod tests {
             10,
             Pips::new(4900).expect("valid"),
         );
-        assert_eq!(paper.refresh_resting().await.expect("refresh"), 1);
+        assert_eq!(paper.refresh_resting(0, BUDGET).await.expect("refresh"), 1);
         assert_eq!(paper.position(&ExchangeId::new("7")), 3);
         let tid = TournamentId::new("tid");
         let open = paper
@@ -399,6 +445,46 @@ mod tests {
             .await
             .expect("orders");
         assert!(open.data.is_empty());
+    }
+
+    #[tokio::test]
+    async fn resting_books_are_re_mirrored_stalest_first_and_fresh_ones_skipped() {
+        let (clock, live, paper) = setup();
+        live.add_market("m2", "Other race", &[("8", "Yes")]);
+        let mut other = buy_yes("k2", 3, 5000);
+        other.order.exchange_id = ExchangeId::new("8");
+        paper.place_order(&other).await.expect("rests on 8");
+        clock.advance(Duration::from_secs(1));
+        paper
+            .place_order(&buy_yes("k1", 3, 5000))
+            .await
+            .expect("rests on 7");
+        let ten_s = 10_000_000_000;
+        assert!(
+            paper.resting_due(ten_s).is_empty(),
+            "both books were just read for the writes"
+        );
+        clock.advance(Duration::from_secs(9));
+        assert_eq!(
+            paper.resting_due(ten_s),
+            [ExchangeId::new("8")],
+            "only the book older than 10 s is due"
+        );
+        // A book the engine read for itself counts as a mirror.
+        let tid = TournamentId::new("tid");
+        let book = live
+            .orderbook(&tid, &ExchangeId::new("8"), DEPTH)
+            .await
+            .expect("book");
+        paper.install(&ExchangeId::new("8"), &book);
+        clock.advance(Duration::from_secs(10));
+        assert_eq!(
+            paper.resting_due(ten_s),
+            [ExchangeId::new("7"), ExchangeId::new("8")],
+            "stalest first"
+        );
+        assert_eq!(paper.refresh_resting(ten_s, BUDGET).await.expect("refresh"), 2);
+        assert!(paper.resting_due(ten_s).is_empty());
     }
 
     #[tokio::test]
