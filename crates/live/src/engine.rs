@@ -515,7 +515,11 @@ impl Engine {
             .retain(|_, (_, at)| now - *at <= VIOLATION_TTL_NS);
         self.refresh_books(now).await;
         if let Some(paper) = self.d.paper.clone() {
-            if let Err(e) = paper.refresh_resting().await {
+            // Books installed within book_max_age_s (by a paper write or refresh_books) are fresh
+            // enough; the rest are re-read stalest first, within the same budget as refresh_books.
+            let min_age = duration_ns(std::time::Duration::from_secs(self.d.cfg.live.book_max_age_s));
+            let budget = std::time::Duration::from_millis(self.d.cfg.live.book_refresh_budget_ms.max(1));
+            if let Err(e) = paper.refresh_resting(min_age, budget).await {
                 tracing::warn!(error = %e, "paper refresh failed");
             }
         }
@@ -800,10 +804,14 @@ impl Engine {
             let read = self.d.platform.orderbook(&self.world.tid, &ex, 50);
             match tokio::time::timeout_at(deadline, read).await {
                 Err(_) => break,
-                Ok(Ok(b)) => self
-                    .world
-                    .books
-                    .apply_snapshot(L2Book::from_api(&b, self.d.clock.now_ns())),
+                Ok(Ok(b)) => {
+                    if let Some(paper) = &self.d.paper {
+                        paper.install(&ex, &b);
+                    }
+                    self.world
+                        .books
+                        .apply_snapshot(L2Book::from_api(&b, self.d.clock.now_ns()));
+                }
                 Ok(Err(e)) => {
                     self.platform_error("orderbook", &e, now);
                     break;
@@ -1077,6 +1085,11 @@ impl Engine {
     /// The account adapter (paper broker in paper mode).
     pub fn account(&self) -> &Arc<dyn PlatformAdapter> {
         &self.d.account
+    }
+
+    /// The paper broker (paper mode only).
+    pub fn paper(&self) -> Option<&Arc<PaperBroker>> {
+        self.d.paper.as_ref()
     }
 
     /// The read platform.

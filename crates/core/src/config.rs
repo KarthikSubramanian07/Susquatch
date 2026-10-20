@@ -561,7 +561,8 @@ pub struct LiveCfg {
     pub max_step_age_s: u64,
     /// Order-book reads stop for the step once this much time has gone on them. Book reads have
     /// their own throttle (about 15 a minute), so eight in one step could block the loop for 30 s
-    /// to 160 s; the rest wait for later steps, which keeps orders and the needle moving.
+    /// to 160 s; the rest wait for later steps, which keeps orders and the needle moving. In paper
+    /// mode the re-read of books under resting paper orders gets the same budget again.
     pub book_refresh_budget_ms: u64,
 }
 

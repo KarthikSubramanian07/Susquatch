@@ -90,7 +90,8 @@ realtime_market_channels = 80
 # /healthz calls the loop stuck after this many seconds without a completed step; a step's serial REST reads
 # at ~1 req/s can take tens of seconds.
 max_step_age_s = 120
-# Time a step may spend on throttled order-book reads before it moves on (the rest wait for later steps).
+# Time a step may spend on throttled order-book reads before it moves on (the rest wait for later steps);
+# paper mode gets the same again for re-reading the books under resting paper orders.
 book_refresh_budget_ms = 3000
 
 [strategies.racer]
