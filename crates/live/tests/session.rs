@@ -1688,3 +1688,103 @@ async fn throttled_book_reads_cannot_hold_a_step_past_the_budget() {
         "the racer traded once its books arrived"
     );
 }
+
+/// Oct 14-20: every step re-read the book of each exchange with a resting paper order (26 of them
+/// by the afternoon) one throttled read at a time, so a step took a minute or more and, when paper
+/// writes queued on the same throttle, past the 120 s health limit: the watchdog restarted the
+/// paper trader every 25-35 minutes. The re-read now gets the book budget too, stalest first, and
+/// the skipped books catch up over the next steps.
+#[tokio::test(start_paused = true)]
+async fn resting_paper_orders_cannot_hold_a_step_past_the_budget() {
+    let home = tempfile::tempdir().expect("tmp");
+    let mut cfg = config();
+    // Orders placed straight on the paper account are unknown to the OMS: keep reconcile from
+    // cancelling them as orphans while the steps run.
+    cfg.oms.reconcile_interval_s = 3600;
+    let budget = Duration::from_millis(cfg.live.book_refresh_budget_ms);
+    let book_max_age_ns = i64::try_from(cfg.live.book_max_age_s).expect("small") * S;
+    let clock = ManualClock::at("2026-10-08T16:00:00Z".parse().expect("ts"));
+    let mock = Arc::new(MockPlatform::new(
+        Arc::new(clock.clone()),
+        MockConfig {
+            tournament_id: TID.into(),
+            slug: SLUG.into(),
+            starting_balance: 100_000.0,
+            member_count: 1200,
+            page_size: 200,
+            collateral: true,
+        },
+    ));
+    seed(&mock);
+    write_market_map(home.path(), &cfg);
+    let mut engine = build(BuildOpts {
+        cfg,
+        home: home.path().to_owned(),
+        mode: Mode::Paper,
+        clock: Arc::new(clock.clone()),
+        platform: Arc::new(SlowBooks {
+            inner: mock.clone(),
+            delay: Duration::from_secs(2),
+        }),
+        journal: Journal::discard(),
+        tournament: TournamentId::new(TID),
+        paper_balance: 100_000.0,
+        realtime: None,
+        needle: None,
+        enr: None,
+        host: "test".into(),
+        pid: 1,
+        kill: None,
+    })
+    .expect("engine");
+    engine.bootstrap().await;
+
+    // A resting paper bid on all six exchanges, well under the live bids.
+    let tid = TournamentId::new(TID);
+    for ex in ["1", "2", "3", "4", "5", "6"] {
+        let req = PlaceOrderRequest {
+            order: susq_platform::OrderRequest::limit(
+                ExchangeId::new(ex),
+                Side::Yes,
+                Action::Buy,
+                susq_core::Qty(1),
+                px(100),
+                clock.now() + chrono::Duration::hours(6),
+                tid.clone(),
+            ),
+            idempotency_key: format!("rest-{ex}"),
+        };
+        let ack = engine.account().place_order(&req).await.expect("paper order");
+        assert!(ack.open, "the bid on {ex} rests");
+    }
+    let paper = engine.paper().expect("paper mode").clone();
+    clock.advance(Duration::from_secs(
+        u64::try_from(book_max_age_ns / S).expect("pos") + 1,
+    ));
+    assert_eq!(
+        paper.resting_due(book_max_age_ns).len(),
+        6,
+        "every resting book is stale"
+    );
+
+    // Six books at 2 s each would hold a step for 12 s on top of the decision books; each step
+    // stops at the budget and the resting books are all re-read within a few steps.
+    let mut steps = 0;
+    while !paper.resting_due(book_max_age_ns).is_empty() && steps < 6 {
+        clock.advance(Duration::from_secs(1));
+        let started = tokio::time::Instant::now();
+        engine.step().await;
+        let took = started.elapsed();
+        assert!(
+            took <= 2 * budget + Duration::from_secs(1),
+            "a step spent {took:?} on book reads, budget {budget:?} twice"
+        );
+        engine.settle().await;
+        steps += 1;
+    }
+    assert!(steps > 1, "the resting books took more than one step");
+    assert!(
+        paper.resting_due(book_max_age_ns).is_empty(),
+        "every resting book was re-read within six steps"
+    );
+}
