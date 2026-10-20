@@ -153,6 +153,21 @@ def test_research_context_fair_and_change_detection(home, quotes) -> None:
     assert ctx.targets_if_changed().startswith("no material change")
 
 
+def test_targets_rerun_when_the_book_size_steps_up(home, quotes, monkeypatch) -> None:
+    """The Oct 21 step to full size must not wait for the next daily run or a 3-point price move."""
+    step = home.load_config().optimizer.early_until_utc
+    clock = {"ns": int((step - timedelta(hours=1)).timestamp() * 1e9)}
+    ctx = ResearchContext(home, home.load_config(), clock_ns=lambda: clock["ns"])
+    ctx._quotes = quotes
+    monkeypatch.setattr(ctx, "targets", lambda **_: "ran")
+    ctx._targets_basis = (ctx._basis(quotes), None)
+    ctx._targets_book_frac = ctx._book_frac()
+    assert ctx._targets_book_frac == pytest.approx(0.20)
+    assert ctx.targets_if_changed().startswith("no material change")
+    clock["ns"] = int((step + timedelta(minutes=5)).timestamp() * 1e9)
+    assert ctx.targets_if_changed() == "book size stepped to 0.60: ran"
+
+
 def test_optimizer_section_is_read_from_toml(home, tmp_path) -> None:
     cfg = home.load_config()  # the repo's config/susq.toml
     opt = cfg.optimizer

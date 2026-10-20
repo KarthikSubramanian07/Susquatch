@@ -65,6 +65,7 @@ class ResearchContext:
         self._collector: ReferenceCollector | None = None
         self._quotes: list[RefQuote] = []
         self._targets_basis: tuple[dict[tuple[str, str], float], float | None] | None = None
+        self._targets_book_frac: float | None = None  # book size the last targets run used
 
     # ── inputs ──────────────────────────────────────────────────────────
     def quotes(self) -> list[RefQuote]:
@@ -114,6 +115,7 @@ class ResearchContext:
             self.paths, self.cfg, quotes, now_ns=self.clock_ns(), require_verified=require_verified
         )
         self._targets_basis = (self._basis(quotes), self._t_p50())
+        self._targets_book_frac = self._book_frac()
         return f"{run.path.name if run.path else 'not written'}: {run.optimizer.explanation}"
 
     def targets_if_changed(self) -> str:
@@ -125,6 +127,8 @@ class ResearchContext:
         max_move = max(moves, default=0.0)
         new_t = self._t_p50()
         t_moved = t50 is not None and new_t is not None and abs(new_t / t50 - 1) > MATERIAL_T_CHANGE
+        if self._targets_book_frac is not None and self._book_frac() != self._targets_book_frac:
+            return f"book size stepped to {self._book_frac():.2f}: " + self.targets()
         if max_move > MATERIAL_MOVE_PTS or t_moved:
             return f"material change (max move {max_move:.1f} pts, T moved={t_moved}): " + self.targets()
         return f"no material change (max move {max_move:.1f} pts)"
@@ -140,6 +144,10 @@ class ResearchContext:
         return f"{summarize(mm)}; live map {'written' if live else 'untouched (draft only)'}"
 
     # ── helpers ─────────────────────────────────────────────────────────
+    def _book_frac(self) -> float:
+        """The scenario book's size now (`early_book_frac` before `early_until_utc`, then `book_frac`)."""
+        return self.cfg.optimizer.book_frac_at(datetime.fromtimestamp(self.clock_ns() / 1e9, tz=UTC))
+
     def _basis(self, quotes: list[RefQuote]) -> dict[tuple[str, str], float]:
         return {k: c.p for k, c in consensus(quotes).items()}
 
