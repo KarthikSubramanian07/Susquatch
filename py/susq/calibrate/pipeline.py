@@ -138,6 +138,30 @@ def incumbent_legs(targets_dir: Path) -> dict[str, str]:
     return {p.exchange_id: p.tranche for p in tf.positions} if tf is not None else {}
 
 
+HELD_MAX_AGE_S = 6 * 3600
+
+
+def held_long(status_path: Path, now_ns: int, max_age_s: float = HELD_MAX_AGE_S) -> set[str]:
+    """Exchange ids the live account holds YES shares in, from the trader's `state/status.json` (EXP-010).
+
+    Empty when the file is missing, unreadable, not live, or older than `max_age_s`."""
+    try:
+        doc = json.loads(status_path.read_text())
+        produced = int((doc.get("header") or {}).get("producedAtNs") or 0)
+    except (OSError, ValueError, TypeError, AttributeError):
+        return set()
+    if doc.get("mode") != "live" or now_ns - produced > max_age_s * 1e9:
+        return set()
+    out: set[str] = set()
+    for pos in doc.get("positions") or []:
+        try:
+            if float(pos.get("quantity") or 0) > 0:
+                out.add(str(pos["exchangeId"]))
+        except (KeyError, TypeError, ValueError):
+            continue
+    return out
+
+
 def _input_refs(paths: Paths, now_ns: int) -> list[InputRef]:
     refs: list[InputRef] = []
     ref_files = partition_files(paths.data / "reference")
@@ -211,6 +235,7 @@ def run_targets(
         robust_thresholds=robust_thresholds(threshold.shape[0]),
         incumbent=incumbent_scenario(paths.targets),
         incumbent_legs=incumbent_legs(paths.targets),
+        held_long=held_long(paths.status, now_ns),
     )
     tourney = targets_pb2.TourneyEstimate(
         p_first=result.p_first,

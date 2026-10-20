@@ -12,7 +12,7 @@ from susq.mapping.geo import clusters_for, region_of
 from susq.models.calibration import apply_mu, calibrate
 from susq.models.chamber import senate_dem_control, senate_seat_specs
 from susq.models.numpy_engine import NumpySimEngine
-from susq.models.types import RaceSpec, SimParams
+from susq.models.types import BoolArray, RaceSpec, SimParams
 from susq.optimizer.book import (
     TICK,
     Robustness,
@@ -207,6 +207,52 @@ def test_a_held_leg_beats_a_slightly_better_one() -> None:
     ]
     (moved,) = score_scenarios(much, y, [s], np.full(n, 50.0), cfg, sticky={"held"})
     assert moved.legs == (1,)  # 30% cheaper is worth the switch
+
+
+def _lock_world(n: int = 20_000, seed: int = 2) -> tuple[BoolArray, Scenario]:
+    rng = np.random.default_rng(seed)
+    in_s = rng.random(n) < 0.2
+    # Legs 0-2 all pay in S; leg 3 pays only half the time in S (too unlikely to be consistent).
+    y = np.column_stack([in_s, in_s, in_s, in_s & (rng.random(n) < 0.2)])
+    return y, Scenario("S", 0, {"national": -1}, in_s)
+
+
+def _cheap(x: str, ask: float) -> Leg:
+    return Leg(x, x, x, "r", "DEM", ask, None, ask, ask + 0.01, ("national",), "TX", "race_party", True)
+
+
+def test_leg_lock_keeps_a_current_leg_a_much_cheaper_one_would_replace() -> None:
+    """EXP-010: the boost lets a 40% cheaper leg win; the lock keeps the current one while it qualifies."""
+    y, s = _lock_world()
+    legs = [_cheap("cur", 0.05), _cheap("new", 0.03), _cheap("held", 0.04), _cheap("weak", 0.01)]
+    cfg = OptimizerConfig(max_legs=1, max_leg_frac=0.35, min_leg_prob_in_scenario=0.3, min_lift=1.0)
+    t = np.full(y.shape[0], 50.0)
+    free = build_book(legs, y, [s], t, cfg)
+    assert [p.exchange_id for p in free.positions if p.tranche != "T3"] == ["new"]
+    locked = build_book(legs, y, [s], t, cfg, incumbent_legs={"cur": "T1"}, held_long={"held"})
+    assert [p.exchange_id for p in locked.positions if p.tranche != "T3"] == ["cur"]
+    assert "leg lock kept cur" in locked.explanation
+    held = build_book(legs, y, [s], t, cfg, held_long={"held"})
+    assert [p.exchange_id for p in held.positions if p.tranche != "T3"] == ["held"]  # owned before new
+    gone = build_book(legs, y, [s], t, cfg, incumbent_legs={"weak": "T1"})
+    assert [p.exchange_id for p in gone.positions if p.tranche != "T3"] == ["new"]  # no longer consistent
+    assert "leg lock" not in gone.explanation
+
+
+def test_leg_lock_never_drops_a_current_leg_to_concentrate() -> None:
+    """Concentration may pick one leg on its own; every consistent current leg stays in the book."""
+    y, s = _lock_world()
+    legs = [_cheap("a", 0.05), _cheap("b", 0.05), _cheap("c", 0.05)]
+    cfg = OptimizerConfig(max_leg_frac=0.35, min_leg_prob_in_scenario=0.3, min_lift=1.0)
+    t = np.full(y.shape[0], 1e6)  # nothing reaches T: closeness prefers the cheapest single leg book
+    free = build_book(legs, y, [s], t, cfg)
+    assert "c" not in {p.exchange_id for p in free.positions}  # unlocked, the book drops c
+    cur = {"a": "T1", "c": "T2"}
+    book = build_book(legs, y, [s], t, cfg, incumbent_legs=cur)
+    core = {p.exchange_id for p in book.positions if p.tranche != "T3"}
+    assert set(cur) <= core
+    assert book.best is not None
+    assert len(book.best.legs) == len(book.best.qty) >= 2
 
 
 def test_build_book_keeps_the_held_t3_leg(world, legs) -> None:

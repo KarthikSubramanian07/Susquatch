@@ -119,6 +119,28 @@ def test_incumbent_scenario_is_read_from_the_current_targets_file(home, quotes, 
     assert pipeline.incumbent_legs(home.targets) == {}
 
 
+def test_held_long_reads_live_yes_positions(tmp_path) -> None:
+    status = tmp_path / "status.json"
+    assert pipeline.held_long(status, NOW_NS) == set()  # missing
+    doc = {
+        "header": {"producedAtNs": str(NOW_NS - 60 * 10**9)},
+        "mode": "live",
+        "positions": [
+            {"exchangeId": "1029", "quantity": "27738"},
+            {"exchangeId": "1043", "quantity": "-5763"},
+            {"exchangeId": "1007", "quantity": "1"},
+            {"exchangeId": "bad"},
+        ],
+    }
+    status.write_text(json.dumps(doc))
+    assert pipeline.held_long(status, NOW_NS) == {"1029", "1007"}
+    assert pipeline.held_long(status, NOW_NS + 7 * 3600 * 10**9) == set()  # stale
+    status.write_text(json.dumps({**doc, "mode": "paper"}))
+    assert pipeline.held_long(status, NOW_NS) == set()
+    status.write_text("{not json")
+    assert pipeline.held_long(status, NOW_NS) == set()
+
+
 def test_research_context_fair_and_change_detection(home, quotes) -> None:
     _prepare_home(home, quotes, verify=True)
     ctx = ResearchContext(home, home.load_config(), clock_ns=lambda: NOW_NS)
