@@ -379,6 +379,37 @@ def targets(
 
 
 @cli_app.command()
+def rivals(
+    focus: int = typer.Option(5, help="Top-N rivals the endgame rule focuses on (STRATEGY section 4)."),
+    wide: int = typer.Option(20, help="Wider rival set for robustness (includes the focus set)."),
+    draws: int = typer.Option(50_000, help="Simulator draws."),
+    source: str = typer.Option("mid", help="Valuation price: mid (book mid) or last (last trade)."),
+    lag_min: float = typer.Option(0.0, help="Minutes added to each snapshot time before reading prices."),
+    out_dir: str = typer.Option("", help="Report directory (default reports/rivals)."),
+    book_out: str = typer.Option(
+        "",
+        help="Also write the slot books for the [optimizer] rival_decorrelation hook to this path "
+        "(the hook reads state/research/rivals_book.json).",
+    ),
+) -> None:
+    """EXP-011: model the top rivals' payout vectors from the leaderboard and prices (aggregates only)."""
+    from susq.telemetry.rivals_job import run_rivals
+
+    ctx = _ctx()
+    run = run_rivals(
+        ctx.paths, ctx.cfg, ctx.quotes(), now_ns=ctx.clock_ns(), focus_n=focus, wide_n=max(focus, wide),
+        n_draws=draws, source=source, lag_min=lag_min, out_dir=Path(out_dir) if out_dir else None,
+        book_out=Path(book_out) if book_out else None,
+    )  # fmt: skip
+    r = run.report
+    typer.echo(
+        f"{run.md_path}: modeled {r.modeled_focus}/{r.focus_n} focus, {r.modeled_wide}/{r.wide_n} wide; "
+        f"exposed to our scenario {r.exposed_to_our_scenario}; true T p50 "
+        f"{r.true_threshold_q[1] if r.true_threshold_q else 'n/a'}"
+    )
+
+
+@cli_app.command()
 def report(day: str = typer.Option("", help="UTC date YYYY-MM-DD (default: yesterday).")) -> None:
     """Write reports/daily/<date>.md and the scrubbed review packet."""
     typer.echo(_ctx().report(date.fromisoformat(day) if day else None))

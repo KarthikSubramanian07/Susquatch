@@ -33,6 +33,7 @@ from susq.optimizer.scenarios import scenario_grid
 from susq.research_env import Paths, ResearchConfig, SeqCounter, sha256_bytes, sha256_file
 from susq.telemetry.cupdata import read_prices, with_cup_mid
 from susq.telemetry.field import FieldFootprint, leaderboard_floor, tape_field_params, tape_threshold
+from susq.telemetry.rivals import blend_threshold
 
 log = logging.getLogger(__name__)
 
@@ -110,6 +111,35 @@ def select_threshold(
     name, sim_t = get_threshold_simulator()
     return sim_t(outcomes, prices, FieldParams(n_players=field_size), seed), (
         f"field-model({name}, N={field_size}){skipped}"
+    )
+
+
+def rival_blend(
+    paths: Paths,
+    threshold: FloatArray,
+    outcomes: BoolArray,
+    contracts: Sequence[str],
+    weight: float,
+    *,
+    seed: int,
+    now_ns: int,
+) -> tuple[FloatArray, str]:
+    """EXP-011 hook: T_w = (1 - w) * T + w * R, R the best modeled rival per world; no book, T unchanged.
+
+    Only called when `[optimizer] rival_decorrelation` > 0, so the default leaves the run untouched."""
+    from susq.telemetry import rivals_job
+
+    book, why = rivals_job.load_book_file(paths.research_state / rivals_job.DEFAULT_BOOK, now_ns)
+    if book is None:
+        return threshold, f"rival decorrelation {weight:.2f} not applied: {why}"
+    columns = {c: outcomes[:, j] for j, c in enumerate(contracts)}
+    rival_t, n = rivals_job.rival_threshold_for(book, columns, outcomes.shape[0], seed=seed)
+    if n == 0:
+        return threshold, f"rival decorrelation {weight:.2f} not applied: no modeled rival"
+    blended = blend_threshold(threshold, rival_t, weight)
+    return blended, (
+        f"rival decorrelation {weight:.2f} over {n} modeled rivals (R p50 {float(np.median(rival_t)):.2f}x, "
+        f"T_w p50 {float(np.median(blended)):.2f}x)"
     )
 
 
@@ -219,6 +249,13 @@ def run_targets(
         np.array([leg.ask for leg in universe]),
         seed=seed,
     )
+    rival_note = ""
+    if cfg.optimizer.rival_decorrelation > 0.0:  # EXP-011, off by default: nothing below changes at 0.0
+        threshold, rival_note = rival_blend(
+            paths, threshold, all_outcomes, [leg.exchange_id for leg in universe],
+            cfg.optimizer.rival_decorrelation, seed=seed, now_ns=now_ns,
+        )  # fmt: skip
+        t_source += f"; {rival_note}"
     drift = (tele.get("crowd") or {}).get("cluster_drift_pts") or {}
     now = datetime.fromtimestamp(now_ns / 1e9, tz=UTC)
     book_frac = cfg.optimizer.book_frac_at(now)
