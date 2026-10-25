@@ -227,6 +227,10 @@ max_leg_frac = 0.12                # most equity in any single leg
 # while every score is 0) beats it by more than this fraction, or the incumbent is top under no field
 # assumption. The executor never reduces dropped legs, so every flip orphans a book and spends cash twice.
 switch_margin = 0.25
+# EXP-011 endgame rival model (draft, not applied): w > 0 scores scenarios against (1 - w) * T + w * R, where
+# R is the best resolved multiple among the modeled top rivals (state/research/rivals_book.json, written by
+# `susq research rivals --book-out`). Keep at 0.0 until EXP-011 is approved; 0.0 leaves targets unchanged.
+rival_decorrelation = 0.0
 
 [needle]
 # Liveness: no healthy needle message (heartbeat or posterior) for this long = unhealthy. The watchdog then
