@@ -55,6 +55,11 @@ ranked by value. Every current leg that is still consistent with the scenario st
 leaves only when it stops being consistent or the scenario changes. Held legs come before new ones, so
 cash tops up shares already owned instead of opening a fresh leg.
 
+Keep band (EXP-013): with about 560 draws in S, a leg sitting on `min_leg_prob_in_scenario` has a
+standard error of about 0.02 on P(YES | S), so the lock alone still flipped legs in and out. A current leg
+stays consistent while P(YES | S) >= `min_leg_prob_in_scenario` * (1 - `switch_margin`) and the lift rule
+holds; a new leg still needs the full bar.
+
 Near-tied scenarios otherwise swap run to run, and the executor never reduces a leg that drops out of
 the targets, so each flip orphans a book and spends cash on the next one.
 """
@@ -329,15 +334,26 @@ def _lock_legs(
     budget: float,
     current: Collection[str],
     held_long: Collection[str],
-) -> tuple[ScenarioScore, tuple[str, ...]]:
+) -> tuple[ScenarioScore, tuple[str, ...], tuple[str, ...]]:
     """EXP-010: rebuild `best`'s book with current legs first, then held legs, then the rest.
 
-    Returns the rebuilt score and the exchange ids of the current legs it kept."""
+    Current legs stay eligible on the EXP-013 keep band, P(YES | S) >= `min_leg_prob_in_scenario` *
+    (1 - `switch_margin`) with the lift rule unchanged; new legs still need the full bar.
+    Returns the rebuilt score, the exchange ids of the current legs it kept, and those of them that
+    qualified only on the keep band."""
     s = best.scenario
     y_s = outcomes[s.mask]
     cond, uncond = y_s.mean(axis=0), outcomes.mean(axis=0)
     asks = np.array([leg.ask for leg in legs])
-    eligible = _eligible(cond, uncond, cfg)
+    is_current = np.zeros(cond.shape[0], dtype=bool)
+    is_current[[j for j, leg in enumerate(legs) if leg.exchange_id in current]] = True
+    full = np.zeros(cond.shape[0], dtype=bool)
+    full[_eligible(cond, uncond, cfg)] = True
+    # EXP-013 keep band: a current leg stays while P(YES | S) is within `switch_margin` of the bar, so
+    # sampling noise around it (about 0.02 with ~560 draws in S) does not flip the leg in and out.
+    band = is_current & (cond >= cfg.min_leg_prob_in_scenario * (1 - cfg.switch_margin))
+    band &= cond >= cfg.min_lift * np.maximum(uncond, 1e-9)
+    eligible = np.flatnonzero(full | band)
     by_value = [int(j) for j in eligible[np.argsort(-(cond[eligible] / asks[eligible]), kind="stable")]]
 
     def tier(j: int) -> int:
@@ -346,14 +362,15 @@ def _lock_legs(
 
     ranked = sorted(by_value, key=tier)[: cfg.max_legs]  # stable: value order within each tier
     kept = [j for j in ranked if tier(j) == 0]
+    on_band = tuple(legs[j].exchange_id for j in kept if not full[j])
     if not kept and not any(tier(j) == 1 for j in ranked):
-        return best, ()
+        return best, (), ()
     t_s = threshold[s.mask] * (1 + cfg.crowding_lambda * best.exposure)
     idx, qty, p_beat, close = _best_concentration(
         legs, y_s, ranked, t_s, equity, cfg, budget=budget, min_k=len(kept)
     )
     rebuilt = ScenarioScore(s, best.exposure, tuple(idx), tuple(qty), p_beat, s.prob * p_beat, s.prob * close)
-    return rebuilt, tuple(legs[j].exchange_id for j in kept)
+    return rebuilt, tuple(legs[j].exchange_id for j in kept), on_band
 
 
 def _non_round(qty: int, key: str) -> int:
@@ -445,12 +462,15 @@ def build_book(
             hysteresis=hyst,
         )
 
-    best, locked = _lock_legs(
+    best, locked, on_band = _lock_legs(
         best, legs, outcomes, threshold, cfg, equity=equity, budget=frac * equity,
         current=sticky, held_long=set(held_long),
     )  # fmt: skip
     if locked:
         kept_note += f"; leg lock kept {', '.join(sorted(locked))}"
+    if on_band:
+        band = cfg.min_leg_prob_in_scenario * (1 - cfg.switch_margin)
+        kept_note += f"; keep-band kept {', '.join(sorted(on_band))} (P(YES|S) >= {band:.3f})"
     s = best.scenario
     cond, uncond = outcomes[s.mask].mean(axis=0), outcomes.mean(axis=0)
     idx = list(best.legs)

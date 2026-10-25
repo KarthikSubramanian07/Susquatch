@@ -255,6 +255,70 @@ def test_leg_lock_never_drops_a_current_leg_to_concentrate() -> None:
     assert len(book.best.legs) == len(book.best.qty) >= 2
 
 
+def _band_world(n: int = 40_000, seed: int = 3) -> tuple[BoolArray, Scenario]:
+    """Leg 0 pays in every S world; leg 1 pays in 26% of them (under 0.30, over the 0.225 band) and
+    rarely outside S; leg 2 pays in 20% of S worlds (under the band)."""
+    rng = np.random.default_rng(seed)
+    in_s = rng.random(n) < 0.2
+    u = rng.random(n)
+    y = np.column_stack([in_s, in_s & (u < 0.26), in_s & (u < 0.20)])
+    return y, Scenario("S", 0, {"national": -1}, in_s)
+
+
+def test_keep_band_keeps_a_current_leg_just_under_the_bar() -> None:
+    """EXP-013: a current leg stays while P(YES | S) >= 0.30 * (1 - switch_margin) = 0.225."""
+    y, s = _band_world()
+    cond = y[s.mask].mean(axis=0)
+    assert 0.235 < cond[1] < 0.29
+    assert cond[2] < 0.215
+    legs = [_cheap("base", 0.05), _cheap("near", 0.02), _cheap("below", 0.02)]
+    cfg = OptimizerConfig(max_leg_frac=0.35, min_leg_prob_in_scenario=0.3, min_lift=1.0, switch_margin=0.25)
+    t = np.full(y.shape[0], 50.0)
+    book = build_book(legs, y, [s], t, cfg, incumbent_legs={"base": "T1", "near": "T2"})
+    core = {p.exchange_id for p in book.positions if p.tranche != "T3"}
+    assert {"base", "near"} <= core
+    assert "keep-band kept near (P(YES|S) >= 0.225)" in book.explanation
+    assert "leg lock kept base, near" in book.explanation
+    gone = build_book(legs, y, [s], t, cfg, incumbent_legs={"base": "T1", "below": "T2"})
+    assert "below" not in {p.exchange_id for p in gone.positions if p.tranche != "T3"}  # under the band
+    assert "keep-band" not in gone.explanation
+    lift = OptimizerConfig(max_leg_frac=0.35, min_leg_prob_in_scenario=0.3, min_lift=50.0, switch_margin=0.25)
+    no_lift = build_book(legs, y, [s], t, lift, incumbent_legs={"near": "T1"})
+    assert "near" not in {p.exchange_id for p in no_lift.positions if p.tranche != "T3"}  # lift still applies
+
+
+def test_keep_band_does_not_admit_new_legs() -> None:
+    """A leg that is not in the current targets file still needs the full 0.30, however cheap it is."""
+    y, s = _band_world()
+    legs = [_cheap("base", 0.05), _cheap("near", 0.02)]
+    cfg = OptimizerConfig(max_leg_frac=0.35, min_leg_prob_in_scenario=0.3, min_lift=1.0, switch_margin=0.25)
+    t = np.full(y.shape[0], 50.0)
+    for kw in ({}, {"incumbent_legs": {"base": "T1"}}, {"held_long": {"near"}}):
+        book = build_book(legs, y, [s], t, cfg, **kw)
+        assert "near" not in {p.exchange_id for p in book.positions if p.tranche != "T3"}, kw
+        assert "keep-band" not in book.explanation
+
+
+def test_exp013_book_size_and_leg_cap() -> None:
+    """The repo config sizes the book to 15% of equity with no leg above the 5% per-market risk cap."""
+    from pathlib import Path
+
+    from susq.research_env import ResearchConfig
+
+    root = Path(__file__).resolve().parents[3]
+    cfg = ResearchConfig.from_toml(root / "config" / "susq.toml").optimizer
+    assert (cfg.book_frac, cfg.max_leg_frac) == (0.15, 0.05)
+    y, s = _lock_world()
+    legs = [_cheap(f"l{i}", 0.05) for i in range(3)]
+    book = build_book(legs, y, [s], np.full(y.shape[0], 1e6), cfg, equity=100_000.0)
+    core = [p for p in book.positions if p.tranche != "T3"]
+    assert core
+    assert all(p.target_qty * 0.05 <= cfg.max_leg_frac * 100_000 + 1e-6 for p in core)
+    assert book.best is not None
+    core_cost = sum(q * legs[j].ask for j, q in zip(book.best.legs, book.best.qty, strict=True))
+    assert core_cost <= cfg.book_frac * 100_000 + 1e-6
+
+
 def test_build_book_keeps_the_held_t3_leg(world, legs) -> None:
     specs, draws = world
     y, kept = leg_outcomes(draws, specs, legs)
