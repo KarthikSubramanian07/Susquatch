@@ -15,3 +15,4 @@ Copy `TEMPLATE.md` to `EXP-NNN-short-name.md`, fill in the hypothesis and metric
 | EXP-008 | Scenario book on the bridge (live account) | running (approved 2026-10-11) | |
 | EXP-009 | Scenario hysteresis: keep the incumbent unless a challenger is clearly better | running (approved 2026-10-11) | |
 | EXP-010 | Leg lock: keep the scenario book's legs, prefer legs already held | running (approved 2026-10-20) | |
+| EXP-011 | Endgame rival model: rivals' payout vectors, rival-aware threshold (hook off) | draft, not applied | |
