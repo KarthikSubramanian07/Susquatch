@@ -76,7 +76,7 @@ def test_end_to_end_targets_offline(home, quotes) -> None:
     shift = 30 * 86_400 * 10**9
     fresh = [replace(q, ts_ns=q.ts_ns + shift) for q in quotes]  # stale quotes now refuse to calibrate
     late = run_targets(home, home.load_config(), fresh, now_ns=NOW_NS + shift, n_draws=20_000, seed=3)
-    assert "full book frac 0.60" in late.notes
+    assert "full book frac 0.15" in late.notes  # EXP-013
 
 
 def test_unverified_map_yields_fair_values_but_no_positions(home, quotes) -> None:
@@ -165,13 +165,13 @@ def test_targets_rerun_when_the_book_size_steps_up(home, quotes, monkeypatch) ->
     assert ctx._targets_book_frac == pytest.approx(0.20)
     assert ctx.targets_if_changed().startswith("no material change")
     clock["ns"] = int((step + timedelta(minutes=5)).timestamp() * 1e9)
-    assert ctx.targets_if_changed() == "book size stepped to 0.60: ran"
+    assert ctx.targets_if_changed() == "book size stepped to 0.15: ran"
 
 
 def test_optimizer_section_is_read_from_toml(home, tmp_path) -> None:
     cfg = home.load_config()  # the repo's config/susq.toml
     opt = cfg.optimizer
-    assert (opt.book_frac, opt.early_book_frac, opt.max_legs, opt.max_leg_frac) == (0.60, 0.20, 12, 0.12)
+    assert (opt.book_frac, opt.early_book_frac, opt.max_legs, opt.max_leg_frac) == (0.15, 0.20, 12, 0.05)
     assert opt.early_until_utc == datetime(2026, 10, 21, 16, tzinfo=UTC)
     assert opt.switch_margin == 0.25  # EXP-009
     custom = tmp_path / "custom.toml"
