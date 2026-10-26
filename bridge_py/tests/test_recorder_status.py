@@ -54,3 +54,27 @@ async def test_status_snapshot_roundtrips(harness, live_bridge) -> None:  # type
     assert parsed.stage == "forage"
     assert parsed.trader == "bridge"
     assert {h.name for h in parsed.health} >= {"platform", "realtime", "fair", "lease", "risk"}
+
+
+async def test_status_cash_is_the_last_portfolio_read(harness, live_bridge) -> None:  # type: ignore[no-untyped-def]
+    """EXP-015: cash is account value minus holdings from the last read, not start-up ``myBalance``."""
+    risk = live_bridge.gateway.risk
+    assert risk.cash is not None  # start() reconciled
+    live_bridge.tournament.my_balance = 27_254.41  # the stale start-up figure
+    risk.cash = 17_305.0  # as a later portfolio read would set it
+    assert live_bridge.status.build(live_bridge).cash == 17_305.0
+    await live_bridge.oms.reconcile()
+    pnl = await live_bridge.client.get_pnl(live_bridge.tournament.slug, period="all")
+    assert pnl.total_holdings_value is not None
+    expected = pnl.total_account_value - pnl.total_holdings_value
+    assert live_bridge.status.build(live_bridge).cash == expected
+
+
+async def test_status_cash_falls_back_to_my_balance_before_the_first_read(harness) -> None:  # type: ignore[no-untyped-def]
+    bridge = await harness.open_bridge("live", start=False)
+    try:
+        assert bridge.gateway.risk.cash is None
+        bridge.tournament.my_balance = 27_254.41
+        assert bridge.status.build(bridge).cash == 27_254.41
+    finally:
+        await bridge.close()

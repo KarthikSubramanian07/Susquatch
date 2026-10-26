@@ -99,7 +99,7 @@ pub struct BuildOpts {
     pub platform: Arc<dyn PlatformAdapter>,
     pub journal: Journal,
     pub tournament: TournamentId,
-    /// Paper account starting cash (the live tournament balance at start).
+    /// Paper account starting cash (the live account's cash at start, see [`crate::cash::paper_seed`]).
     pub paper_balance: f64,
     /// The realtime feed (per-market channels are managed by the engine).
     pub realtime: Option<RealtimeFeed>,

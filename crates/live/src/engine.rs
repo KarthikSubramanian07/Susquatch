@@ -37,6 +37,7 @@ use susq_targets::{FairOutcome, FairReader, ReaderConfig, RefreshOutcome, Target
 use tokio::{sync::watch, task::JoinHandle};
 
 use crate::{
+    cash,
     enr_health::{self, EnrFeed},
     realtime::RealtimeFeed,
     world::{World, intent_views, live_orders, needle_budget_used},
@@ -626,17 +627,20 @@ impl Engine {
             Err(e) => self.platform_error("positions", &e, now),
         }
         match account.pnl(&self.world.slug, PnlPeriod::All).await {
-            Ok(p) if p.total_account_value.is_finite() && p.total_account_value > 0.0 => {
-                self.world.equity = p.total_account_value;
-                self.breakers.record_equity(now, p.total_account_value);
+            Ok(p) => {
+                if p.total_account_value.is_finite() && p.total_account_value > 0.0 {
+                    self.world.equity = p.total_account_value;
+                    self.breakers.record_equity(now, p.total_account_value);
+                }
+                // True cash (EXP-015): account value minus holdings, as the bridge's risk uses.
+                cash::observe_pnl(&mut self.world, &p);
             }
-            Ok(_) => {}
             Err(e) => self.platform_error("pnl", &e, now),
         }
-        if let Ok(t) = account.tournament(&self.world.slug).await {
-            self.world.cash = t.my_balance;
-            if self.world.equity <= 0.0 {
-                self.world.equity = t.my_balance;
+        // `myBalance` only until the first portfolio read (or while equity is still unknown).
+        if !self.world.cash_from_portfolio || self.world.equity <= 0.0 {
+            if let Ok(t) = account.tournament(&self.world.slug).await {
+                cash::observe_balance(&mut self.world, t.my_balance);
             }
         }
     }

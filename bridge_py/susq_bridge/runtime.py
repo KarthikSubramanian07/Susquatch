@@ -44,6 +44,26 @@ __all__ = ["REALTIME_MARKET_CHANNELS", "Bridge", "BridgeError", "Loops"]
 
 log = logging.getLogger(__name__)
 
+
+async def _paper_seed(client: SuperMarketClient, limiter: AdaptiveLimiter, tournament: Tournament) -> float:
+    """Starting cash for a paper run: the live account's cash, as risk measures it (EXP-015).
+
+    That is account value minus holdings (``Gateway.portfolio``), not ``myBalance``, which lagged
+    the live cash by 6 to 10k in October. Falls back to ``myBalance`` (then the initial balance)
+    when the read fails or reports no holdings value.
+    """
+    fallback = tournament.my_balance or tournament.initial_balance or 0.0
+    try:
+        await limiter.acquire("read")
+        pnl = await client.get_pnl(tournament.slug, period="all")
+    except Exception as exc:  # the seed is best-effort; the paper run must still start
+        log.warning("paper seed: pnl read failed (%s); seeding from myBalance", exc)
+        return fallback
+    if pnl.total_holdings_value is None or pnl.total_account_value <= 0:
+        return fallback
+    return max(0.0, pnl.total_account_value - pnl.total_holdings_value)
+
+
 #: Since 2026-10-01 market updates arrive per market on ``tournament:{tid}:market:{marketId}``
 #: (``market_batch``, ``book_dirty``, ``market_settled``, batched in one-second windows); the
 #: tournament-wide topic no longer carries them. Supabase caps channels per client, so the bridge
@@ -137,6 +157,7 @@ class Bridge:
         except Exception as exc:
             await client.aclose()
             raise BridgeError(f"cannot resolve tournament {plat.tournament_slug!r}: {exc}") from exc
+        paper_cash = await _paper_seed(client, limiter, tournament) if resolved == "paper" else 0.0
         risk = RiskEngine(config.risk, tournament.id, clock=clock)
         gateway = Gateway(
             config,
@@ -152,7 +173,7 @@ class Bridge:
             clock=clock,
             sleep=sleep,
             rng=rng,
-            paper_cash=tournament.my_balance or tournament.initial_balance or 100_000.0,
+            paper_cash=paper_cash or 100_000.0,
         )
         oms = Oms(clock=clock)
         market = MarketState(gateway, config, clock=clock)

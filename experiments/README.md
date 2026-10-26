@@ -17,3 +17,4 @@ Copy `TEMPLATE.md` to `EXP-NNN-short-name.md`, fill in the hypothesis and metric
 | EXP-010 | Leg lock: keep the scenario book's legs, prefer legs already held | running (approved 2026-10-20) | |
 | EXP-011 | Endgame rival model: rivals' payout vectors, rival-aware threshold (hook off) | draft, not applied | |
 | EXP-013 | Size the scenario book to what risk can hold, and stop eligibility flapping | running (approved 2026-10-25) | |
+| EXP-015 | Report true cash and cap use, and seed the paper run from it | running (approved 2026-10-25) | |

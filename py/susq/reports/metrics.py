@@ -16,6 +16,7 @@ import polars as pl
 from susq.calibrate.targets import read_current
 from susq.contracts import ops_pb2
 from susq.mapping.io import load_best_map
+from susq.reports.capuse import RUST_LIVE, SCENARIO, cap_use, scenario_refusals
 from susq.reports.sources import Fill, extract_fills, load_intents, load_journal, load_status
 from susq.research_env import Paths
 from susq.telemetry.cupdata import read_prices
@@ -71,6 +72,18 @@ class DailyMetrics:
     national_drift_pts: float | None = None
     risk_events: list[str] = field(default_factory=list)
     reject_codes: dict[str, int] = field(default_factory=dict)
+    # True cash and cap use at the day's last portfolio reads (EXP-015).
+    cash: float | None = None
+    cash_frac: float | None = None
+    total_gross_frac: float | None = None
+    #: The three clusters closest to their caps: (cluster, used / cap).
+    cluster_use: list[tuple[str, float]] = field(default_factory=list)
+    scenario_orders: int = 0
+    scenario_refused_caps: int = 0
+
+    @property
+    def scenario_refused_share(self) -> float | None:
+        return self.scenario_refused_caps / self.scenario_orders if self.scenario_orders else None
 
     @property
     def racer_hit_rate(self) -> float | None:
@@ -137,10 +150,24 @@ def _spreads(cup_dir: Path, day: date) -> tuple[float | None, float | None, floa
     return float(np.median(s)), float(np.percentile(s, 90)), float(np.mean(s <= 0.02 + 1e-9)), len(s)
 
 
-def collect(paths: Paths, day: date, *, now_ns: int, targets_max_age_h: float = 36.0) -> DailyMetrics:
+def _rust_scenario_sent(state_dir: Path, start: int, end: int) -> int:
+    """Scenario intents rust-live (live mode) created in [start, end)."""
+    intents = load_intents(state_dir, producers=(RUST_LIVE,)).values()
+    return sum(1 for i in intents if i.strategy == SCENARIO and start <= i.created_at_ns < end)
+
+
+def collect(
+    paths: Paths,
+    day: date,
+    *,
+    now_ns: int,
+    targets_max_age_h: float = 36.0,
+    cluster_limits: Mapping[str, float] | None = None,
+) -> DailyMetrics:
     """Gather every metric for `day` (missing sources simply leave fields empty)."""
     m = DailyMetrics(day)
     status = load_status(paths.status)
+    trader = status.trader if status is not None else ""
     if status is not None:
         m.mode, m.equity, m.pnl_day, m.pnl_total = (
             status.mode,
@@ -181,6 +208,28 @@ def collect(paths: Paths, day: date, *, now_ns: int, targets_max_age_h: float = 
             codes[i.last_error_code] += 1
     m.reject_codes = dict(codes)
 
+    rust_live = trader == RUST_LIVE and m.mode == "live"
+    m.scenario_orders, m.scenario_refused_caps = scenario_refusals(
+        journal,
+        rust_live_trader=rust_live,
+        rust_sent=_rust_scenario_sent(paths.state, start, end) if rust_live else 0,
+    )
+    market_map = load_best_map(paths)
+    limits = cluster_limits if cluster_limits is not None else paths.load_config().cluster_limits
+    overrides = {c.cluster: c.max_gross_frac for c in targets.clusters} if targets else {}
+    # The live trader's own reads (other producers may journal reads of their paper accounts).
+    reads = [e for e in journal if e.producer == trader] if trader else journal
+    use = cap_use(
+        reads,
+        clusters_by_exchange={r.exchange_id: list(r.clusters) for r in market_map.markets}
+        if market_map
+        else {},
+        kind_caps=limits,
+        overrides=overrides,
+    )
+    m.cash, m.cash_frac, m.total_gross_frac = use.cash, use.cash_frac, use.total_gross_frac
+    m.cluster_use = use.top_clusters(3)
+
     m.spread_median, m.spread_p90, m.tight_share, m.markets_quoted = _spreads(paths.data / "cup", day)
 
     research = paths.research_state
@@ -198,7 +247,7 @@ def collect(paths: Paths, day: date, *, now_ns: int, targets_max_age_h: float = 
         m.senate_gap_pts = senate.get("gap_pts") if senate else None
     if (flags := _read_json(research / "fair_flags.json")) is not None:
         m.fair_flags = len(flags.get("flags") or [])
-    if (mm := load_best_map(paths)) is not None:
+    if (mm := market_map) is not None:
         m.unverified_high_confidence = sum(
             1 for r in mm.markets if not r.verified and r.notes.startswith(("confidence=0.9", "confidence=1"))
         )

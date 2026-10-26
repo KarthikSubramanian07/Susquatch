@@ -11,6 +11,7 @@
 //! * [`realtime`] manages the capped set of per-market realtime channels.
 //! * [`status`] writes `state/status.json`; [`http`] serves `/healthz` and `/metrics` on loopback.
 
+pub mod cash;
 pub mod cli;
 pub mod commands;
 pub mod election;

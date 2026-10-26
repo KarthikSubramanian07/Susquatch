@@ -13,7 +13,13 @@ from susq.telemetry.cupdata import read_leaderboard
 
 
 def run_report(paths: Paths, cfg: ResearchConfig, day: date, *, now_ns: int) -> tuple[Path, Path]:
-    metrics = collect(paths, day, now_ns=now_ns, targets_max_age_h=cfg.targets_max_age_h)
+    metrics = collect(
+        paths,
+        day,
+        now_ns=now_ns,
+        targets_max_age_h=cfg.targets_max_age_h,
+        cluster_limits=cfg.cluster_limits,
+    )
     daily = write_daily(paths.reports, metrics)
     lb = read_leaderboard(paths.data / "cup")
     usernames = set(lb["username"].drop_nulls().to_list()) if "username" in lb.columns else set()

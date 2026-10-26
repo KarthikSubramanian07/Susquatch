@@ -81,10 +81,13 @@ def load_journal(journal_dir: Path, day: date) -> list[ops_pb2.JournalEntry]:
     return out
 
 
-def load_intents(state_dir: Path) -> dict[str, ops_pb2.OrderIntent]:
-    """Latest record per intent_id across every producer's intents.jsonl."""
+def load_intents(state_dir: Path, *, producers: Iterable[str] = ()) -> dict[str, ops_pb2.OrderIntent]:
+    """Latest record per intent_id across every producer's intents.jsonl (or only `producers`')."""
     latest: dict[str, ops_pb2.OrderIntent] = {}
+    only = set(producers)
     for path in sorted(state_dir.glob("*/intents.jsonl")):
+        if only and path.parent.name not in only:
+            continue
         for line in _jsonl(path):
             try:
                 intent = from_json(ops_pb2.OrderIntent, line)
