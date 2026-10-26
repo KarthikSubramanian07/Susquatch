@@ -99,7 +99,22 @@ def packet_metrics(m: DailyMetrics) -> list[list[object]]:
         ["fair_flags", m.fair_flags],
         ["risk_events", len(m.risk_events) + len(m.calibration_warnings)],
         ["rejects", sum(m.reject_codes.values())],
+        ["cash", _num(m.cash)],
+        ["cash_frac", _num(m.cash_frac)],
+        ["total_gross_frac", _num(m.total_gross_frac)],
+        *_cluster_rows(m),
+        ["scenario_orders", m.scenario_orders],
+        ["scenario_refused_caps", m.scenario_refused_caps],
     ]
+
+
+def _cluster_rows(m: DailyMetrics) -> list[list[object]]:
+    """`cluster_<n>` (label) and `cluster_<n>_cap_use` (used / cap) for the three closest to their caps."""
+    rows: list[list[object]] = []
+    for n in range(1, 4):
+        name, frac = m.cluster_use[n - 1] if n <= len(m.cluster_use) else ("", None)
+        rows += [[f"cluster_{n}", name], [f"cluster_{n}_cap_use", _num(frac)]]
+    return rows
 
 
 def packet_summary(m: DailyMetrics) -> str:

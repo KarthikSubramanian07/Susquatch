@@ -75,6 +75,23 @@ def _rejects(m: DailyMetrics) -> Proposal | None:
     )
 
 
+def _scenario_caps(m: DailyMetrics) -> Proposal | None:
+    share = m.scenario_refused_share
+    if share is None or share <= 0.5:
+        return None
+    top = ", ".join(f"{c} {u:.0%}" for c, u in m.cluster_use) or "not in packet"
+    gross = "not in packet" if m.total_gross_frac is None else f"{m.total_gross_frac:.3f} of equity"
+    return Proposal(
+        rule_id="scenario-caps",
+        priority=88,
+        text=(
+            f"{m.scenario_refused_caps} of {m.scenario_orders} scenario orders ({share:.0%}) were refused "
+            f"on risk caps (total gross {gross}; closest clusters to their caps: {top}). The book is "
+            "cap-limited, not cash-limited: free room under the binding caps or resize the legs."
+        ),
+    )
+
+
 def _verify_rows(m: DailyMetrics) -> Proposal | None:
     if not m.unverified_high_confidence:
         return None
@@ -161,6 +178,7 @@ RULES: tuple[Rule, ...] = (
     _mapping_flags,
     _stale_targets,
     _rejects,
+    _scenario_caps,
     _verify_rows,
     _racer,
     _crowd,
