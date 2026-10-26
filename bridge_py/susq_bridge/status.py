@@ -19,7 +19,7 @@ from susq_bridge.lease import atomic_write
 if TYPE_CHECKING:
     from susq_bridge.runtime import Bridge
 
-__all__ = ["StatusWriter", "stage_for"]
+__all__ = ["StatusWriter", "cash_of", "stage_for"]
 
 _STALK_FROM = datetime(2026, 10, 21, tzinfo=UTC)
 _EMERGE_FROM = datetime(2026, 11, 3, 23, 0, tzinfo=UTC)  # 19:00 ET on election night
@@ -33,6 +33,20 @@ def stage_for(now: datetime, lock: datetime) -> str:
     if now >= _STALK_FROM:
         return "stalk"
     return "forage"
+
+
+def cash_of(bridge: Bridge) -> float:
+    """Cash as risk sizes against it (EXP-015).
+
+    Paper: the paper ledger. Live: the last portfolio read (account value minus holdings, see
+    ``Gateway.portfolio``), kept by the risk engine. Only before the first read does it fall back to
+    the tournament's start-up ``myBalance``, which the platform does not refresh for us.
+    """
+    if bridge.gateway.paper:
+        return bridge.gateway.paper.ledger.cash
+    if bridge.gateway.risk.cash is not None:
+        return bridge.gateway.risk.cash
+    return bridge.tournament.my_balance or 0.0
 
 
 class StatusWriter:
@@ -54,9 +68,7 @@ class StatusWriter:
             stage=stage_for(now, cfg.calendar.lock_utc),
             trader=lease.holder if lease is not None and lease.expires_at_ns > now.timestamp() * 1e9 else "",
             equity=equity,
-            cash=bridge.gateway.paper.ledger.cash
-            if bridge.gateway.paper
-            else bridge.tournament.my_balance or 0.0,
+            cash=cash_of(bridge),
             pnl_total=equity - initial if equity else 0.0,
             field_size=bridge.tournament.member_count or 0,
             killed=bridge.kill.killed(),
