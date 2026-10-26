@@ -49,7 +49,7 @@ fn build_engine(
         platform: rt.platform.clone(),
         journal: rt.journal.clone(),
         tournament: rt.tid(),
-        paper_balance: rt.tournament.my_balance,
+        paper_balance: rt.paper_seed,
         realtime,
         needle,
         enr,

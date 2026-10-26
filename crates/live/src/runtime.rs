@@ -7,7 +7,7 @@ use anyhow::Context;
 use susq_core::{Clock, Config, Mode, Secret, SystemClock, TournamentId};
 use susq_gateway::{LimiterConfig, RateLimited, RateLimiter, resolve_mode};
 use susq_journal::{Journal, JournalConfig};
-use susq_platform::{PlatformAdapter, SuperMarket, SuperMarketConfig, Tournament};
+use susq_platform::{PlatformAdapter, PnlPeriod, SuperMarket, SuperMarketConfig, Tournament};
 
 use crate::wiring::PRODUCER;
 
@@ -21,6 +21,9 @@ pub struct Runtime {
     pub platform: Arc<dyn PlatformAdapter>,
     pub limiter: Arc<RateLimiter>,
     pub tournament: Tournament,
+    /// Starting cash for a paper run: the live account's cash at start (account value minus
+    /// holdings, EXP-015), falling back to `myBalance`.
+    pub paper_seed: f64,
 }
 
 impl Runtime {
@@ -94,6 +97,19 @@ pub async fn connect(home: &Path, config_path: &Path) -> anyhow::Result<Runtime>
     let platform: Arc<dyn PlatformAdapter> = Arc::new(RateLimited::new(Arc::new(sm), limiter.clone()));
     let tournament = resolve_tournament(platform.as_ref(), &cfg.platform.tournament_slug).await?;
     tracing::info!(slug = %tournament.slug, id = %tournament.id, members = tournament.member_count, "tournament resolved");
+    let pnl = match platform.pnl(&cfg.platform.tournament_slug, PnlPeriod::All).await {
+        Ok(p) => Some(p),
+        Err(e) => {
+            tracing::warn!(error = %e, "portfolio read failed; a paper run would seed from myBalance");
+            None
+        }
+    };
+    let paper_seed = crate::cash::paper_seed(&tournament, pnl.as_ref());
+    tracing::info!(
+        paper_seed,
+        my_balance = tournament.my_balance,
+        "live cash at start"
+    );
     Ok(Runtime {
         cfg,
         home: home.to_owned(),
@@ -103,6 +119,7 @@ pub async fn connect(home: &Path, config_path: &Path) -> anyhow::Result<Runtime>
         platform,
         limiter,
         tournament,
+        paper_seed,
     })
 }
 

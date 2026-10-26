@@ -28,7 +28,10 @@ pub struct World {
     pub equity: f64,
     /// Equity when this process started (for `pnl_total`).
     pub initial_equity: f64,
+    /// Cash risk sizes against: account value minus holdings (see [`crate::cash`]).
     pub cash: f64,
+    /// `cash` came from a portfolio read (not the start-up `myBalance` fallback).
+    pub cash_from_portfolio: bool,
     pub relationships: HashMap<String, Relationship>,
     /// Current violations by relationship id, with when we learned about them (ns).
     pub violations: BTreeMap<String, (ConstraintEval, i64)>,
