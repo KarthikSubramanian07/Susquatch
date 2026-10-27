@@ -55,6 +55,7 @@ fn limits() -> RiskLimits {
         glitch_max_frac: 0.02,
         needle_glitch_through_fair: 0.40,
         needle_budget_frac: None,
+        contender: None,
     }
 }
 
@@ -142,6 +143,7 @@ proptest! {
             needle_used: 0.0,
             cash: None,
             bundle_cost: None,
+            depth: None,
         };
         let pt = PreTrade { limits: limits() };
         let bundle = OrderBundle { legs: legs.clone(), atomic: true };

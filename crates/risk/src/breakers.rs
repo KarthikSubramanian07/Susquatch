@@ -6,7 +6,7 @@
 
 use std::collections::VecDeque;
 
-use susq_core::config::RiskCfg;
+use susq_core::config::{EnCfg, RiskCfg};
 
 const MINUTE_NS: i64 = 60 * 1_000_000_000;
 const HOUR_NS: i64 = 60 * MINUTE_NS;
@@ -49,6 +49,17 @@ impl BreakerConfig {
             reject_cooldown_ns: 5 * MINUTE_NS,
             bus_cooldown_ns: 5 * MINUTE_NS,
         }
+    }
+
+    /// EXP-014: with `[strategies.en] contender_mode` on, the loss-per-hour breaker trips at
+    /// `contender_loss_per_hour_frac` instead, so an adverse hour on a concentrated needle position
+    /// does not cancel everything and freeze the account for an hour mid-chain. The breaker sees
+    /// only account equity, so the raise is account-wide while the mode is on. Off: unchanged.
+    pub fn with_contender(mut self, en: &EnCfg) -> Self {
+        if en.contender_mode {
+            self.loss_per_hour_frac = en.contender_loss_per_hour_frac;
+        }
+        self
     }
 }
 
@@ -201,6 +212,29 @@ mod tests {
             b.frozen(2 * MINUTE_NS + HOUR_NS).is_none(),
             "thaws after the cooldown"
         );
+    }
+
+    /// EXP-014: contender mode raises the loss-per-hour threshold; off, the 3% breaker stands.
+    #[test]
+    fn contender_mode_raises_the_loss_per_hour_threshold_only_when_on() {
+        let off = cfg().with_contender(&EnCfg::default());
+        assert_eq!(off, cfg(), "contender_mode = false leaves the breaker as it was");
+        let on = cfg().with_contender(&EnCfg {
+            contender_mode: true,
+            ..EnCfg::default()
+        });
+        assert_eq!(on.loss_per_hour_frac, 0.50);
+        // A 20% adverse hour on a concentrated position: trips the 3% breaker, not the raised one.
+        for (c, trips) in [(off, true), (on.clone(), false)] {
+            let mut b = Breakers::new(c);
+            b.record_equity(0, 100_000.0);
+            b.record_equity(MINUTE_NS, 80_000.0);
+            assert_eq!(b.take_trip().is_some(), trips);
+        }
+        let mut b = Breakers::new(on);
+        b.record_equity(0, 100_000.0);
+        b.record_equity(MINUTE_NS, 50_000.0);
+        assert_eq!(b.take_trip().map(|t| t.kind), Some(BreakerKind::LossPerHour));
     }
 
     #[test]

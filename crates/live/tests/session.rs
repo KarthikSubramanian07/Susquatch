@@ -1788,3 +1788,192 @@ async fn resting_paper_orders_cannot_hold_a_step_past_the_budget() {
         "every resting book was re-read within six steps"
     );
 }
+
+// ── EXP-014: contender mode ──────────────────────────────────────────────────────────────────
+
+/// A paper session with the election-night executor on, tweaked by `tweak`, fed by a fake needle.
+/// The racer is off so nothing else trades the Ohio legs.
+async fn needle_session(tweak: impl FnOnce(&mut Config)) -> (Session, FakeNeedle, Config) {
+    let home = tempfile::tempdir().expect("tmp");
+    let mut cfg = config();
+    cfg.strategies.en.enabled = true;
+    cfg.strategies.racer.enabled = false;
+    tweak(&mut cfg);
+    let clock = ManualClock::at("2026-10-08T16:00:00Z".parse().expect("ts"));
+    let mock = Arc::new(MockPlatform::new(
+        Arc::new(clock.clone()),
+        MockConfig {
+            tournament_id: TID.into(),
+            slug: SLUG.into(),
+            starting_balance: 100_000.0,
+            member_count: 1200,
+            page_size: 200,
+            collateral: true,
+        },
+    ));
+    seed(&mock);
+    write_market_map(home.path(), &cfg);
+    let (needle, rx) = FakeNeedle::new(&cfg, clock.now_ns());
+    let mut engine = build(BuildOpts {
+        cfg: cfg.clone(),
+        home: home.path().to_owned(),
+        mode: Mode::Paper,
+        clock: Arc::new(clock.clone()),
+        platform: mock.clone(),
+        journal: Journal::discard(),
+        tournament: TournamentId::new(TID),
+        paper_balance: 100_000.0,
+        realtime: None,
+        needle: Some(rx),
+        enr: None,
+        host: "test".into(),
+        pid: 1,
+        kill: None,
+    })
+    .expect("engine");
+    engine.bootstrap().await;
+    let s = Session {
+        home,
+        clock,
+        mock,
+        engine,
+    };
+    (s, needle, cfg)
+}
+
+/// Two steps 6 s apart (past half of book_max_age_s, so the books are re-read) with the needle's
+/// heartbeat kept alive.
+async fn ticks_alive(s: &mut Session, needle: &mut FakeNeedle) {
+    for _ in 0..2 {
+        needle.heartbeat(s.clock.now_ns());
+        s.tick(6).await;
+    }
+}
+
+fn intents_on(s: &Session, strategy: &str, ex: &str) -> Vec<(String, OrderState)> {
+    s.intents(strategy)
+        .into_iter()
+        .filter(|(id, _)| id.starts_with(&format!("{strategy}:{ex}:")))
+        .collect()
+}
+
+/// EXP-014 end to end: with contender mode on, the executor buys the Texas Democrat, holds it
+/// through a bid that the default profile would have rolled at, sells it once the needle calls the
+/// race, and only then has the budget to buy the next race (Ohio), which the night budget refused
+/// while Texas was held. When the needle falls silent nothing is sent despite fresh edge.
+#[tokio::test]
+async fn contender_mode_holds_to_the_call_chains_into_the_next_race_and_stops_when_the_needle_is_down() {
+    // A budget of 150 SUSQies (0.15% of 100k) holds one of the two buys below, not both.
+    let (mut s, mut needle, cfg) = needle_session(|cfg| {
+        cfg.strategies.en.contender_mode = true;
+        cfg.strategies.en.contender_budget_frac = 0.0015;
+    })
+    .await;
+    for _ in 0..cfg.needle.resume_after_healthy {
+        needle.heartbeat(s.clock.now_ns());
+    }
+
+    // 1. Texas: D +5 ± 3 (q 0.95) on three batches; the Cup asks 0.03 for 100 shares.
+    needle.posterior(s.clock.now_ns(), "2026-GOV-TX", 0.95, 5.0, 3.0, 3);
+    ticks_alive(&mut s, &mut needle).await;
+    assert_eq!(s.paper_position("5").await, 100, "bought the Texas Democrat");
+
+    // 2. Ohio: D +4 ± 2 (q 0.977), the Cup asks 0.45: a 50-point edge, but Texas holds the budget.
+    needle.posterior(s.clock.now_ns(), "2026-SEN-OH", 0.977, 4.0, 2.0, 40);
+    ticks_alive(&mut s, &mut needle).await;
+    assert!(
+        intents_on(&s, "en", "1").is_empty(),
+        "the night budget refuses the second race while the first is held"
+    );
+
+    // 3. Texas tightens to q 0.93 and a 0.92 bid appears: the default profile rolls here (within
+    //    2 points); contender mode holds, the race is not called (SE 0.045) and 0.92 < 0.93.
+    //    (The 0.03 ask our paper buy left on the mock is taken first so the bid does not cross it.)
+    s.mock
+        .seed_order("dave", "5", Side::Yes, Action::Buy, 100, px(300));
+    s.mock
+        .seed_order("alice", "5", Side::Yes, Action::Buy, 100, px(9200));
+    needle.posterior(s.clock.now_ns(), "2026-GOV-TX", 0.93, 4.4, 3.0, 5);
+    ticks_alive(&mut s, &mut needle).await;
+    assert_eq!(s.paper_position("5").await, 100, "held to the call");
+    assert!(
+        intents_on(&s, "en", "5")
+            .iter()
+            .all(|(id, _)| !id.contains(":roll:"))
+    );
+
+    // 4. The needle calls Texas (D +12 ± 3, SE 4.5e-5): sold at no less than q − 8 pts = 0.92.
+    needle.posterior(s.clock.now_ns(), "2026-GOV-TX", 0.9999, 12.0, 3.0, 8);
+    ticks_alive(&mut s, &mut needle).await;
+    assert_eq!(s.paper_position("5").await, 0, "sold once the race was called");
+    assert!(
+        intents_on(&s, "en", "5")
+            .iter()
+            .any(|(id, _)| id.contains(":roll:"))
+    );
+
+    // 5. The proceeds free the budget: the chain moves on to Ohio.
+    needle.posterior(s.clock.now_ns(), "2026-SEN-OH", 0.977, 4.0, 2.0, 41);
+    ticks_alive(&mut s, &mut needle).await;
+    assert!(!intents_on(&s, "en", "1").is_empty(), "chained into Ohio");
+    assert!(s.paper_position("1").await > 0, "the Ohio buy filled");
+    let placed = s.intents("en").len();
+
+    // 6. The needle goes silent past heartbeat_timeout_s while fresh size sits at 0.45: nothing
+    //    needle-derived is sent and nothing is left working.
+    s.mock
+        .seed_order("carol", "1", Side::Yes, Action::Sell, 100, px(4500));
+    s.clock
+        .advance(Duration::from_secs(cfg.needle.heartbeat_timeout_s + 2));
+    needle.publish(s.clock.now_ns());
+    s.tick(1).await;
+    s.tick(1).await;
+    assert_eq!(s.intents("en").len(), placed, "a silent needle places nothing");
+    assert!(s.intents("en").iter().all(|(_, state)| !state.is_live()));
+}
+
+/// EXP-014 risk wiring: needle-derived orders on a deep book (100k+ within 3c of the touch, read off
+/// the engine's fresh books) build the market past 5% only with contender mode on.
+#[tokio::test]
+async fn contender_cap_reads_depth_off_the_fresh_books() {
+    async fn accepted(contender: bool, deep: bool) -> usize {
+        let (mut s, _needle, _) = needle_session(|cfg| {
+            cfg.strategies.en.enabled = false;
+            cfg.strategies.en.contender_mode = contender;
+        })
+        .await;
+        if deep {
+            // 300,000 at 0.45: 135k of depth within 3c of the touch.
+            s.mock
+                .seed_order("carol", "1", Side::Yes, Action::Sell, 300_000, px(4500));
+        }
+        s.tick(1).await; // load the books
+        let mut ok = 0;
+        for i in 0..6 {
+            let spec = susq_core::OrderSpec {
+                intent_id: format!("en:1:yes:deep{i}"),
+                strategy: "en".into(),
+                exchange_id: ExchangeId::new("1"),
+                market_id: Some(MarketId::new("m1")),
+                side: Side::Yes,
+                action: Action::Buy,
+                quantity: susq_core::Qty(4_000), // 1,800 SUSQies at 0.45, under the 2% order cap
+                price: px(4500),
+                ttl: Duration::from_secs(20),
+                needle_derived: true,
+                fair_yes: None,
+            };
+            if s.engine.place(&susq_core::OrderBundle::single(spec)).is_ok() {
+                ok += 1;
+            }
+            s.engine.settle().await;
+        }
+        ok
+    }
+    let off = accepted(false, true).await;
+    let on = accepted(true, true).await;
+    let thin = accepted(true, false).await;
+    assert!(off < 6, "off: the 5% market cap binds ({off} accepted)");
+    assert_eq!(on, 6, "on with a deep book: the market builds past 5%");
+    assert_eq!(thin, off, "on with a thin book: the 5% cap still binds");
+}

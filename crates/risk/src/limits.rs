@@ -14,6 +14,14 @@
 //! shares it opens (closing shares are free) unless [`RiskContext::bundle_cost`] is set, which
 //! rust-live does only with `[risk] use_collateral_buying_power = true`: then it consumes the modeled
 //! ALL effective cost (see `susq_platform::collateral`).
+//!
+//! **Contender cap** (EXP-014, only with [`RiskLimits::contender`] set, which rust-live does only
+//! with `[strategies.en] contender_mode = true`): a needle-derived buy on a market whose book holds
+//! at least `min_depth` SUSQies within `window_pts` of the touch on the side it takes, measured
+//! through [`RiskContext::depth`] when the bundle is checked, may take that market (and the
+//! single-race `state` / `house` clusters it sits in) up to `market_frac` of equity instead of the
+//! general caps. Everything else, including the per-order notional cap, is unchanged; without a
+//! depth probe nothing qualifies.
 
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
@@ -23,7 +31,7 @@ use std::{
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use susq_core::{
-    Action, BookSide, Calendar, ExchangeId, MarketIndex, OrderBundle, OrderSpec, Pips, TournamentId,
+    Action, BookSide, Calendar, ExchangeId, MarketIndex, OrderBundle, OrderSpec, Pips, Side, TournamentId,
     config::RiskCfg, market_map::cluster_kind,
 };
 
@@ -63,6 +71,30 @@ pub trait BundleCost: fmt::Debug {
     fn cash_needed(&self, positions: &HashMap<ExchangeId, i64>, bundle: &OrderBundle) -> f64;
 }
 
+/// Visible depth near the touch, for the contender cap (rust-live reads its fresh books).
+pub trait DepthProbe: fmt::Debug {
+    /// SUSQies an order `(side, action)` on `exchange` could take within `window_pts` points of
+    /// the touch, in the order's side terms; `None` without a fresh book.
+    fn depth_near_touch(
+        &self,
+        exchange: &ExchangeId,
+        side: Side,
+        action: Action,
+        window_pts: f64,
+    ) -> Option<f64>;
+}
+
+/// The contender cap (EXP-014): needle-derived buys on deep books may build a market further.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ContenderCap {
+    /// Per-market (and single-race cluster) cap for a qualifying buy, as a share of equity.
+    pub market_frac: f64,
+    /// SUSQies of depth the book must hold near the touch on the side taken.
+    pub min_depth: f64,
+    /// How far from the touch that depth counts (points).
+    pub window_pts: f64,
+}
+
 /// Cap fractions (of equity), from `[risk]` plus optional per-cluster overrides from targets.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RiskLimits {
@@ -82,6 +114,8 @@ pub struct RiskLimits {
     /// Most equity needle-derived buys may have deployed at once (`[strategies.en]
     /// night_budget_frac`), counted by [`RiskContext::needle_used`]. `None`: no night budget.
     pub needle_budget_frac: Option<f64>,
+    /// Contender cap for needle-derived buys on deep books. `None` (the default): off.
+    pub contender: Option<ContenderCap>,
 }
 
 impl RiskLimits {
@@ -98,7 +132,14 @@ impl RiskLimits {
             glitch_max_frac: cfg.glitch_max_frac,
             needle_glitch_through_fair: cfg.glitch_through_fair_pts / 100.0,
             needle_budget_frac: None,
+            contender: None,
         }
+    }
+
+    /// Turn on the contender cap (EXP-014).
+    pub fn with_contender_cap(mut self, cap: ContenderCap) -> Self {
+        self.contender = Some(cap);
+        self
     }
 
     /// Glitch threshold (points) for needle-derived legs (`[strategies.en] en_glitch_pts`).
@@ -159,6 +200,8 @@ pub struct RiskContext<'a> {
     pub cash: Option<f64>,
     /// Collateral-aware bundle cost; `None` = full opening notional (the default, conservative).
     pub bundle_cost: Option<&'a dyn BundleCost>,
+    /// Book depth for the contender cap; `None`: no bundle qualifies for it.
+    pub depth: Option<&'a dyn DepthProbe>,
 }
 
 /// What the caps saw when they judged a bundle (SUSQies), for the journal and the log: the same
@@ -318,7 +361,47 @@ impl PreTrade {
         for (ex, add) in opening {
             *exposure_after.entry(ex).or_default() += add;
         }
-        self.check_caps(ctx, &exposure_after, &increases)
+        let deep = self.contender_qualifying(ctx, &bundle.legs, &increases);
+        self.check_caps(ctx, &exposure_after, &increases, &deep)
+    }
+
+    /// Exchanges whose opening in this bundle qualifies for the contender cap: every leg on it is
+    /// a needle-derived buy and the book holds the required depth near the touch on its side.
+    fn contender_qualifying<'b>(
+        &self,
+        ctx: &RiskContext<'_>,
+        legs: &[OrderSpec],
+        increases: &[&'b ExchangeId],
+    ) -> HashSet<&'b ExchangeId> {
+        let (Some(cap), Some(probe)) = (self.limits.contender, ctx.depth) else {
+            return HashSet::new();
+        };
+        increases
+            .iter()
+            .copied()
+            .filter(|ex| {
+                let mut on_ex = legs.iter().filter(|l| &l.exchange_id == *ex).peekable();
+                on_ex.peek().is_some()
+                    && on_ex.all(|l| {
+                        l.needle_derived
+                            && l.action == Action::Buy
+                            && probe
+                                .depth_near_touch(ex, l.side, Action::Buy, cap.window_pts)
+                                .is_some_and(|d| d.is_finite() && d + 1e-9 >= cap.min_depth)
+                    })
+            })
+            .collect()
+    }
+
+    /// The cap fraction for a market or a single-race cluster: the contender cap when every
+    /// exchange the bundle grows in it qualifies, `frac` otherwise.
+    fn raised(&self, frac: f64, grown: &[&ExchangeId], deep: &HashSet<&ExchangeId>) -> f64 {
+        match self.limits.contender {
+            Some(c) if !grown.is_empty() && grown.iter().all(|ex| deep.contains(*ex)) => {
+                frac.max(c.market_frac)
+            }
+            _ => frac,
+        }
     }
 
     fn check_self_cross(&self, ctx: &RiskContext<'_>, legs: &[OrderSpec]) -> Result<(), Rejection> {
@@ -426,6 +509,7 @@ impl PreTrade {
         ctx: &RiskContext<'_>,
         after: &HashMap<ExchangeId, f64>,
         increases: &[&ExchangeId],
+        deep: &HashSet<&ExchangeId>,
     ) -> Result<(), Rejection> {
         let eq = ctx.equity;
         let exp = |ex: &ExchangeId| after.get(ex).copied().unwrap_or(0.0);
@@ -441,9 +525,14 @@ impl PreTrade {
                 .market_of(ex)
                 .map_or_else(|| format!("exchange:{ex}"), |m| format!("market:{m}"))
         };
-        let cap = self.limits.per_market_gross_frac * eq;
         for ex in increases {
             let key = market_key(ex);
+            let grown: Vec<&ExchangeId> = increases
+                .iter()
+                .copied()
+                .filter(|e| market_key(e) == key)
+                .collect();
+            let cap = self.raised(self.limits.per_market_gross_frac, &grown, deep) * eq;
             let total: f64 = after.keys().filter(|e| market_key(e) == key).map(exp).sum();
             if total > cap + 1e-9 {
                 return Err(Rejection::MarketCap {
@@ -458,6 +547,18 @@ impl PreTrade {
         for cluster in clusters {
             let Some(frac) = self.limits.cluster_frac(cluster) else {
                 continue;
+            };
+            // A state or house cluster holds one race, so a deep market may fill it to the
+            // contender cap; region and national clusters keep their caps.
+            let frac = if matches!(cluster_kind(cluster), "state" | "house") {
+                let grown: Vec<&ExchangeId> = increases
+                    .iter()
+                    .copied()
+                    .filter(|e| ctx.markets.clusters(e).iter().any(|c| c == cluster))
+                    .collect();
+                self.raised(frac, &grown, deep)
+            } else {
+                frac
             };
             let total: f64 = after
                 .keys()
@@ -552,6 +653,7 @@ mod tests {
             glitch_max_frac: 0.02,
             needle_glitch_through_fair: 0.40,
             needle_budget_frac: None,
+            contender: None,
         }
     }
 
@@ -635,6 +737,7 @@ mod tests {
                 needle_used: 0.0,
                 cash: None,
                 bundle_cost: None,
+                depth: None,
             }
         }
     }
@@ -996,5 +1099,143 @@ mod tests {
             limits: limits().with_needle_glitch_pts(40.0),
         };
         assert_eq!(open.check_bundle(&ctx, &OrderBundle::single(buy), &w.tid), Ok(()));
+    }
+
+    /// Depth near the touch per (exchange, side), for the contender cap.
+    #[derive(Debug, Default)]
+    struct Depth(HashMap<(String, Side), f64>);
+
+    impl DepthProbe for Depth {
+        fn depth_near_touch(
+            &self,
+            ex: &ExchangeId,
+            side: Side,
+            action: Action,
+            window_pts: f64,
+        ) -> Option<f64> {
+            assert_eq!(action, Action::Buy, "the cap measures the side a buy takes");
+            assert_eq!(window_pts, 3.0);
+            self.0.get(&(ex.to_string(), side)).copied()
+        }
+    }
+
+    const CONTENDER: ContenderCap = ContenderCap {
+        market_frac: 0.30,
+        min_depth: 100_000.0,
+        window_pts: 3.0,
+    };
+
+    /// EXP-014: a needle-derived buy on a deep book may build its market (and its state cluster)
+    /// to the contender cap; anything else keeps the 5% cap, and the per-order cap never moves.
+    #[test]
+    fn contender_cap_raises_the_market_cap_only_for_needle_buys_on_deep_books() {
+        let mut w = World::new();
+        w.positions.insert(ExchangeId::new("1"), 5_800); // 2,900 at 0.5 on m1 / state:OH
+        w.marks.insert(ExchangeId::new("1"), 0.5);
+        let mut lim = limits();
+        lim.cluster_kind_frac.insert("national".into(), 0.90);
+        let on = PreTrade {
+            limits: lim.clone().with_contender_cap(CONTENDER),
+        };
+        let off = PreTrade { limits: lim };
+        let deep = Depth([(("1".to_owned(), Side::Yes), 150_000.0)].into());
+        let thin = Depth([(("1".to_owned(), Side::Yes), 99_999.0)].into());
+        let mut buy = spec("1", Side::Yes, Action::Buy, 200, 5000); // +100 → 3,000 = 30% of 10,000
+        buy.needle_derived = true;
+        buy.fair_yes = Some(0.70);
+        let mut ctx = w.ctx(10_000.0);
+        ctx.depth = Some(&deep);
+        let one = |b: &OrderSpec| OrderBundle::single(b.clone());
+        assert_eq!(on.check_bundle(&ctx, &one(&buy), &w.tid), Ok(()));
+        // One share past 30%.
+        let mut over = buy.clone();
+        over.quantity = Qty(202);
+        assert!(matches!(
+            on.check_bundle(&ctx, &one(&over), &w.tid),
+            Err(Rejection::MarketCap { cap, .. }) if (cap - 3_000.0).abs() < 1e-9
+        ));
+        // Contender cap off (contender_mode = false): the 5% cap, whatever the depth.
+        assert!(matches!(
+            off.check_bundle(&ctx, &one(&buy), &w.tid),
+            Err(Rejection::MarketCap { cap, .. }) if (cap - 500.0).abs() < 1e-9
+        ));
+        // Thin book, no depth reading, the wrong side's depth: 5%.
+        ctx.depth = Some(&thin);
+        assert!(matches!(
+            on.check_bundle(&ctx, &one(&buy), &w.tid),
+            Err(Rejection::MarketCap { .. })
+        ));
+        ctx.depth = None;
+        assert!(matches!(
+            on.check_bundle(&ctx, &one(&buy), &w.tid),
+            Err(Rejection::MarketCap { .. })
+        ));
+        ctx.depth = Some(&deep);
+        // Depth is measured on the side taken: a NO buy reads the NO side, which is thin here.
+        let mut w_no = World::new();
+        w_no.positions.insert(ExchangeId::new("1"), -5_800);
+        w_no.marks.insert(ExchangeId::new("1"), 0.5);
+        let mut ctx_no = w_no.ctx(10_000.0);
+        ctx_no.depth = Some(&deep);
+        let mut no_side = buy.clone();
+        no_side.side = Side::No;
+        assert!(matches!(
+            on.check_bundle(&ctx_no, &one(&no_side), &w_no.tid),
+            Err(Rejection::MarketCap { .. })
+        ));
+        // Not needle-derived: 5%.
+        let mut sniper = buy.clone();
+        sniper.needle_derived = false;
+        sniper.fair_yes = None;
+        assert!(matches!(
+            on.check_bundle(&ctx, &one(&sniper), &w.tid),
+            Err(Rejection::MarketCap { .. })
+        ));
+        // A bundle that also grows a thin exchange in the same market does not qualify.
+        let mut other = spec("2", Side::Yes, Action::Buy, 2, 5000);
+        other.needle_derived = true;
+        let both = OrderBundle {
+            legs: vec![buy.clone(), other],
+            atomic: false,
+        };
+        assert!(matches!(
+            on.check_bundle(&ctx, &both, &w.tid),
+            Err(Rejection::MarketCap { .. })
+        ));
+        // The per-order cap is unchanged: 2% of equity per order even on a deep book.
+        let flat = World::new();
+        let mut ctx = flat.ctx(10_000.0);
+        ctx.depth = Some(&deep);
+        let mut big = buy.clone();
+        big.quantity = Qty(401);
+        assert!(matches!(
+            on.check_bundle(&ctx, &one(&big), &flat.tid),
+            Err(Rejection::OrderNotional { .. })
+        ));
+    }
+
+    /// The raised state cluster only follows a qualifying buy; region and national caps stay.
+    #[test]
+    fn contender_cap_lifts_single_race_clusters_but_not_national() {
+        let mut w = World::new();
+        w.positions.insert(ExchangeId::new("1"), 5_800);
+        w.marks.insert(ExchangeId::new("1"), 0.5);
+        let pt = PreTrade {
+            limits: limits().with_contender_cap(CONTENDER), // national 0.25 stays binding
+        };
+        let deep = Depth([(("1".to_owned(), Side::Yes), 150_000.0)].into());
+        let mut ctx = w.ctx(10_000.0);
+        ctx.depth = Some(&deep);
+        let mut buy = spec("1", Side::Yes, Action::Buy, 200, 5000);
+        buy.needle_derived = true;
+        assert!(matches!(
+            pt.check_bundle(&ctx, &OrderBundle::single(buy.clone()), &w.tid),
+            Err(Rejection::ClusterCap { ref cluster, .. }) if cluster == "national"
+        ));
+        // Under the national cap, the state:OH cap (10% → 30%) does not bind.
+        w.positions.insert(ExchangeId::new("1"), 4_000); // 2,000 + 100
+        let mut ctx = w.ctx(10_000.0);
+        ctx.depth = Some(&deep);
+        assert_eq!(pt.check_bundle(&ctx, &OrderBundle::single(buy), &w.tid), Ok(()));
     }
 }
