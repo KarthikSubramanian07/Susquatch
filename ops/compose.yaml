@@ -101,6 +101,9 @@ services:
       # rust-live refuses non-loopback metrics addresses: /healthz and /metrics stay inside the container
       # (docker compose exec rust-live curl -s 127.0.0.1:9101/metrics).
       SUSQ_METRICS_ADDR: 127.0.0.1:9101
+      # The code's default filter unless .env or the shell sets RUST_LOG. ops/rehearsal.sh recreates
+      # rust-live with `info,async_nats=warn,susq_live::en=debug` to log the executor's refusal reasons.
+      RUST_LOG: ${RUST_LOG:-info,async_nats=warn}
     depends_on:
       nats: { condition: service_healthy }
     healthcheck:

@@ -981,7 +981,15 @@ impl Engine {
     /// journal events amended with what the gateway actually accepted.
     async fn act(&mut self, name: &str, decision: Decision, now: i64) {
         for note in &decision.notes {
-            tracing::debug!(strategy = name, note = %note);
+            // The election-night executor's notes are its refusal reasons (count-order band,
+            // uncorroborated edge, stale feed, ...). They get their own target so a rehearsal or the
+            // night can turn on exactly those (`RUST_LOG=info,susq_live::en=debug`) without every
+            // other strategy's per-tick chatter.
+            if name == susq_strategies::en_executor::NAME {
+                tracing::debug!(target: "susq_live::en", strategy = name, note = %note);
+            } else {
+                tracing::debug!(strategy = name, note = %note);
+            }
         }
         if !decision.cancels.is_empty() {
             let ids: HashSet<&str> = decision.cancels.iter().map(|c| c.intent_id.as_str()).collect();
