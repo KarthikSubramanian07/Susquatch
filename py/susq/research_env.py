@@ -60,6 +60,35 @@ class OptimizerConfig:
         return self.early_book_frac if now < self.early_until_utc else self.book_frac
 
 
+CONCENTRATE_MODES = ("off", "report", "commit")
+CONCENTRATE_THRESHOLDS = ("targets", "rivals", "max")
+
+
+@dataclass(frozen=True)
+class ConcentrateConfig:
+    """`[optimizer.concentrate]` (EXP-012). Off by default: with mode "off" nothing is computed."""
+
+    mode: str = "off"  # off | report (notes only) | commit (replace the scenario book when it wins)
+    max_ask: float = 0.10  # legs dearer than this cannot clear a ~13x bar even all-in
+    fracs: tuple[float, ...] = (0.9, 1.0)  # share of equity spent on the book; the rest stays cash
+    pair_pool: int = 20  # pairs are drawn from this many best singles
+    min_gain: float = 0.005  # commit only when P(1st) beats the scenario book's by this much (absolute)
+    price_slippage_ticks: int = 2
+    # targets: the run's own T; rivals: EXP-011's best modeled rival R (floored at the leaderboard floor);
+    # max: the larger of the two per world
+    threshold: str = "targets"
+
+    def __post_init__(self) -> None:
+        if self.mode not in CONCENTRATE_MODES:
+            raise ValueError(f"[optimizer.concentrate] mode must be in {CONCENTRATE_MODES}: {self.mode!r}")
+        if self.threshold not in CONCENTRATE_THRESHOLDS:
+            raise ValueError(
+                f"[optimizer.concentrate] threshold must be in {CONCENTRATE_THRESHOLDS}: {self.threshold!r}"
+            )
+        if not self.fracs or any(not (0.0 < f <= 1.0) for f in self.fracs):
+            raise ValueError("[optimizer.concentrate] fracs must be in (0, 1]")
+
+
 @dataclass(frozen=True)
 class ResearchConfig:
     """The subset of `config/susq.toml` the research jobs read."""
@@ -68,6 +97,7 @@ class ResearchConfig:
     lock_utc: datetime = datetime(2026, 11, 4, 17, 0, tzinfo=UTC)
     fair: FairConfig = field(default_factory=FairConfig)
     optimizer: OptimizerConfig = field(default_factory=OptimizerConfig)
+    concentrate: ConcentrateConfig = field(default_factory=ConcentrateConfig)  # EXP-012, off by default
     cluster_limits: dict[str, float] = field(
         default_factory=lambda: {"national": 0.25, "region": 0.15, "state": 0.10, "house": 0.20}
     )
@@ -103,6 +133,16 @@ class ResearchConfig:
             switch_margin=float(opt_raw.get("switch_margin", opt_default.switch_margin)),
             rival_decorrelation=float(opt_raw.get("rival_decorrelation", opt_default.rival_decorrelation)),
         )
+        conc_raw = opt_raw.get("concentrate", {})
+        cd = ConcentrateConfig()
+        concentrate = ConcentrateConfig(
+            mode=str(conc_raw.get("mode", cd.mode)),
+            max_ask=float(conc_raw.get("max_ask", cd.max_ask)),
+            fracs=tuple(float(f) for f in conc_raw.get("fracs", cd.fracs)),
+            pair_pool=int(conc_raw.get("pair_pool", cd.pair_pool)),
+            min_gain=float(conc_raw.get("min_gain", cd.min_gain)),
+            threshold=str(conc_raw.get("threshold", cd.threshold)),
+        )
         lock = raw.get("calendar", {}).get("lock_utc")
         tele = raw.get("telemetry", {})
         return cls(
@@ -110,6 +150,7 @@ class ResearchConfig:
             lock_utc=_parse_utc(lock) if lock else cls.lock_utc,
             fair=fair,
             optimizer=optimizer,
+            concentrate=concentrate,
             cluster_limits={k: float(v) for k, v in raw.get("risk", {}).get("clusters", {}).items()}
             or ResearchConfig().cluster_limits,
             leaderboard_interval_s=float(tele.get("leaderboard_interval_s", 3600)),
