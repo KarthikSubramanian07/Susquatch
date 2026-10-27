@@ -67,6 +67,26 @@
 //! executor opens no new positions and only rolls. Off by default (the field maximum on the night is
 //! not observed).
 //!
+//! Contender mode (EXP-014, `contender_mode`, default off: everything in this paragraph is inert
+//! when it is off). The concentrated profile for first place:
+//!
+//! * **Hold to the call.** The `roll_within_pts` roll is not taken. A held leg is sold only once its
+//!   bid is at least `contender_exit_bid` (sold at no less than that), or once the needle has
+//!   called the race, model SE at or below `contender_call_se`, at no less than the leg's
+//!   probability minus `min_edge_pts` (the edge any next race must clear; a leg called against us
+//!   is dumped at any bid). Locked legs are still never sold, and quiet posteriors never exit.
+//! * **Chain.** Buys clear the same `min_edge_pts` / `se_mult` / count-order / corroboration bars,
+//!   but are collected across every race and sent ranked by edge × the notional available within
+//!   the limit, so the night budget (`contender_budget_frac`, enforced by risk) goes to the best
+//!   race first, and the proceeds of each exit fund the next.
+//! * Risk, not this strategy, decides how far a market may be built: up to
+//!   `contender_market_frac` of equity on a book holding `contender_min_depth` within
+//!   `contender_depth_window_pts` of the touch on the side taken (5% otherwise). Every order is
+//!   still at most `max_order_frac` of equity and never larger than the depth within its limit.
+//!
+//! The needle watchdog, the disputed-race and stale-feed gates, and the contender switch are the
+//! same in both modes.
+//!
 //! Every order is `needle_derived` with `fair_yes = q`, and every order the executor sends is also
 //! journalled as an [`ORDER_EVENT`] carrying the registered count order behind it.
 
@@ -167,6 +187,23 @@ struct Mode {
 struct LockBuy {
     lean: Lean,
     posterior_age_s: f64,
+}
+
+/// A buy the executor wants to send. With contender mode off each is sent as soon as it is
+/// decided; with it on they are ranked by `score` (edge × depth within the limit) first.
+#[derive(Debug)]
+struct Candidate {
+    score: f64,
+    event: serde_json::Value,
+    bundle: OrderBundle,
+}
+
+/// Send candidates in order: bundles and their order events.
+fn flush(candidates: &mut Vec<Candidate>, d: &mut Decision) {
+    for c in candidates.drain(..) {
+        d.event(ORDER_EVENT, c.event);
+        d.bundles.push(c.bundle);
+    }
 }
 
 /// Proxy standard error of a posterior win probability: `sqrt(q (1 − q) / (1 + n_batches))`.
@@ -287,7 +324,15 @@ impl EnExecutor {
         (self.cfg.min_edge_pts / 100.0).max(self.cfg.se_mult * self.posterior_se(post, q))
     }
 
-    fn act(&self, snap: &Snapshot<'_>, post: &RacePosterior, ex: &ExchangeId, mode: Mode, d: &mut Decision) {
+    fn act(
+        &self,
+        snap: &Snapshot<'_>,
+        post: &RacePosterior,
+        ex: &ExchangeId,
+        mode: Mode,
+        d: &mut Decision,
+        out: &mut Vec<Candidate>,
+    ) {
         let Some(rule) = snap.markets.rule(ex).filter(|r| r.verified) else {
             return;
         };
@@ -319,8 +364,24 @@ impl EnExecutor {
         let locked = snap.is_locked(ex);
         let count_order = self.count_order_at(&post.race_id, snap.now_ns);
         // Rolls only reduce exposure and are never gated by the playbook; a quiet posterior (lock
-        // rule) is never rolled on.
+        // rule) is never rolled on. Contender mode holds to the call instead of rolling.
         if let Some(side) = held_side.filter(|_| mode.lock.is_none())
+            && self.cfg.contender_mode
+        {
+            let exit = HeldLeg {
+                post,
+                ex,
+                book,
+                side,
+                held: held.abs(),
+                q,
+                locked,
+                count_order: count_order.as_ref(),
+            };
+            if self.contender_exit(snap, &exit, d) {
+                return;
+            }
+        } else if let Some(side) = held_side.filter(|_| mode.lock.is_none())
             && self.roll(
                 snap,
                 post,
@@ -353,7 +414,93 @@ impl EnExecutor {
             count_order: count_order.as_ref(),
             lock: mode.lock,
         };
-        self.buy(snap, &ctx, d);
+        self.buy(snap, &ctx, d, out);
+    }
+
+    /// With contender mode off, send each buy as soon as it is decided (the order the executor has
+    /// always used); with it on, keep them for ranking at the end of the pass.
+    fn send_unless_ranking(&self, out: &mut Vec<Candidate>, d: &mut Decision) {
+        if !self.cfg.contender_mode {
+            flush(out, d);
+        }
+    }
+
+    /// Contender mode's exit for a held leg: sell once the bid reaches `contender_exit_bid`, or
+    /// once the needle has called the race (SE ≤ `contender_call_se`) at no less than the leg's
+    /// probability minus `min_edge_pts`. True if acted on.
+    fn contender_exit(&self, snap: &Snapshot<'_>, leg: &HeldLeg<'_>, d: &mut Decision) -> bool {
+        let HeldLeg {
+            post,
+            ex,
+            book,
+            side,
+            held,
+            q,
+            locked,
+            count_order,
+        } = *leg;
+        let Some(bid) = book.touch(side, Action::Sell) else {
+            return false;
+        };
+        let se = self.posterior_se(post, q);
+        let p = side_prob(side, q);
+        let at_exit_bid = Pips::ceil_from_prob(self.cfg.contender_exit_bid).filter(|exit| bid >= *exit);
+        let (floor, why) = match at_exit_bid {
+            Some(exit) => (exit, "exit_bid"),
+            None if se <= self.cfg.contender_call_se => {
+                match Pips::ceil_from_prob((p - self.cfg.min_edge_pts / 100.0).max(0.0)) {
+                    Some(floor) if bid >= floor => (floor, "called"),
+                    _ => return false,
+                }
+            }
+            None => return false,
+        };
+        if locked {
+            d.note(format!(
+                "en {ex}: contender exit due ({why}) but the leg is locked, not sold"
+            ));
+            return false;
+        }
+        let qty = book.sweep(side, Action::Sell, held, floor).qty;
+        let draft = Draft {
+            exchange: ex.clone(),
+            side,
+            action: Action::Sell,
+            qty,
+            price: floor,
+            fair_yes: Some(q),
+        };
+        let key = format!("{ex}:roll");
+        let Some(spec) = draft.into_spec(snap, NAME, &key, self.cfg.order_ttl_s, true) else {
+            return false;
+        };
+        d.note(format!(
+            "en {ex}: contender exit ({why}) {side} x{qty} @ ≥ {floor} (bid {bid}, q {q:.3}, SE {se:.4})"
+        ));
+        d.event(
+            ORDER_EVENT,
+            json!({
+                "intent_id": spec.intent_id,
+                "race_id": post.race_id,
+                "exchange_id": ex.as_str(),
+                "kind": "roll",
+                "contender": true,
+                "exit": why,
+                "side": side.to_string(),
+                "qty": spec.quantity.get(),
+                "limit": floor.prob(),
+                "bid": bid.prob(),
+                "q": q,
+                "se": se,
+                "reported_frac": post.reported_frac,
+                "margin_mean": post.margin_mean,
+                "margin_sd": post.margin_sd,
+                "count_order": count_order.map(CountOrderView::json),
+                "gate": "rolls are never gated",
+            }),
+        );
+        d.bundles.push(OrderBundle::single(spec));
+        true
     }
 
     /// Sell a held side whose bid is within `roll_within_pts` of its probability. True if acted on.
@@ -446,7 +593,7 @@ impl EnExecutor {
         .ok_or_else(|| "posterior has no margin sd to price the count-order band".to_owned())
     }
 
-    fn buy(&self, snap: &Snapshot<'_>, ctx: &BuyCtx<'_>, d: &mut Decision) {
+    fn buy(&self, snap: &Snapshot<'_>, ctx: &BuyCtx<'_>, d: &mut Decision, out: &mut Vec<Candidate>) {
         let BuyCtx {
             post,
             ex,
@@ -502,6 +649,7 @@ impl EnExecutor {
                 return;
             };
             let cap = shares_for_budget(self.cfg.max_order_frac * snap.equity, limit);
+            // Never larger than the depth within the limit.
             let draft = Draft {
                 exchange: ex.clone(),
                 side,
@@ -518,9 +666,7 @@ impl EnExecutor {
                     spec.quantity,
                     describe(ctx.count_order),
                 ));
-                d.event(
-                    ORDER_EVENT,
-                    json!({
+                let mut event = json!({
                         "intent_id": spec.intent_id,
                         "race_id": post.race_id,
                         "exchange_id": ex.as_str(),
@@ -542,16 +688,44 @@ impl EnExecutor {
                         "n_batches": post.n_batches,
                         "posterior_age_s": ctx.lock.map(|l| l.posterior_age_s),
                         "count_order": ctx.count_order.map(CountOrderView::json),
-                    }),
-                );
-                d.bundles.push(OrderBundle::single(spec));
+                });
+                let edge = p - ask.prob();
+                let mut score = 0.0;
+                if self.cfg.contender_mode {
+                    let available = book.sweep(side, Action::Buy, i64::MAX, limit).notional;
+                    let near_touch =
+                        book.depth_near_touch(side, Action::Buy, self.cfg.contender_depth_window_pts);
+                    score = edge * available;
+                    if let Some(body) = event.as_object_mut() {
+                        body.insert("contender".into(), json!(true));
+                        body.insert("edge".into(), json!(edge));
+                        body.insert("depth_within_limit".into(), json!(available));
+                        body.insert("depth_near_touch".into(), json!(near_touch));
+                        body.insert(
+                            "deep_book".into(),
+                            json!(near_touch + 1e-9 >= self.cfg.contender_min_depth),
+                        );
+                        body.insert("score".into(), json!(score));
+                    }
+                }
+                out.push(Candidate {
+                    score,
+                    event,
+                    bundle: OrderBundle::single(spec),
+                });
             }
             return;
         }
     }
 
     /// The lock-time rule over the races the needle has gone quiet on.
-    fn lock_rule(&self, snap: &Snapshot<'_>, no_new_positions: bool, d: &mut Decision) {
+    fn lock_rule(
+        &self,
+        snap: &Snapshot<'_>,
+        no_new_positions: bool,
+        d: &mut Decision,
+        out: &mut Vec<Candidate>,
+    ) {
         let Some(needle) = snap.needle else { return };
         if !self.lock_window_open(snap.now_ns) || no_new_positions {
             return;
@@ -602,10 +776,24 @@ impl EnExecutor {
                 }),
             };
             for ex in snap.markets.exchanges_for_race(race) {
-                self.act(snap, &qp.posterior, ex, mode, d);
+                self.act(snap, &qp.posterior, ex, mode, d, out);
+                self.send_unless_ranking(out, d);
             }
         }
     }
+}
+
+/// A held leg contender mode considers selling.
+#[derive(Clone, Copy)]
+struct HeldLeg<'a> {
+    post: &'a RacePosterior,
+    ex: &'a ExchangeId,
+    book: &'a L2Book,
+    side: Side,
+    held: i64,
+    q: f64,
+    locked: bool,
+    count_order: Option<&'a CountOrderView>,
 }
 
 /// Everything one buy decision reads.
@@ -677,6 +865,7 @@ impl Strategy for EnExecutor {
                 self.cfg.contender_hedge_multiple
             ));
         }
+        let mut out: Vec<Candidate> = Vec::new();
         let mut races: Vec<&RacePosterior> = needle.posteriors.values().collect();
         races.sort_by(|a, b| a.race_id.cmp(&b.race_id));
         for post in races {
@@ -700,10 +889,21 @@ impl Strategy for EnExecutor {
                 lock: None,
             };
             for ex in exchanges {
-                self.act(snap, post, ex, mode, &mut d);
+                self.act(snap, post, ex, mode, &mut d, &mut out);
+                self.send_unless_ranking(&mut out, &mut d);
             }
         }
-        self.lock_rule(snap, no_new_positions, &mut d);
+        self.lock_rule(snap, no_new_positions, &mut d, &mut out);
+        if !out.is_empty() {
+            // Contender mode: the best edge × depth first, so the budget goes there first.
+            out.sort_by(|a, b| b.score.total_cmp(&a.score));
+            d.note(format!(
+                "en: contender mode, {} buys ranked by edge × depth (best {:.1})",
+                out.len(),
+                out[0].score
+            ));
+            flush(&mut out, &mut d);
+        }
         d
     }
 }
@@ -1388,5 +1588,263 @@ mod tests {
         let mut w = nevada_lock_world(5_400, 0.6);
         w.equity = 250_000.0;
         assert!(switched(2.0).decide(&w.snap()).bundles.is_empty());
+    }
+
+    // ── EXP-014: contender mode ──────────────────────────────────────────────────────────────
+
+    fn contender() -> EnCfg {
+        EnCfg {
+            contender_mode: true,
+            ..cfg()
+        }
+    }
+
+    /// Every contender knob moved far from its default, with the mode still off.
+    fn contender_knobs_moved_but_off() -> EnCfg {
+        EnCfg {
+            contender_mode: false,
+            contender_budget_frac: 1.0,
+            contender_exit_bid: 0.5,
+            contender_call_se: 1.0,
+            contender_market_frac: 1.0,
+            contender_min_depth: 1.0,
+            contender_depth_window_pts: 50.0,
+            contender_loss_per_hour_frac: 1.0,
+            ..cfg()
+        }
+    }
+
+    /// The worlds the executor's other tests exercise: rolls, buys either side, several races, a
+    /// stale feed, a lock-rule buy and an unhealthy needle.
+    fn assorted_worlds() -> Vec<World> {
+        let mut out = Vec::new();
+        let mut w = world(0.70, 9_999);
+        w.position("1", 40);
+        w.book("1", &[(6900, 100)], &[(7100, 100)]);
+        out.push(w);
+        let mut w = world(0.90, 9_999);
+        w.book("1", &[(5000, 100)], &[(5500, 100)]);
+        w.book("2", &[(2500, 1_000)], &[(3000, 1_000)]);
+        w.rule("9", "m9", "2026-SEN-PA", "DEM", true);
+        w.posterior(RacePosterior {
+            race_id: "2026-SEN-PA".into(),
+            p_dem: 0.9,
+            p_rep: 0.1,
+            n_batches: 9_999,
+            ..Default::default()
+        });
+        w.book("9", &[(7000, 50_000)], &[(8100, 50_000)]);
+        out.push(w);
+        let mut w = world(0.70, 9_999);
+        w.stale_feed(RACE);
+        w.position("1", 40);
+        w.book("1", &[(6900, 100)], &[(7100, 100)]);
+        out.push(w);
+        let mut w = world(0.95, 100);
+        w.position("1", 40);
+        w.book("1", &[(9400, 30), (9300, 20)], &[(9600, 100)]);
+        out.push(w);
+        out.push(nevada_lock_world(5_400, 0.6));
+        let mut w = world(0.9, 50);
+        w.book("1", &[(5000, 100)], &[(5500, 100)]);
+        w.needle.as_mut().expect("needle").healthy = false;
+        out.push(w);
+        out
+    }
+
+    /// With `contender_mode = false` the new knobs are inert: whatever their values, every decision
+    /// equals today's.
+    #[test]
+    fn contender_off_is_identical_whatever_the_knobs() {
+        for (i, w) in assorted_worlds().iter().enumerate() {
+            let today = gated(cfg()).decide(&w.snap());
+            let moved = gated(contender_knobs_moved_but_off()).decide(&w.snap());
+            assert_eq!(today, moved, "world {i}");
+        }
+        // And the order events carry no contender fields.
+        let w = &assorted_worlds()[1];
+        let d = gated(cfg()).decide(&w.snap());
+        assert!(!d.events.is_empty());
+        assert!(d.events.iter().all(|e| e.body.get("contender").is_none()));
+    }
+
+    /// Hold to the call: the 2-point roll that the default profile takes is not taken.
+    #[test]
+    fn contender_does_not_take_the_small_roll() {
+        let mut w = world(0.70, 100); // SE 0.046: not called
+        w.position("1", 40);
+        w.book("1", &[(6900, 100)], &[(7100, 100)]);
+        assert_eq!(
+            legs(&EnExecutor::new(cfg()).decide(&w.snap())),
+            vec![("1".into(), Side::Yes, Action::Sell, 6800, 40)],
+            "default: rolls at q − 2"
+        );
+        let d = EnExecutor::new(contender()).decide(&w.snap());
+        assert!(d.bundles.is_empty(), "{:?}", legs(&d));
+    }
+
+    /// Exit once the bid reaches contender_exit_bid, at no less than it, within the held size.
+    #[test]
+    fn contender_exits_at_the_exit_bid() {
+        let mut w = world(0.95, 100); // SE 0.022: not called
+        w.position("1", 40);
+        w.book("1", &[(9200, 500)], &[(9600, 100)]);
+        assert!(
+            EnExecutor::new(contender()).decide(&w.snap()).bundles.is_empty(),
+            "bid 0.92 < 0.93: hold"
+        );
+        w.book("1", &[(9400, 30), (9300, 20), (9200, 500)], &[(9600, 100)]);
+        let d = EnExecutor::new(contender()).decide(&w.snap());
+        assert_eq!(legs(&d), vec![("1".into(), Side::Yes, Action::Sell, 9300, 40)]);
+        let ev = order_events(&d);
+        assert_eq!(ev[0]["kind"], "roll");
+        assert_eq!(ev[0]["exit"], "exit_bid");
+        assert_eq!(ev[0]["contender"], true);
+        // Never more than the depth at or above the exit price.
+        w.position("1", 400);
+        assert_eq!(legs(&EnExecutor::new(contender()).decide(&w.snap()))[0].4, 50);
+        // A NO holding exits on the NO bid (1 − YES ask): YES ask 0.06 → NO bid 0.94.
+        let mut w = world(0.05, 100);
+        w.position("2", -10); // NO on REP: q_rep = 0.95, NO worth 0.05; hold it anyway
+        w.position("1", -10); // NO on DEM: worth 0.95
+        w.book("1", &[(400, 100)], &[(600, 100)]);
+        let d = EnExecutor::new(contender()).decide(&w.snap());
+        assert_eq!(legs(&d), vec![("1".into(), Side::No, Action::Sell, 9300, 10)]);
+    }
+
+    /// Exit once the needle calls the race (SE at or below contender_call_se): a winner at no less
+    /// than q − min_edge, a loser at any bid; an uncalled race is held either way.
+    #[test]
+    fn contender_exits_when_the_needle_calls_the_race() {
+        let en = EnExecutor::new(contender());
+        // D +8 ± 2: q 0.99997, SE 6.7e-5. Bid 0.925 is under the exit bid but over q − 8 pts.
+        let mut w = race_world("2026-SEN-FL-S", "2026-11-04T03:00:00Z", 8.0, 2.0, 0.9);
+        w.position("1", 40);
+        w.book("1", &[(9150, 100)], &[(9600, 100)]);
+        assert!(en.decide(&w.snap()).bundles.is_empty(), "0.915 < q − 8 pts");
+        w.book("1", &[(9250, 100)], &[(9600, 100)]);
+        let d = en.decide(&w.snap());
+        assert_eq!(legs(&d), vec![("1".into(), Side::Yes, Action::Sell, 9200, 40)]);
+        assert_eq!(order_events(&d)[0]["exit"], "called");
+        // Called against us: q_dem 0.00003, dump the YES at any bid.
+        let mut w = race_world("2026-SEN-FL-S", "2026-11-04T03:00:00Z", -8.0, 2.0, 0.9);
+        w.position("1", 40);
+        w.book("1", &[(300, 100)], &[(900, 100)]);
+        let d = en.decide(&w.snap());
+        assert_eq!(legs(&d), vec![("1".into(), Side::Yes, Action::Sell, 50, 40)]);
+        // Not called (D −1 ± 2, SE 0.18): a losing leg is held, not dumped.
+        let mut w = race_world("2026-SEN-FL-S", "2026-11-04T03:00:00Z", -1.0, 2.0, 0.5);
+        w.position("1", 40);
+        w.book("1", &[(3000, 100)], &[(3200, 100)]);
+        assert!(en.decide(&w.snap()).bundles.is_empty());
+        // A tighter call threshold leaves the winner held at 0.925.
+        let strict = EnExecutor::new(EnCfg {
+            contender_call_se: 0.000_01,
+            ..contender()
+        });
+        let mut w = race_world("2026-SEN-FL-S", "2026-11-04T03:00:00Z", 8.0, 2.0, 0.9);
+        w.position("1", 40);
+        w.book("1", &[(9250, 100)], &[(9600, 100)]);
+        assert!(strict.decide(&w.snap()).bundles.is_empty());
+    }
+
+    #[test]
+    fn contender_never_sells_a_locked_leg_or_exits_on_a_quiet_posterior() {
+        let mut w = world(0.95, 100);
+        w.position("1", 40);
+        w.target("1", 40, 0.9, true);
+        w.book("1", &[(9400, 100)], &[(9600, 100)]);
+        let d = EnExecutor::new(contender()).decide(&w.snap());
+        assert!(d.bundles.is_empty());
+        assert!(d.notes.iter().any(|n| n.contains("locked")));
+        let mut w = nevada_lock_world(5_400, 0.6);
+        w.position("1", 40);
+        w.book("1", &[(9900, 500)], &[(9950, 500)]);
+        let d = gated(contender()).decide(&w.snap());
+        assert!(legs(&d).iter().all(|l| l.2 != Action::Sell), "{:?}", legs(&d));
+    }
+
+    /// Chain: buys clear the unchanged gates and go out best edge × depth first.
+    #[test]
+    fn contender_ranks_buys_by_edge_times_depth() {
+        let mut w = world(0.90, 9_999);
+        // OH (exchange 1): edge 0.10 but only 100 shares within the 0.82 limit (80 SUSQies).
+        w.book("1", &[(5000, 100)], &[(8000, 100)]);
+        // PA (exchange 9): edge 0.09 on a deep book (8,100 SUSQies within the limit).
+        w.rule("9", "m9", "2026-SEN-PA", "DEM", true);
+        w.posterior(RacePosterior {
+            race_id: "2026-SEN-PA".into(),
+            p_dem: 0.9,
+            p_rep: 0.1,
+            n_batches: 9_999,
+            ..Default::default()
+        });
+        w.book("9", &[(7000, 10_000)], &[(8100, 10_000)]);
+        let order = |d: &Decision| legs(d).iter().map(|l| l.0.clone()).collect::<Vec<_>>();
+        assert_eq!(order(&EnExecutor::new(cfg()).decide(&w.snap())), vec!["1", "9"]);
+        let d = EnExecutor::new(contender()).decide(&w.snap());
+        assert_eq!(order(&d), vec!["9", "1"], "deep book first");
+        let ev = order_events(&d);
+        assert_eq!(ev[0]["exchange_id"], "9");
+        assert!(ev[0]["score"].as_f64().expect("score") > ev[1]["score"].as_f64().expect("score"));
+        assert_eq!(ev[0]["deep_book"], false, "8,100 near the touch < 100k");
+        // Sizes are unchanged: 2% of equity per order, never past the depth within the limit.
+        let l = legs(&d);
+        assert_eq!(l[0].4, shares_for_budget(2_000.0, Pips::new(8200).expect("p")));
+        assert_eq!(l[1].4, 100);
+        // The gates are unchanged: an edge under 8 points is not a buy in either mode.
+        w.book("9", &[(7000, 10_000)], &[(8250, 10_000)]);
+        assert_eq!(order(&EnExecutor::new(contender()).decide(&w.snap())), vec!["1"]);
+    }
+
+    #[test]
+    fn contender_flags_deep_books_in_its_order_events() {
+        let mut w = world(0.90, 9_999);
+        w.book("1", &[(5000, 100)], &[(8000, 100_000), (8200, 50_000)]); // 80k + 41k within 3c
+        let d = EnExecutor::new(contender()).decide(&w.snap());
+        let ev = order_events(&d);
+        assert_eq!(ev[0]["deep_book"], true);
+        assert!((ev[0]["depth_near_touch"].as_f64().expect("depth") - 121_000.0).abs() < 1e-6);
+    }
+
+    /// The safety gates do not move in contender mode.
+    #[test]
+    fn contender_keeps_the_watchdog_dispute_stale_feed_and_corroboration_gates() {
+        let en = EnExecutor::new(contender());
+        // Needle unhealthy: every needle-derived order is cancelled and nothing is sent.
+        let mut w = world(0.9, 50);
+        w.book("1", &[(5000, 100)], &[(5500, 100)]);
+        let mut live = intent("en:1:yes:1", NAME, "1", Side::Yes, Action::Buy, 5000);
+        live.needle_derived = true;
+        w.intents.push(live);
+        w.needle.as_mut().expect("needle").healthy = false;
+        let d = en.decide(&w.snap());
+        assert!(d.bundles.is_empty());
+        assert_eq!(d.cancels.len(), 1);
+        w.needle = None;
+        assert!(en.decide(&w.snap()).bundles.is_empty());
+        // Disputed race: refused, its orders cancelled.
+        let mut w = world(0.9, 9_999);
+        w.book("1", &[(5000, 100)], &[(5500, 100)]);
+        w.dispute(RACE);
+        assert!(en.decide(&w.snap()).bundles.is_empty());
+        // Stale feed: no new buys, but an exit still goes.
+        let mut w = world(0.95, 100);
+        w.stale_feed(RACE);
+        w.book("1", &[(5000, 100)], &[(5500, 100)]);
+        assert!(en.decide(&w.snap()).bundles.is_empty());
+        w.position("1", 40);
+        w.book("1", &[(9400, 100)], &[(9600, 100)]);
+        assert_eq!(legs(&en.decide(&w.snap())).len(), 1);
+        // Corroboration: one batch and no fair move is still refused.
+        let en = EnExecutor::new(EnCfg {
+            se_mult: 0.0,
+            ..contender()
+        });
+        let mut w = world(0.80, 1);
+        w.book("1", &[(6000, 100)], &[(6500, 100)]);
+        let d = en.decide(&w.snap());
+        assert!(d.bundles.is_empty());
+        assert!(d.notes.iter().any(|n| n.contains("uncorroborated")));
     }
 }

@@ -159,6 +159,51 @@ def drill_compare(
     )
 
 
+@app.command("drill-contender")
+def drill_contender(
+    spec: Path,
+    backend: Annotated[str, typer.Option(help="cpp (falls back to reference) or reference")] = "cpp",
+    seeds: Annotated[int, typer.Option(help="seeded market models per profile")] = 200,
+    start_multiple: Annotated[float, typer.Option(help="equity multiple at 19:00 ET")] = 0.98,
+    target_multiple: Annotated[float, typer.Option(help="multiple a run must reach to count")] = 10.0,
+    budget_frac: Annotated[float, typer.Option(help="contender_budget_frac")] = 0.80,
+    market_frac: Annotated[float, typer.Option(help="contender_market_frac")] = 0.30,
+    exit_bid: Annotated[float, typer.Option(help="contender_exit_bid")] = 0.93,
+    median_depth: Annotated[float, typer.Option(help="median SUSQies near the touch per side")] = 134_000.0,
+    delay_lo_s: Annotated[float, typer.Option(help="shortest market lag behind our posterior")] = 300.0,
+    delay_hi_s: Annotated[float, typer.Option(help="longest market lag behind our posterior")] = 1800.0,
+    chaos_drop: Drop = None,
+    chaos_malformed_every: Malformed = 0,
+    chaos_kill: Kill = None,
+    out_dir: Annotated[Path, typer.Option()] = REPO_ROOT / "reports" / "drills",
+) -> None:
+    """EXP-014: replay a spec once, run the contender and default night profiles over N seeded market
+    models, and write reports/drills/<date>-contender.md (multiple distribution, best path, refusals)."""
+    from susq.replay.contender import ContenderConfig, render_contender, run_seeds
+
+    batches, meta, p = materialize(load_spec(spec))
+    needle, note = select_backend(backend)
+    needle.load_prior(p)
+    chaos = _chaos(chaos_drop, chaos_malformed_every, chaos_kill)
+    record = replay_in_process(batches, needle, speed=0.0, chaos=chaos)
+    cfg = ContenderConfig(
+        start_multiple=start_multiple,
+        target_multiple=target_multiple,
+        contender_budget_frac=budget_frac,
+        contender_market_frac=market_frac,
+        exit_bid=exit_bid,
+        median_depth=median_depth,
+        delay_lo_s=delay_lo_s,
+        delay_hi_s=delay_hi_s,
+    )
+    drill = run_seeds(record, p, meta.races, cfg, seeds)
+    text = render_contender(drill, title=spec.stem, replay=str(spec), backend_note=note, cfg=cfg)
+    path = write_report(text, out_dir, date=datetime.now(UTC).strftime("%Y-%m-%d") + "-contender")
+    best = max(r.final_multiple for r in drill.contender) if drill.contender else 0.0
+    hits = sum(r.final_multiple >= target_multiple for r in drill.contender)
+    typer.echo(f"{path}: contender best {best:.2f}x, {hits}/{seeds} runs >= {target_multiple:g}x")
+
+
 @app.command()
 def download(
     year: int,

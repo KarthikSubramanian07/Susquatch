@@ -16,10 +16,12 @@ use std::{
     time::Duration,
 };
 
-use susq_book::L2Book;
+use susq_book::{BookStore, L2Book};
 use susq_bus::monitor::NeedleSnapshot;
 use susq_contracts::v1::{self, MarketMap};
-use susq_core::{Clock, Config, ExchangeId, MarketId, MarketIndex, OrderBundle, clock::duration_ns};
+use susq_core::{
+    Action, Clock, Config, ExchangeId, MarketId, MarketIndex, OrderBundle, Side, clock::duration_ns,
+};
 use susq_gateway::{Blocked, Gateway, LeaseStatus, PaperBroker, SendOutcome};
 use susq_platform::{
     OrderStatusFilter, PlatformAdapter, PlatformError, PnlPeriod, all_orders, all_relationships,
@@ -27,7 +29,9 @@ use susq_platform::{
     models::LeaderboardPeriod,
     realtime::{RealtimeEvent, ResyncReason, market_of_channel},
 };
-use susq_risk::{BreakerConfig, Breakers, BundleCost, PreTrade, RiskContext, RiskLimits};
+use susq_risk::{
+    BreakerConfig, Breakers, BundleCost, ContenderCap, DepthProbe, PreTrade, RiskContext, RiskLimits,
+};
 use susq_strategies::{
     ConstraintsRacer, Decision, EnExecutor, FairQuote, FarQuoter, IntentView, MarketMaker, NeedleView,
     QuietPosterior, ScenarioExecutor, Snapshot, Sniper, Strategy,
@@ -167,6 +171,28 @@ impl BundleCost for CollateralCost {
     }
 }
 
+/// Fresh books as risk's depth probe for the contender cap (EXP-014). A stale or dirty book reads
+/// as no depth, so it never qualifies.
+#[derive(Debug)]
+struct FreshDepth<'a> {
+    books: &'a BookStore,
+    now_ns: i64,
+    max_age_ns: i64,
+}
+
+impl DepthProbe for FreshDepth<'_> {
+    fn depth_near_touch(
+        &self,
+        exchange: &ExchangeId,
+        side: Side,
+        action: Action,
+        window_pts: f64,
+    ) -> Option<f64> {
+        let book = self.books.fresh(exchange, self.now_ns, self.max_age_ns)?;
+        Some(book.depth_near_touch(side, action, window_pts))
+    }
+}
+
 impl Engine {
     /// Build the engine (no I/O yet; see [`Engine::bootstrap`]).
     pub fn new(d: EngineDeps) -> Self {
@@ -180,13 +206,28 @@ impl Engine {
             slug: cfg.platform.tournament_slug.clone(),
             ..World::default()
         };
+        let en = &cfg.strategies.en;
+        let mut limits = RiskLimits::from_cfg(&cfg.risk)
+            .with_needle_glitch_pts(en.en_glitch_pts)
+            .with_needle_budget_frac(en.active_night_budget_frac());
+        if en.contender_mode {
+            // EXP-014: only ever on by an explicit config flip.
+            tracing::warn!(
+                budget = en.contender_budget_frac,
+                market_frac = en.contender_market_frac,
+                min_depth = en.contender_min_depth,
+                loss_per_hour = en.contender_loss_per_hour_frac,
+                "election-night contender mode is ON"
+            );
+            limits = limits.with_contender_cap(ContenderCap {
+                market_frac: en.contender_market_frac,
+                min_depth: en.contender_min_depth,
+                window_pts: en.contender_depth_window_pts,
+            });
+        }
         Self {
-            risk: PreTrade {
-                limits: RiskLimits::from_cfg(&cfg.risk)
-                    .with_needle_glitch_pts(cfg.strategies.en.en_glitch_pts)
-                    .with_needle_budget_frac(cfg.strategies.en.night_budget_frac),
-            },
-            breakers: Breakers::new(BreakerConfig::from_cfg(&cfg.risk)),
+            risk: PreTrade { limits },
+            breakers: Breakers::new(BreakerConfig::from_cfg(&cfg.risk).with_contender(en)),
             targets: TargetsReader::new(ReaderConfig::from_core(cfg, &d.home)),
             fair: FairReader::new(
                 d.home.join(&cfg.paths.fair_live),
@@ -942,7 +983,7 @@ impl Engine {
             let violations = self.world.violation_list();
             let marks = self.world.marks();
             let locked = self.locked();
-            let ctx = self.risk_ctx(now, &marks, &live, &locked, needle_used);
+            let ctx = self.risk_ctx(now, &marks, &live, &locked, needle_used, None);
             let cluster_utilization = self.risk.cluster_utilization(&ctx);
             let targets = self.targets.current().map(|t| t.file());
             let snap = Snapshot {
@@ -981,7 +1022,15 @@ impl Engine {
     /// journal events amended with what the gateway actually accepted.
     async fn act(&mut self, name: &str, decision: Decision, now: i64) {
         for note in &decision.notes {
-            tracing::debug!(strategy = name, note = %note);
+            // The election-night executor's notes are its refusal reasons (count-order band,
+            // uncorroborated edge, stale feed, ...). They get their own target so a rehearsal or the
+            // night can turn on exactly those (`RUST_LOG=info,susq_live::en=debug`) without every
+            // other strategy's per-tick chatter.
+            if name == susq_strategies::en_executor::NAME {
+                tracing::debug!(target: "susq_live::en", strategy = name, note = %note);
+            } else {
+                tracing::debug!(strategy = name, note = %note);
+            }
         }
         if !decision.cancels.is_empty() {
             let ids: HashSet<&str> = decision.cancels.iter().map(|c| c.intent_id.as_str()).collect();
@@ -1025,6 +1074,7 @@ impl Engine {
         live: &'a [susq_risk::LiveOrder],
         locked: &'a HashSet<ExchangeId>,
         needle_used: f64,
+        depth: Option<&'a dyn DepthProbe>,
     ) -> RiskContext<'a> {
         RiskContext {
             now: susq_core::clock::from_ns(now),
@@ -1043,6 +1093,7 @@ impl Engine {
             bundle_cost: self
                 .collateral_sizing
                 .then_some(&self.collateral as &dyn BundleCost),
+            depth,
         }
     }
 
@@ -1067,7 +1118,13 @@ impl Engine {
         };
         let marks = self.world.marks();
         let locked = self.locked();
-        let ctx = self.risk_ctx(now, &marks, &live, &locked, needle_used);
+        // The contender cap reads depth off the same fresh books the strategies decided on.
+        let probe = FreshDepth {
+            books: &self.world.books,
+            now_ns: now,
+            max_age_ns: duration_ns(Duration::from_secs(self.d.cfg.live.book_max_age_s)),
+        };
+        let ctx = self.risk_ctx(now, &marks, &live, &locked, needle_used, Some(&probe));
         let glitch: f64 = bundle
             .legs
             .iter()

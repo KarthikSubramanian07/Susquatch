@@ -291,6 +291,10 @@ fn record_gauges(engine: &Engine) {
     });
     let needle_ok = w.needle.as_ref().is_some_and(|n| n.healthy);
     metrics::gauge!("susq_needle_healthy").set(if needle_ok { 1.0 } else { 0.0 });
+    // Races with a posterior the executor may act on right now (0 while the needle is unhealthy):
+    // the rehearsal's evidence that posteriors reach the executor, not only the bus.
+    let actionable = w.needle.as_ref().map_or(0, |n| n.posteriors.len());
+    metrics::gauge!("susq_needle_posteriors").set(actionable as f64);
     for h in w.health.values() {
         let v = match h.state.as_str() {
             "ok" => 2.0,

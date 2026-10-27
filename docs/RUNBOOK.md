@@ -73,7 +73,7 @@ Nothing you do can extend it, and nothing should.
 
 | ET (UTC) | What happens | You |
 |---|---|---|
-| **17:00 (22:00Z)** | Pre-flight | `git pull && make up` only if a fix was merged today (then `make ps`). **Stage the 2026 needle prior** from the current fair values, inside the always-on scheduler container (it has `state/`, `data/` and `config/` mounted). From `/opt/susquatch`: (1) `docker compose --project-directory . -f ops/compose.yaml exec python-scheduler python -m susq.replay spec2026 --market-map state/market_map.json --fair state/fair_live.json --history data/replay/county_results_2022.csv --history data/replay/county_results_2024.csv --history data/replay/house_results_2022.csv --history data/replay/house_results_2024.csv --poll-closing config/poll_closing.toml --out state/needle/general_2026.toml`, (2) `docker compose --project-directory . -f ops/compose.yaml exec python-scheduler python -m susq.replay prior state/needle/general_2026.toml --out state/needle/prior.json`. It should print 71 races (every Cup Senate and Governor race, plus the Cup's California House seats CA-22 and CA-48 as single reporting units) and list only non-California House races as uncovered. If `data/replay/county_results_*.csv` are missing (first run on a fresh disk), run `docker compose --project-directory . -f ops/compose.yaml exec python-scheduler python -m susq.replay download 2022 --market-map state/market_map.json --out data/replay/county_results_2022.csv` and the same for 2024 first (about 5 min each; per-state files are cached under `data/replay/medsl/`). The California House history is one small file per year: `... python -m susq.replay download 2022 CA --house-only --out data/replay/house_results_2022.csv` and the same for 2024 (`ops/needle-prior.sh` fetches them itself when missing). The needle reads the prior only at start, so stage it before `make up` below. Rehearse with `specs/sample_2022.toml`; the same two steps run on Oct 31 for the final pre-night prior. **Arm the election-night executor:** in `config/susq.toml`, under `[strategies.en]`, change the line `enabled = false` to `enabled = true`. That is the only line to flip (every other knob in that section is already set to its documented value); the executor ships off and nothing else turns it on. rust-live reads the file at start, so do this before `make up`; the bridge ignores the section. In `.env` set `COMPOSE_PROFILES=rust,election` and `SUSQ_LIVE_FLAGS=--election` (rust-live runs the results pollers), then `make up` so `needle` is running and rust-live restarts with the executor armed. `make selfcheck`. Dashboard on the phone, charger in. |
+| **17:00 (22:00Z)** | Pre-flight | `git pull && make up` only if a fix was merged today (then `make ps`). **Stage the 2026 needle prior** from the current fair values, inside the always-on scheduler container (it has `state/`, `data/` and `config/` mounted). From `/opt/susquatch`: (1) `docker compose --project-directory . -f ops/compose.yaml exec python-scheduler python -m susq.replay spec2026 --market-map state/market_map.json --fair state/fair_live.json --history data/replay/county_results_2022.csv --history data/replay/county_results_2024.csv --history data/replay/house_results_2022.csv --history data/replay/house_results_2024.csv --poll-closing config/poll_closing.toml --out state/needle/general_2026.toml`, (2) `docker compose --project-directory . -f ops/compose.yaml exec python-scheduler python -m susq.replay prior state/needle/general_2026.toml --out state/needle/prior.json`. It should print 71 races (every Cup Senate and Governor race, plus the Cup's California House seats CA-22 and CA-48 as single reporting units) and list only non-California House races as uncovered. If `data/replay/county_results_*.csv` are missing (first run on a fresh disk), run `docker compose --project-directory . -f ops/compose.yaml exec python-scheduler python -m susq.replay download 2022 --market-map state/market_map.json --out data/replay/county_results_2022.csv` and the same for 2024 first (about 5 min each; per-state files are cached under `data/replay/medsl/`). The California House history is one small file per year: `... python -m susq.replay download 2022 CA --house-only --out data/replay/house_results_2022.csv` and the same for 2024 (`ops/needle-prior.sh` fetches them itself when missing). The needle reads the prior only at start, so stage it before `make up` below. The dress rehearsals (§2b) run these same two steps; they run again on Oct 31 for the final pre-night prior. **Arm the election-night executor:** in `config/susq.toml`, under `[strategies.en]`, change the line `enabled = false` to `enabled = true`. That is the only line to flip (every other knob in that section is already set to its documented value); the executor ships off and nothing else turns it on. rust-live reads the file at start, so do this before `make up`; the bridge ignores the section. In `.env` set `COMPOSE_PROFILES=rust,election` and `SUSQ_LIVE_FLAGS=--election` (rust-live runs the results pollers), then `make up` so `needle` is running and rust-live restarts with the executor armed. `make selfcheck`. Dashboard on the phone, charger in. |
 | 17:15 | Drill | `needle` heartbeat tile green. Replay smoke if you have one queued. Confirm `targets` tile says *accepted*. |
 | **18:00 (23:00Z)** | Priority window opens (automatic) | `make priority` shows our scheduler and calshi's backfill/research at weight 128. First polls close (IN, KY). |
 | 19:00–20:00 | GA, VA, NC, OH, then the big East wave | Watch *events*. A `needle silent` or `seq gap` event means the executor already stopped acting on posteriors; you do nothing unless it lasts more than 10 min. |
@@ -92,7 +92,7 @@ something the breakers can't: positions moving against a race that's already cal
 market map that's obviously inverted (D/R swapped), or the dashboard showing trades while `needle` is red. Write
 what you saw in the reason. It goes into `ops/KILL` and tomorrow's summary.
 
-**What healthy looks like at 22:00 ET:** heartbeat < 3 min and green, `needle` ok with detail "posteriors …",
+**What healthy looks like at 22:00 ET:** heartbeat < 3 min and green, `needle` ok with detail "last healthy message … ms ago",
 `kalshi` ok, `status-writer` ok, stage **emerge**, events every few minutes, no clay anywhere except the Kill button.
 
 **API capacity on the night.** The platform gives each **account** one rate budget shared by every key:
@@ -159,18 +159,46 @@ Both run on the VM beside the live trader, with rust-live in `paper-run` **witho
 `SUSQ_LIVE_FLAGS=` for the rehearsal) and the needle on the bus: the replay is the results feed, and the pollers would
 only add stale-feed gates, since before Nov 3 16:00 ET they poll every 30 min (`config/enr_sources.toml`
 `idle_until_utc`). Put `--election` back afterwards so the soak keeps exercising the adapters.
-1. Stage the rehearsal prior and timeline: `python -m susq.replay spec2026 …` then `prior` and `build` (§2 pre-flight
-   commands) into `state/needle/prior.json` and `data/replay/`; restart `needle`.
+
+**`ops/rehearsal.sh` runs steps 1-5 with checks** (`--chaos` for rehearsal #2, `--help` for the timings) and writes the
+step-5 record to `reports/rehearsal/<UTC>/record.txt`. It refuses to start unless rust-live runs `paper-run` without
+`--election`, never edits `.env`, never touches the bridge (every compose call names its service and passes
+`--no-deps`), and however it exits it restores `config/susq.toml` byte for byte and recreates rust-live disarmed.
+The steps by hand, with `C="docker compose --project-directory . -f ops/compose.yaml"`:
+1. Stage the prior and the timeline from the 2026 spec (the two §2 pre-flight steps): `ops/needle-prior.sh` (spec2026
+   and prior into `state/needle/`, keeps `prior.prev.json`, restarts the needle if it runs), then
+   `$C exec python-scheduler python -m susq.replay build state/needle/general_2026.toml --out data/replay/rehearsal_2026.jsonl`.
+   Start the needle if it is not running: `$C --profile election up -d --no-deps needle` (the first time on the VM,
+   `$C --profile election build needle` before it). Use the 2026 spec, not `py/susq/replay/specs/sample_2022.toml`:
+   its race ids are 2022 ones the market map does not know, so rust-live's watchdog rejects every posterior and the
+   needle reads unhealthy for the whole run. The sample spec is for the offline `drill`, which needs no bus.
 2. In the VM checkout only, set `[strategies.en] enabled = true` (rust-live paper reads it; the bridge ignores the
-   section) and restart rust-live. Revert the file when the rehearsal ends (`git checkout config/susq.toml`).
-3. Publish the timeline into NATS from the scheduler container at 10x (`python -m susq.replay publish
-   /susq/data/replay/<file>.jsonl --nats nats://nats:4222 --speed 10`); rehearsal #2 adds `--chaos-drop`,
-   `--chaos-malformed-every` and `--chaos-kill`.
-4. Mid-run, `docker compose … stop needle` for 60 s: the executor must cancel its working orders and place nothing
-   until the needle is healthy again; then `touch ops/KILL` once and un-kill.
-5. Record: posteriors received, election-night intents placed, fills on paper, 429s, `free -m`, kernel OOM count,
-   and every refusal reason. Pass = orders only on races with edge, none while the needle was down, no OOM, no
+   section) and recreate rust-live with the executor's refusal reasons in its log:
+   `RUST_LOG=info,async_nats=warn,susq_live::en=debug $C up -d --no-build --no-deps --force-recreate rust-live`.
+   Revert the file when the rehearsal ends (`git checkout config/susq.toml`) and recreate rust-live the same way,
+   without `RUST_LOG=`.
+3. Publish the timeline into NATS from the scheduler container at 10x: `$C exec python-scheduler python -m susq.replay
+   publish /susq/data/replay/rehearsal_2026.jsonl --nats nats://nats:4222 --speed 10`. The timeline is 17 replay hours,
+   about 102 minutes at 10x. Rehearsal #2 adds `--chaos-drop 3600:600 --chaos-malformed-every 25 --chaos-kill 7200:120`
+   (replay seconds: start:duration, every N deliveries, start:restart-after).
+4. Mid-run, `$C --profile election stop needle` for 60 s, then `$C --profile election start needle`: the executor must
+   cancel its working orders and place nothing until the needle is healthy again (`[needle] resume_after_healthy`
+   heartbeats). Then one kill drill on rust-live alone: publish NATS `ops.kill` (any payload counts as a kill;
+   `ops/rehearsal.sh` sends a `Kill` from the scheduler container), check that its log says `kill switch triggered`,
+   and un-kill with `$C restart rust-live` (a bus kill is sticky until restart). **Not `touch ops/KILL`:** the live
+   bridge obeys that file too, so it would cancel every live order and freeze the real account.
+5. Record: posteriors received (on the bus, and at the executor as the `susq_needle_posteriors` gauge on rust-live's
+   `/metrics`), election-night intents placed, fills on paper, 429s, `free -m`, the kernel OOM count, and every refusal
+   reason. Pass = orders only on races with edge, none while the needle was down or rust-live was killed, no OOM, no
    sustained 429s.
+
+Without the platform API key (a laptop), rust-live cannot start, but the rest can still be rehearsed: nats and the
+needle from `ops/compose.yaml`, the replay published from the host, and the paper engine with the executor armed
+against the mock exchange, fed by the real needle over NATS through rust-live's own bus client and watchdog:
+`SUSQ_REHEARSAL_NATS=nats://127.0.0.1:<port> SUSQ_REHEARSAL_HOME=<dir with state/market_map.json and state/fair_live.json>
+SUSQ_REHEARSAL_SECS=900 cargo test -p susq-live --test rehearsal -- --ignored --nocapture` (see the header of
+`crates/live/tests/rehearsal.rs`). It fails if an election-night order is placed, or left working, while the needle is
+down or the process is killed.
 
 ## 3. Kill and un-kill
 

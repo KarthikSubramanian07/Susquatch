@@ -152,6 +152,7 @@ fn risk() -> PreTrade {
             glitch_max_frac: 0.02,
             needle_glitch_through_fair: 0.40,
             needle_budget_frac: None,
+            contender: None,
         },
     }
 }
@@ -191,6 +192,7 @@ impl Harness {
             needle_used: 0.0,
             cash: None,
             bundle_cost: None,
+            depth: None,
         };
         self.gw.submit(b, &risk(), &ctx)
     }
@@ -293,6 +295,7 @@ async fn terminal_errors_are_not_retried() {
         needle_used: 0.0,
         cash: None,
         bundle_cost: None,
+        depth: None,
     };
     let out =
         h.gw.submit(&big, &limits_ok, &ctx)

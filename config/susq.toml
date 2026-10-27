@@ -200,6 +200,26 @@ lock_posterior_max_age_s = 10800
 # Leader/contender switch: at equity / 100,000 >= this multiple, open no new positions and only roll.
 # 0 = off: the field maximum on the night is not observed, so there is no honest multiple to switch at.
 contender_hedge_multiple = 0.0
+# ── Contender mode: the concentrated night profile (EXP-014, experiments/EXP-014-concentrated-night.md) ─────
+# OFF. Arming it is a separate, explicit decision at the Nov 3 pre-flight, after rehearsal #2. While false, every
+# contender_* key below is inert and the executor behaves exactly as above. While true:
+# - the night budget is contender_budget_frac instead of night_budget_frac;
+# - held legs are NOT rolled at roll_within_pts: a leg is sold once its bid is at least contender_exit_bid, or
+#   once the needle has called the race (model SE at or below contender_call_se), at no less than its posterior
+#   minus min_edge_pts; buys still clear min_edge_pts and se_mult, ranked across races by edge × depth;
+# - a needle-derived buy may build its market (and that market's state/house cluster) up to contender_market_frac
+#   of equity, but only while the book holds at least contender_min_depth SUSQies within
+#   contender_depth_window_pts of the touch on the side taken, measured at order time (5% everywhere else);
+# - the loss-per-hour breaker trips at contender_loss_per_hour_frac instead of [risk] loss_per_hour_frac.
+# Kill switch, needle watchdog, stale-feed and dispute gates, glitch cap, corroboration and max_order_frac stay.
+contender_mode = false
+contender_budget_frac = 0.80
+contender_exit_bid = 0.93
+contender_call_se = 0.005
+contender_market_frac = 0.30
+contender_min_depth = 100000.0
+contender_depth_window_pts = 3.0
+contender_loss_per_hour_frac = 0.50
 
 [telemetry]
 leaderboard_interval_s = 3600

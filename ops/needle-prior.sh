@@ -12,7 +12,8 @@
 set -euo pipefail
 SUSQ_HOME="${SUSQ_HOME:-/opt/susquatch}"
 cd "$SUSQ_HOME"
-C=(docker compose --project-directory . -f ops/compose.yaml)
+# SUSQ_COMPOSE overrides the compose command (word-split), e.g. for a scratch stack in a test.
+read -r -a C <<< "${SUSQ_COMPOSE:-docker compose --project-directory . -f ops/compose.yaml}"
 history=()
 for y in 2022 2024; do
     [ -s "data/replay/county_results_$y.csv" ] || { echo "missing data/replay/county_results_$y.csv" >&2; exit 1; }
@@ -40,7 +41,7 @@ fi
 mv state/needle/general_2026.next.toml state/needle/general_2026.toml
 mv state/needle/prior.next.json state/needle/prior.json
 echo "staged prior with $races races"
-if docker ps --format '{{.Names}}' | grep -qx susquatch-needle-1; then
+if [ -n "$("${C[@]}" --profile election ps --status running -q needle 2>/dev/null)" ]; then
     "${C[@]}" --profile election restart needle
     echo "needle restarted on the new prior"
 fi
