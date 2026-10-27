@@ -177,6 +177,21 @@ impl L2Book {
         out
     }
 
+    /// Notional (SUSQies, in the order's side terms) an order `(side, action)` could take within
+    /// `window_pts` points of the touch: buying walks up from the best price it can buy at,
+    /// selling walks down. 0 with nothing on that side.
+    pub fn depth_near_touch(&self, side: Side, action: Action, window_pts: f64) -> f64 {
+        let Some(touch) = self.touch(side, action) else {
+            return 0.0;
+        };
+        let window = window_pts.max(0.0) / 100.0;
+        let limit = match action {
+            Action::Buy => Pips::floor_from_prob(touch.prob() + window).unwrap_or(Pips::MAX),
+            Action::Sell => Pips::ceil_from_prob(touch.prob() - window).unwrap_or(Pips::MIN),
+        };
+        self.sweep(side, action, i64::MAX, limit).notional
+    }
+
     /// Shares resting at prices strictly better than `price` on `book_side` (queue ahead of a new order).
     pub fn qty_better_than(&self, book_side: BookSide, price: Pips) -> i64 {
         match book_side {
@@ -371,6 +386,23 @@ mod tests {
         assert_eq!(b.touch(Side::No, Action::Sell), Some(p(5000)));
         assert!((b.mid().expect("mid") - 0.475).abs() < 1e-12);
         assert_eq!(b.spread_ticks(), Some(10));
+    }
+
+    /// EXP-014: depth near the touch on the side an order takes, in that side's terms.
+    #[test]
+    fn depth_near_touch_counts_only_the_window() {
+        let b = book(); // bids 0.45 x5, 0.40 x10; asks 0.50 x4, 0.55 x3, 0.60 x100
+        // Buy YES from 0.50: within 5 pts takes 0.50 and 0.55 (2.00 + 1.65), not 0.60.
+        assert!((b.depth_near_touch(Side::Yes, Action::Buy, 5.0) - 3.65).abs() < 1e-9);
+        assert!((b.depth_near_touch(Side::Yes, Action::Buy, 10.0) - 63.65).abs() < 1e-9);
+        assert!((b.depth_near_touch(Side::Yes, Action::Buy, 0.0) - 2.0).abs() < 1e-9);
+        // Buy NO walks YES bids: 0.55 x5 (NO terms), then 0.60 x10.
+        assert!((b.depth_near_touch(Side::No, Action::Buy, 3.0) - 2.75).abs() < 1e-9);
+        assert!((b.depth_near_touch(Side::No, Action::Buy, 5.0) - 8.75).abs() < 1e-9);
+        // Sell YES walks bids down from 0.45.
+        assert!((b.depth_near_touch(Side::Yes, Action::Sell, 5.0) - 6.25).abs() < 1e-9);
+        let empty = L2Book::from_levels(ExchangeId::new("7"), vec![], vec![], 0);
+        assert_eq!(empty.depth_near_touch(Side::Yes, Action::Buy, 3.0), 0.0);
     }
 
     #[test]

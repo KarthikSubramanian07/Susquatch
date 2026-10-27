@@ -399,6 +399,46 @@ pub struct EnCfg {
     /// no new positions and only rolls. `0` = off, the default: the field maximum on the night is
     /// not observed, so there is no honest multiple to switch at.
     pub contender_hedge_multiple: f64,
+    // ── Contender mode: the concentrated night profile (EXP-014), off by default ─────────
+    /// Concentrated profile for first place. Off: everything below is inert and the executor
+    /// behaves exactly as without these keys. On: the night budget becomes
+    /// `contender_budget_frac`; held legs are not rolled at `roll_within_pts` but held until the
+    /// bid reaches `contender_exit_bid` or the needle calls the race (model SE at or below
+    /// `contender_call_se`); buys still clear `min_edge_pts` and `se_mult` and are ranked across
+    /// races by edge × depth within the limit; needle-derived buys on a market whose book holds at
+    /// least `contender_min_depth` within `contender_depth_window_pts` of the touch on the side
+    /// taken may build that market up to `contender_market_frac` of equity; and the
+    /// loss-per-hour breaker trips at `contender_loss_per_hour_frac` instead of `[risk]
+    /// loss_per_hour_frac`. Kill switch, needle watchdog, stale-feed and dispute gates, glitch
+    /// cap, corroboration and the per-order cap are unchanged.
+    pub contender_mode: bool,
+    /// Night budget (share of equity in needle-derived orders) while `contender_mode` is on.
+    pub contender_budget_frac: f64,
+    /// Contender exit: sell a held leg once its bid is at least this probability.
+    pub contender_exit_bid: f64,
+    /// Contender exit: the needle has called the race once the model SE of `q` is at or below
+    /// this; the held leg is then sold at no less than its probability minus `min_edge_pts`.
+    pub contender_call_se: f64,
+    /// Per-market gross cap (share of equity) for needle-derived buys on a deep book.
+    pub contender_market_frac: f64,
+    /// Depth (SUSQies of notional) the book must hold near the touch, on the side taken.
+    pub contender_min_depth: f64,
+    /// How far from the touch (points) that depth is measured.
+    pub contender_depth_window_pts: f64,
+    /// Loss-per-hour breaker threshold while `contender_mode` is on.
+    pub contender_loss_per_hour_frac: f64,
+}
+
+impl EnCfg {
+    /// The night budget in force: `contender_budget_frac` in contender mode, else
+    /// `night_budget_frac`.
+    pub fn active_night_budget_frac(&self) -> f64 {
+        if self.contender_mode {
+            self.contender_budget_frac
+        } else {
+            self.night_budget_frac
+        }
+    }
 }
 
 /// 2026-11-04T14:00:00Z: three hours before the 16:55Z last-order gate, rounded to the hour.
@@ -428,6 +468,14 @@ impl Default for EnCfg {
             lock_min_drift_pts: 1.5,
             lock_posterior_max_age_s: 10_800,
             contender_hedge_multiple: 0.0,
+            contender_mode: false,
+            contender_budget_frac: 0.80,
+            contender_exit_bid: 0.93,
+            contender_call_se: 0.005,
+            contender_market_frac: 0.30,
+            contender_min_depth: 100_000.0,
+            contender_depth_window_pts: 3.0,
+            contender_loss_per_hour_frac: 0.50,
         }
     }
 }
@@ -685,6 +733,26 @@ impl Config {
                 "strategies.en.lock_max_reported_frac",
                 self.strategies.en.lock_max_reported_frac,
             ),
+            (
+                "strategies.en.contender_budget_frac",
+                self.strategies.en.contender_budget_frac,
+            ),
+            (
+                "strategies.en.contender_exit_bid",
+                self.strategies.en.contender_exit_bid,
+            ),
+            (
+                "strategies.en.contender_call_se",
+                self.strategies.en.contender_call_se,
+            ),
+            (
+                "strategies.en.contender_market_frac",
+                self.strategies.en.contender_market_frac,
+            ),
+            (
+                "strategies.en.contender_loss_per_hour_frac",
+                self.strategies.en.contender_loss_per_hour_frac,
+            ),
         ];
         for (name, v) in fracs
             .into_iter()
@@ -742,6 +810,11 @@ impl Config {
                 "strategies.en.contender_hedge_multiple",
                 en.contender_hedge_multiple,
             ),
+            ("strategies.en.contender_min_depth", en.contender_min_depth),
+            (
+                "strategies.en.contender_depth_window_pts",
+                en.contender_depth_window_pts,
+            ),
         ] {
             if !(v.is_finite() && v >= 0.0) {
                 return bad(format!("{name} = {v} must be a finite non-negative number"));
@@ -766,6 +839,26 @@ impl Config {
         }
         if en.count_order_path.as_os_str().is_empty() {
             return bad("strategies.en.count_order_path must name the count-order table".into());
+        }
+        // Contender mode only ever loosens toward its own knobs: an exit below one half would sell
+        // winners cheaper than the buys it chains into, a market cap below the general one would
+        // not be a raise, and the depth bar must be real for the raised cap to mean anything.
+        if !(0.5..=0.995).contains(&en.contender_exit_bid) {
+            return bad(format!(
+                "strategies.en.contender_exit_bid = {} must be in [0.5, 0.995]",
+                en.contender_exit_bid
+            ));
+        }
+        if en.contender_market_frac < self.risk.per_market_gross_frac {
+            return bad(format!(
+                "strategies.en.contender_market_frac = {} must be at least risk.per_market_gross_frac = {}",
+                en.contender_market_frac, self.risk.per_market_gross_frac
+            ));
+        }
+        if !(en.contender_min_depth > 0.0 && en.contender_depth_window_pts > 0.0) {
+            return bad(
+                "strategies.en.contender_min_depth and contender_depth_window_pts must be > 0".into(),
+            );
         }
         Ok(())
     }
@@ -935,7 +1028,27 @@ mod tests {
         assert_eq!(en.lock_min_drift_pts, 1.5);
         assert_eq!(en.lock_posterior_max_age_s, 10_800);
         assert_eq!(en.contender_hedge_multiple, 0.0, "the contender switch ships off");
+        assert!(
+            !en.contender_mode,
+            "EXP-014 ships off; arming it is a Nov 3 decision"
+        );
+        assert_eq!(en.contender_budget_frac, 0.80);
+        assert_eq!(en.contender_exit_bid, 0.93);
+        assert_eq!(en.contender_call_se, 0.005);
+        assert_eq!(en.contender_market_frac, 0.30);
+        assert_eq!(en.contender_min_depth, 100_000.0);
+        assert_eq!(en.contender_depth_window_pts, 3.0);
+        assert_eq!(en.contender_loss_per_hour_frac, 0.50);
+        assert_eq!(
+            en.active_night_budget_frac(),
+            0.25,
+            "off: the 25% budget is in force"
+        );
         assert_eq!(*en, EnCfg::default(), "the file documents the Rust defaults");
+        let contender =
+            Config::from_toml_str(&text.replacen("contender_mode = false", "contender_mode = true", 1))
+                .expect("contender mode on is valid");
+        assert_eq!(contender.strategies.en.active_night_budget_frac(), 0.80);
         // The one line the runbook flips.
         let armed = text.replacen("enabled = false\nmin_edge_pts", "enabled = true\nmin_edge_pts", 1);
         assert_ne!(
@@ -975,6 +1088,21 @@ mod tests {
             (
                 "count_order_path = \"config/count_order.toml\"",
                 "count_order_path = \"\"",
+            ),
+            ("contender_budget_frac = 0.80", "contender_budget_frac = 1.2"),
+            ("contender_exit_bid = 0.93", "contender_exit_bid = 0.40"),
+            ("contender_exit_bid = 0.93", "contender_exit_bid = 1.0"),
+            ("contender_call_se = 0.005", "contender_call_se = -0.1"),
+            ("contender_market_frac = 0.30", "contender_market_frac = 0.01"),
+            ("contender_market_frac = 0.30", "contender_market_frac = 1.5"),
+            ("contender_min_depth = 100000.0", "contender_min_depth = 0.0"),
+            (
+                "contender_depth_window_pts = 3.0",
+                "contender_depth_window_pts = nan",
+            ),
+            (
+                "contender_loss_per_hour_frac = 0.50",
+                "contender_loss_per_hour_frac = 2.0",
             ),
         ] {
             let bad = text.replacen(from, to, 1);
