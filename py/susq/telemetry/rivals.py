@@ -104,7 +104,7 @@ def _valuation(frame: pl.DataFrame, source: str) -> pl.DataFrame:
     elif source == "last":
         price = last
     else:
-        raise ValueError(f"unknown valuation source {source!r} (mid | last)")
+        raise ValueError(f"unknown valuation source {source!r} (mid | last; vwap5h needs the tape)")
     return (
         frame.select("ts", "exchange_id", price.cast(pl.Float64).alias("price"))
         .filter(pl.col("price").is_not_null() & (pl.col("price") > 0.0) & (pl.col("price") < 1.0))
@@ -141,6 +141,46 @@ def read_price_panel(
             continue
         kept.append(_compress_day(frame, [t + lag for t in snapshot_ts if (t + lag).date() == day]))
     return _panel_from_valuations(kept, snapshot_ts, lag)
+
+
+VWAP_HOURS = 5.0
+
+
+def tape_vwap_panel(
+    tape: pl.DataFrame,
+    snapshot_ts: Sequence[datetime],
+    *,
+    hours: float = VWAP_HOURS,
+    lag: timedelta = timedelta(0),
+) -> PricePanel:
+    """Valuation `vwap5h` (EXP-012): the trailing `hours` VWAP of tournament trades per exchange at each
+    snapshot, the last trade price when the window is empty, NaN before an exchange's first trade.
+
+    On Oct 13 to 25 this is how the Cup marks positions: against 386 accounts that did not trade for 12
+    days, a six-regressor fit of their hourly value changes gives median R^2 0.81 with the 5 h VWAP, against
+    0.39 for the book mid, 0.33 for the last trade, 0.55 for a 4 h and 0.68 for a 6 h VWAP."""
+    snaps = sorted(snapshot_ts)
+    ts_ns = np.array([_ns(t) for t in snaps], dtype=np.int64)
+    if not snaps or tape.is_empty():
+        return PricePanel(ts_ns, [], np.zeros((len(snaps), 0)))
+    at = np.array([_ns(t + lag) for t in snaps], dtype=np.int64)
+    window = int(hours * NS_PER_HOUR)
+    tape = tape.with_columns(pl.col("exchange_id").cast(pl.Utf8)).sort("ts")
+    exchanges = sorted(tape["exchange_id"].unique().to_list())
+    values = np.full((len(snaps), len(exchanges)), np.nan)
+    for j, ex in enumerate(exchanges):
+        sub = tape.filter(pl.col("exchange_id") == ex)
+        t = sub["ts"].dt.epoch("ns").to_numpy()
+        px = sub["price"].to_numpy().astype(np.float64)
+        sz = sub["size"].to_numpy().astype(np.float64)
+        pv = np.concatenate([[0.0], np.cumsum(px * sz)])
+        vol = np.concatenate([[0.0], np.cumsum(sz)])
+        hi = np.searchsorted(t, at, side="right")
+        lo = np.searchsorted(t, at - window, side="right")
+        num, den = pv[hi] - pv[lo], vol[hi] - vol[lo]
+        last = np.where(hi > 0, px[np.maximum(hi - 1, 0)], np.nan)
+        values[:, j] = np.where(den > 0, num / np.maximum(den, 1e-12), last)
+    return PricePanel(ts_ns, exchanges, values)
 
 
 def _compress_day(frame: pl.DataFrame, cut_ts: Sequence[datetime]) -> pl.DataFrame:
