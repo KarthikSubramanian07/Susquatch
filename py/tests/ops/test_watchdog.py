@@ -48,6 +48,17 @@ def test_restarts_unhealthy_but_never_itself(paths, clock, api) -> None:
     assert any("restarted unhealthy needle" in e for e in drain_events(paths))
 
 
+def test_one_off_run_containers_are_left_alone(paths, clock, api) -> None:
+    oneoff = container("run1", "rust-live")
+    oneoff["Labels"] = {"com.docker.compose.service": "rust-live", "com.docker.compose.oneoff": "True"}
+    api.get("/containers/json").respond(200, json=[oneoff, container("abc", "rust-live")])
+    oneoff_restart = api.post("/containers/run1/restart").respond(204)
+    restart = api.post("/containers/abc/restart").respond(204)
+    assert make(paths, clock).heal() == ["rust-live"]
+    assert oneoff_restart.call_count == 0
+    assert restart.call_count == 1
+
+
 def test_restart_budget_then_action_item_then_recovery(paths, clock, api) -> None:
     listing = api.get("/containers/json").respond(200, json=[container("abc", "rust-live")])
     restart = api.post("/containers/abc/restart").respond(204)
