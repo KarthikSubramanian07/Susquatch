@@ -153,6 +153,27 @@ impl World {
     }
 }
 
+/// The healthy needle's race exchanges, races with a live posterior first and then the quiet ones
+/// (each group by race id), so on the night the realtime slots go to the books the election-night
+/// executor trades before anything else. Empty while the needle is unhealthy.
+pub fn needle_exchanges(needle: Option<&NeedleView>, markets: &MarketIndex) -> Vec<ExchangeId> {
+    let Some(n) = needle.filter(|n| n.healthy) else {
+        return Vec::new();
+    };
+    let mut live: Vec<&String> = n.posteriors.keys().collect();
+    live.sort();
+    let mut quiet: Vec<&String> = n
+        .quiet_posteriors
+        .keys()
+        .filter(|race| !n.posteriors.contains_key(race.as_str()))
+        .collect();
+    quiet.sort();
+    live.into_iter()
+        .chain(quiet)
+        .flat_map(|race| markets.exchanges_for_race(race).iter().cloned())
+        .collect()
+}
+
 fn live_terms(t: &Tracked) -> Option<(susq_core::Side, susq_core::Action, susq_core::Pips)> {
     t.state.is_live().then(|| t.order_terms()).flatten()
 }
@@ -236,7 +257,7 @@ mod tests {
     use susq_oms::{Oms, OmsConfig};
     use susq_platform::OrderAck;
 
-    use super::needle_budget_used;
+    use super::{needle_budget_used, needle_exchanges};
 
     fn cfg() -> OmsConfig {
         OmsConfig {
@@ -347,5 +368,57 @@ mod tests {
         // nothing, and the resting buy (restored, unresolved) still counts at its limit.
         let reopened = Oms::open(cfg(), &path, 1).expect("reopen");
         assert!((needle_budget_used(&reopened) - (60.0 + 35.0)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn needle_exchanges_put_live_races_first_then_quiet_and_nothing_when_unhealthy() {
+        use std::collections::HashMap;
+
+        use susq_contracts::v1::{MarketMap, MarketRule, RacePosterior};
+        use susq_core::MarketIndex;
+        use susq_strategies::{NeedleView, QuietPosterior};
+
+        let rule = |ex: &str, race: &str| MarketRule {
+            exchange_id: ex.into(),
+            market_id: format!("m-{race}"),
+            race_id: race.into(),
+            verified: true,
+            ..Default::default()
+        };
+        let markets = MarketIndex::new(&MarketMap {
+            header: None,
+            markets: vec![
+                rule("1", "GA"),
+                rule("2", "GA"),
+                rule("3", "AZ"),
+                rule("4", "NC"),
+                rule("5", ""),
+            ],
+        });
+        let quiet = QuietPosterior {
+            posterior: RacePosterior::default(),
+            produced_at_ns: 0,
+        };
+        let mut n = NeedleView {
+            healthy: true,
+            posteriors: HashMap::from([
+                ("GA".to_owned(), RacePosterior::default()),
+                ("AZ".to_owned(), RacePosterior::default()),
+            ]),
+            quiet_posteriors: HashMap::from([("NC".to_owned(), quiet.clone()), ("AZ".to_owned(), quiet)]),
+            ..Default::default()
+        };
+        let got: Vec<String> = needle_exchanges(Some(&n), &markets)
+            .iter()
+            .map(|e| e.as_str().to_owned())
+            .collect();
+        assert_eq!(
+            got,
+            ["3", "1", "2", "4"],
+            "AZ, GA live (by race id), then NC quiet; AZ once"
+        );
+        n.healthy = false;
+        assert!(needle_exchanges(Some(&n), &markets).is_empty());
+        assert!(needle_exchanges(None, &markets).is_empty());
     }
 }

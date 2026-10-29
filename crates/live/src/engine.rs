@@ -405,12 +405,16 @@ impl Engine {
         }
     }
 
-    /// Markets that deserve a per-market channel, most important first: the targets file, then
-    /// everything else the strategies read books for (positions, violations, fresh fair values,
-    /// needle races), then the books that moved most recently.
+    /// Markets that deserve a per-market channel, most important first: the healthy needle's races
+    /// (the election-night executor trades only on fresh books, and there are more markets than
+    /// slots), then the targets file, then everything else the strategies read books for
+    /// (positions, violations, fresh fair values), then the books that moved most recently.
     fn realtime_market_candidates(&self, now: i64) -> Vec<MarketId> {
         let markets = &self.world.markets;
-        let mut out: Vec<MarketId> = Vec::new();
+        let mut out: Vec<MarketId> = crate::world::needle_exchanges(self.world.needle.as_ref(), markets)
+            .iter()
+            .filter_map(|ex| markets.market_of(ex))
+            .collect();
         if let Some(t) = self.targets.current().map(|t| t.file()) {
             out.extend(
                 t.positions
