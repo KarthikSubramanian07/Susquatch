@@ -175,10 +175,11 @@ def test_config_defaults_off_and_parses():
         ConcentrateConfig(fracs=(1.5,))
 
 
-def test_repo_config_ships_it_off():
+def test_repo_config_never_ships_commit():
+    """Report only: committing the concentrated book is a decision made by hand, never a default."""
     raw = tomllib.loads((REPO / "config" / "susq.toml").read_text())
     cfg = ResearchConfig.from_mapping(raw)
-    assert cfg.concentrate.mode == "off"
+    assert cfg.concentrate.mode in ("off", "report")
     assert cfg.concentrate.threshold == "targets"
 
 
