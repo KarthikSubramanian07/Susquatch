@@ -79,7 +79,14 @@ class Watchdog:
         """Restart unhealthy containers within the per-service budget. Returns the services restarted."""
         now = self.clock()
         restarted = []
-        sick = [c for c in self.unhealthy() if self._service(c) != "watchdog"]
+        # One-off `compose run` containers (enr-capture runs in the rust-live image) inherit the service's
+        # healthcheck but serve no /healthz: restarting them kills the job and spends the service's budget.
+        sick = [
+            c
+            for c in self.unhealthy()
+            if self._service(c) != "watchdog"
+            and (c.get("Labels") or {}).get("com.docker.compose.oneoff", "False") != "True"
+        ]
         self._resolve_recovered({self._service(c) for c in sick})
         for c in sick:
             service = self._service(c)
