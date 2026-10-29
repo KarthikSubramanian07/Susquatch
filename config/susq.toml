@@ -93,6 +93,9 @@ max_step_age_s = 120
 # Time a step may spend on throttled order-book reads before it moves on (the rest wait for later steps);
 # paper mode gets the same again for re-reading the books under resting paper orders.
 book_refresh_budget_ms = 3000
+# Books of markets on a connected realtime channel stay fresh this long since their last snapshot (the feed pushes
+# every versioned change and flags gaps, which mark the book dirty at once); everything else uses book_max_age_s.
+realtime_book_max_age_s = 120
 
 [strategies.racer]
 enabled = true

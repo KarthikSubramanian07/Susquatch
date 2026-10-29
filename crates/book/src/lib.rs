@@ -8,7 +8,7 @@
 //! [`L2Book::sweep`] walks depth for a target size in the order's own side terms (buying NO walks
 //! YES bids at `1 - price`), which is what sizing and the paper broker need.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use susq_core::{Action, BookSide, ExchangeId, Pips, Side, side::yes_space};
 use susq_platform::{BookLevel, OrderBook};
@@ -217,6 +217,11 @@ pub struct BookStore {
     books: HashMap<ExchangeId, L2Book>,
     /// exchange → time the realtime feed said its depth changed.
     dirty: HashMap<ExchangeId, i64>,
+    /// Exchanges on a connected realtime channel: the feed pushes every versioned change and
+    /// reports gaps, so a clean book here is current until a batch says otherwise, however long
+    /// the market has been quiet. They stay fresh for up to `live_max_age_ns`.
+    live: HashSet<ExchangeId>,
+    live_max_age_ns: i64,
 }
 
 impl BookStore {
@@ -272,19 +277,40 @@ impl BookStore {
         self.books.get(exchange)
     }
 
-    /// A book safe to decide on: present, clean, not crossed, and no older than `max_age_ns`.
+    /// Mark which exchanges sit on a connected realtime channel (replacing the previous set), and
+    /// how long their clean books stay fresh. An empty set, or a limit no longer than the caller's
+    /// `max_age_ns`, leaves every book on the caller's limit.
+    pub fn set_live(&mut self, exchanges: impl IntoIterator<Item = ExchangeId>, max_age_ns: i64) {
+        self.live = exchanges.into_iter().collect();
+        self.live_max_age_ns = max_age_ns;
+    }
+
+    fn age_limit(&self, exchange: &ExchangeId, max_age_ns: i64) -> i64 {
+        if self.live.contains(exchange) {
+            max_age_ns.max(self.live_max_age_ns)
+        } else {
+            max_age_ns
+        }
+    }
+
+    /// A book safe to decide on: present, clean, not crossed, and no older than `max_age_ns`
+    /// (or the realtime limit, for an exchange on a connected realtime channel).
     pub fn fresh(&self, exchange: &ExchangeId, now_ns: i64, max_age_ns: i64) -> Option<&L2Book> {
         let book = self.books.get(exchange)?;
-        let ok = !self.is_dirty(exchange) && book.age_ns(now_ns) <= max_age_ns && !book.is_crossed();
+        let ok = !self.is_dirty(exchange)
+            && book.age_ns(now_ns) <= self.age_limit(exchange, max_age_ns)
+            && !book.is_crossed();
         ok.then_some(book)
     }
 
-    /// Ids of books older than `max_age_ns` (to refresh proactively).
+    /// Ids of books older than their freshness limit (to refresh proactively): `max_age_ns`, or
+    /// the realtime limit for exchanges on a connected realtime channel, so REST reads go to the
+    /// books realtime does not cover.
     pub fn stale_ids(&self, now_ns: i64, max_age_ns: i64) -> Vec<ExchangeId> {
         let mut ids: Vec<ExchangeId> = self
             .books
             .values()
-            .filter(|b| b.age_ns(now_ns) > max_age_ns)
+            .filter(|b| b.age_ns(now_ns) > self.age_limit(&b.exchange_id, max_age_ns))
             .map(|b| b.exchange_id.clone())
             .collect();
         ids.sort();
@@ -477,5 +503,44 @@ mod tests {
                 prop_assert!((0.0..=1.0).contains(&avg));
             }
         }
+    }
+
+    #[test]
+    fn live_books_stay_fresh_longer_until_dirty_and_skip_proactive_refresh() {
+        let mut s = BookStore::new();
+        s.apply_snapshot(book()); // exchange 7, observed at 1_000
+        let ex = ExchangeId::new("7");
+        let (now, limit) = (1_000 + 50, 10);
+        assert!(s.fresh(&ex, now, limit).is_none(), "50 ns old on a 10 ns limit");
+        assert_eq!(s.stale_ids(now, limit), vec![ex.clone()]);
+        s.set_live([ex.clone()], 100);
+        assert!(
+            s.fresh(&ex, now, limit).is_some(),
+            "on a connected channel: 100 ns limit"
+        );
+        assert!(
+            s.stale_ids(now, limit).is_empty(),
+            "no REST refresh for a live book"
+        );
+        assert!(
+            s.fresh(&ex, 1_000 + 101, limit).is_none(),
+            "the live limit still binds"
+        );
+        s.mark_dirty(&ex, now);
+        assert!(s.fresh(&ex, now, limit).is_none(), "a gap or change mark wins");
+        s.set_live([], 100);
+        s.apply_snapshot(L2Book {
+            observed_at_ns: now,
+            ..book()
+        });
+        assert!(
+            s.fresh(&ex, now + 50, limit).is_none(),
+            "off the channel: back to the caller's limit"
+        );
+        s.set_live([ex.clone()], 5);
+        assert!(
+            s.fresh(&ex, now + 8, limit).is_some(),
+            "a live limit below max_age never shortens it"
+        );
     }
 }
