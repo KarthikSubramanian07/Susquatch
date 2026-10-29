@@ -2,7 +2,7 @@
 
 - **Proposed:** 2026-10-25 by human (edge hunt: "find every legitimate edge left that raises P(1st)")
 - **Approved:** (pending)
-- **Status:** draft, not applied (`mode = "off"`)
+- **Status:** reporting (`mode = "report"` from 2026-10-29: the best concentrated book and its P(1st) appear in every targets file; nothing trades from it)
 
 ## Hypothesis
 The leaders' 10-11x marks are mostly realised value (longshot-selling bots valued at the Cup's 5 h VWAP mark), so the

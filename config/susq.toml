@@ -261,7 +261,7 @@ rival_decorrelation = 0.0
 # leaderboard anchor) or "max". mode = "report" only writes the best book into the targets notes; "commit"
 # replaces the scenario book when it beats it by min_gain, and is only useful with [risk]
 # per_market_gross_frac and the cluster caps raised for that leg (at 0.05 the trader stops at 5% of equity).
-mode = "off"
+mode = "report"
 threshold = "targets"
 max_ask = 0.10
 fracs = [0.9, 1.0]
