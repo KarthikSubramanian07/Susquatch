@@ -612,6 +612,12 @@ pub struct LiveCfg {
     /// to 160 s; the rest wait for later steps, which keeps orders and the needle moving. In paper
     /// mode the re-read of books under resting paper orders gets the same budget again.
     pub book_refresh_budget_ms: u64,
+    /// Books of markets on a connected realtime channel stay fresh for up to this long since
+    /// their last snapshot (`book_max_age_s` still applies to everything else). The feed pushes
+    /// every versioned change and reports gaps, so a quiet market's book is current; without
+    /// this the election-night executor saw "no fresh book" on quiet markets exactly when the
+    /// needle moved first. 0 turns it off.
+    pub realtime_book_max_age_s: u64,
 }
 
 impl Default for LiveCfg {
@@ -624,6 +630,7 @@ impl Default for LiveCfg {
             realtime_market_channels: 80,
             max_step_age_s: 120,
             book_refresh_budget_ms: 3000,
+            realtime_book_max_age_s: 120,
         }
     }
 }

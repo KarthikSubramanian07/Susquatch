@@ -442,6 +442,24 @@ impl Engine {
         out
     }
 
+    /// Tell the book store which exchanges sit on a connected realtime channel, so their clean
+    /// books stay fresh for `[live] realtime_book_max_age_s` (gaps and resyncs mark them dirty).
+    fn mark_live_books(&mut self) {
+        let max_age_s = self.d.cfg.live.realtime_book_max_age_s;
+        let connected = self.world.health.get("realtime").is_some_and(|h| h.state == "ok");
+        let live: Vec<ExchangeId> = match self.d.realtime.as_ref() {
+            Some(feed) if connected && max_age_s > 0 => feed
+                .markets()
+                .iter()
+                .flat_map(|m| self.world.markets.exchanges_for_market(m).iter().cloned())
+                .collect(),
+            _ => Vec::new(),
+        };
+        self.world
+            .books
+            .set_live(live, duration_ns(std::time::Duration::from_secs(max_age_s)));
+    }
+
     /// Keep the per-market realtime channels on the markets that matter (rebuilds are
     /// rate-limited inside the feed).
     fn refresh_realtime_markets(&mut self, now: i64) {
@@ -556,6 +574,7 @@ impl Engine {
         if now >= self.due.realtime {
             self.refresh_realtime_markets(now);
         }
+        self.mark_live_books();
         self.world
             .violations
             .retain(|_, (_, at)| now - *at <= VIOLATION_TTL_NS);
