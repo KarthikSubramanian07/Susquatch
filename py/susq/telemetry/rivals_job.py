@@ -31,7 +31,7 @@ from susq.models.types import FloatArray
 from susq.optimizer.scenarios import scenario_grid
 from susq.research_env import Paths, ResearchConfig, atomic_write_text
 from susq.telemetry import rivals
-from susq.telemetry.cupdata import read_leaderboard
+from susq.telemetry.cupdata import read_leaderboard, read_tape
 
 log = logging.getLogger(__name__)
 
@@ -103,7 +103,12 @@ def run_rivals(
     lb = read_leaderboard(cup)
     now = datetime.fromtimestamp(now_ns / 1e9, tz=UTC)
     snaps = rivals.snapshot_times(lb, since=now - timedelta(hours=fit.lookback_h + 2))
-    panel = rivals.read_price_panel(cup / "prices", snaps, source=source, lag=timedelta(minutes=lag_min))
+    if source == "vwap5h":  # EXP-012: the Cup's own valuation, rebuilt from the trade tape
+        since = (min(snaps) if snaps else now) - timedelta(hours=rivals.VWAP_HOURS + 1)
+        tape = read_tape(cup, since=since).select("ts", "exchange_id", "price", "size")
+        panel = rivals.tape_vwap_panel(tape, snaps, lag=timedelta(minutes=lag_min))
+    else:
+        panel = rivals.read_price_panel(cup / "prices", snaps, source=source, lag=timedelta(minutes=lag_min))
     marks = panel.latest()
     ids = rivals.select_rivals(lb, max(focus_n, wide_n))
     books = rivals.infer_books(lb, panel, ids, fit)

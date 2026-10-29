@@ -28,9 +28,10 @@ from susq.models.facade import get_engine, get_threshold_simulator
 from susq.models.tourney import FieldParams, ThresholdFit
 from susq.models.types import BoolArray, FloatArray, SimParams
 from susq.optimizer.book import ROBUST_ASSUMPTIONS, OptimizerResult, build_book
-from susq.optimizer.legs import build_legs, leg_outcomes
+from susq.optimizer.concentrate import best_concentrated, concentrated_positions
+from susq.optimizer.legs import Leg, build_legs, leg_outcomes
 from susq.optimizer.scenarios import scenario_grid
-from susq.research_env import Paths, ResearchConfig, SeqCounter, sha256_bytes, sha256_file
+from susq.research_env import ConcentrateConfig, Paths, ResearchConfig, SeqCounter, sha256_bytes, sha256_file
 from susq.telemetry.cupdata import read_prices, with_cup_mid
 from susq.telemetry.field import FieldFootprint, leaderboard_floor, tape_field_params, tape_threshold
 from susq.telemetry.rivals import blend_threshold
@@ -141,6 +142,75 @@ def rival_blend(
         f"rival decorrelation {weight:.2f} over {n} modeled rivals (R p50 {float(np.median(rival_t)):.2f}x, "
         f"T_w p50 {float(np.median(blended)):.2f}x)"
     )
+
+
+def concentrate_threshold(
+    paths: Paths,
+    cc: ConcentrateConfig,
+    tele: dict[str, Any],
+    threshold: FloatArray,
+    outcomes: BoolArray,
+    contracts: Sequence[str],
+    *,
+    seed: int,
+    now_ns: int,
+) -> tuple[FloatArray, str]:
+    """EXP-012: the per-world bar the concentrated search scores against.
+
+    "targets" is the run's own T; "rivals" is EXP-011's best modeled rival R, floored at the leaderboard
+    anchor (the leaders who trade every hour have no quiet window, so R alone would leave them out);
+    "max" is the larger of the two. Without a fresh rival book, "rivals" and "max" fall back to T."""
+    if cc.threshold == "targets":
+        return threshold, "targets T"
+    from susq.telemetry import rivals_job
+
+    book, why = rivals_job.load_book_file(paths.research_state / rivals_job.DEFAULT_BOOK, now_ns)
+    if book is None:
+        return threshold, f"targets T ({cc.threshold} wanted: {why})"
+    columns = {c: outcomes[:, j] for j, c in enumerate(contracts)}
+    rival_t, n = rivals_job.rival_threshold_for(book, columns, outcomes.shape[0], seed=seed)
+    if n == 0:
+        return threshold, f"targets T ({cc.threshold} wanted: no modeled rival)"
+    floor = leaderboard_floor(tele.get("leaderboard") or {})
+    rival_t = np.maximum(rival_t, floor)
+    desc = f"rivals R over {n} (floor {floor:.2f}x, p50 {float(np.median(rival_t)):.2f}x)"
+    if cc.threshold == "rivals":
+        return rival_t, desc
+    return np.maximum(threshold, rival_t), f"max(targets T, {desc})"
+
+
+def apply_concentrate(
+    result: OptimizerResult,
+    legs: Sequence[Leg],
+    outcomes: BoolArray,
+    threshold: FloatArray,
+    cc: ConcentrateConfig,
+    *,
+    equity: float,
+    how: str,
+) -> tuple[OptimizerResult, str, str | None]:
+    """EXP-012: (result, note, scenario override). "report" only adds a note; "commit" swaps the book in
+    when its P(1st) beats the scenario book's by `min_gain`."""
+    if cc.mode == "off":
+        return result, "", None
+    book = best_concentrated(legs, outcomes, threshold, cc, equity=equity)
+    if book is None:
+        return result, f"; EXP-012 ({cc.mode}): no leg at or under ask {cc.max_ask}", None
+    note = f"; EXP-012 ({cc.mode}, vs {how}): {book.describe(legs)}"
+    scenario_pf = result.p_first if result.positions else 0.0
+    if cc.mode != "commit" or book.p_first < scenario_pf + cc.min_gain:
+        if cc.mode == "commit":
+            note += f"; kept the scenario book (P(1st) {scenario_pf:.4f}, gain under {cc.min_gain})"
+        return result, note, None
+    committed = replace(
+        result,
+        positions=concentrated_positions(book, legs, cc),
+        p_first=book.p_first,
+        p_top3=min(1.0, 2.5 * book.p_first),
+        book_cost=book.cost,
+    )
+    scenario = "concentrated:" + "+".join(legs[j].exchange_id for j in book.legs)
+    return committed, note + f"; committed in place of the scenario book (P(1st) {scenario_pf:.4f})", scenario
 
 
 def robust_thresholds(worlds: int) -> dict[str, FloatArray]:
@@ -274,13 +344,24 @@ def run_targets(
         incumbent_legs=incumbent_legs(paths.targets),
         held_long=held_long(paths.status, now_ns),
     )
+    conc_note, conc_scenario = "", None
+    if cfg.concentrate.mode != "off":  # EXP-012, off by default: nothing below changes when off
+        conc_t, how = concentrate_threshold(
+            paths, cfg.concentrate, tele, threshold, all_outcomes, [leg.exchange_id for leg in universe],
+            seed=seed, now_ns=now_ns,
+        )  # fmt: skip
+        # T is per world, so it applies unchanged to the tradable columns
+        result, conc_note, conc_scenario = apply_concentrate(
+            result, legs, outcomes, conc_t, cfg.concentrate, equity=equity, how=how
+        )
     tourney = targets_pb2.TourneyEstimate(
         p_first=result.p_first,
         p_top3=result.p_top3,
         field_size=field_size,
         threshold_t_p50=float(np.median(threshold)),
         threshold_t_p90=float(np.quantile(threshold, 0.9)),
-        scenario=result.best.scenario.scenario_id if result.best and result.positions else "",
+        scenario=conc_scenario
+        or (result.best.scenario.scenario_id if result.best and result.positions else ""),
     )
     sizing = (
         f"early book frac {book_frac:.2f} until {cfg.optimizer.early_until_utc:%Y-%m-%dT%H:%MZ}"
@@ -289,7 +370,7 @@ def run_targets(
     )
     notes = (
         f"engine={calib.engine} draws={calib.n_draws}; T from {t_source}; legs {len(legs)}/{len(universe)} "
-        f"tradable (require_verified={require_verified}); {sizing}; {result.explanation}"
+        f"tradable (require_verified={require_verified}); {sizing}; {result.explanation}{conc_note}"
         + (f"; WARN: {' | '.join(calib.warnings)}" if calib.warnings else "")
         + ("; p_top3 = 2.5 x P(1st) heuristic (SPEC 6)" if result.positions else "")
     )

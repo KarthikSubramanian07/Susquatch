@@ -383,7 +383,9 @@ def rivals(
     focus: int = typer.Option(5, help="Top-N rivals the endgame rule focuses on (STRATEGY section 4)."),
     wide: int = typer.Option(20, help="Wider rival set for robustness (includes the focus set)."),
     draws: int = typer.Option(50_000, help="Simulator draws."),
-    source: str = typer.Option("mid", help="Valuation price: mid (book mid) or last (last trade)."),
+    source: str = typer.Option(
+        "mid", help="Valuation: mid (book mid), last (last trade) or vwap5h (5 h tape VWAP, the Cup's mark)."
+    ),
     lag_min: float = typer.Option(0.0, help="Minutes added to each snapshot time before reading prices."),
     out_dir: str = typer.Option("", help="Report directory (default reports/rivals)."),
     book_out: str = typer.Option(

@@ -16,6 +16,7 @@ Copy `TEMPLATE.md` to `EXP-NNN-short-name.md`, fill in the hypothesis and metric
 | EXP-009 | Scenario hysteresis: keep the incumbent unless a challenger is clearly better | running (approved 2026-10-11) | |
 | EXP-010 | Leg lock: keep the scenario book's legs, prefer legs already held | running (approved 2026-10-20) | |
 | EXP-011 | Endgame rival model: rivals' payout vectors, rival-aware threshold (hook off) | draft, not applied | |
+| EXP-012 | Concentrated longshot book scored on P(1st) against the resolution-adjusted field | reporting (commit pending Karthik) | |
 | EXP-013 | Size the scenario book to what risk can hold, and stop eligibility flapping | running (approved 2026-10-25) | |
 | EXP-014 | Concentrated election-night profile (contender mode), off by default | built, off; arming decided at Nov 3 pre-flight | |
 | EXP-015 | Report true cash and cap use, and seed the paper run from it | running (approved 2026-10-25) | |

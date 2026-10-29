@@ -254,6 +254,19 @@ switch_margin = 0.25
 # `susq research rivals --book-out`). Keep at 0.0 until EXP-011 is approved; 0.0 leaves targets unchanged.
 rival_decorrelation = 0.0
 
+[optimizer.concentrate]
+# EXP-012 concentrated longshot book (draft, off). The targets run searches single YES legs (ask <= max_ask)
+# and equal-cost pairs, spending each share of equity in `fracs`, for the highest unconditional P(1st)
+# against a per-world bar: "targets" (the run's T), "rivals" (EXP-011's best modeled rival, floored at the
+# leaderboard anchor) or "max". mode = "report" only writes the best book into the targets notes; "commit"
+# replaces the scenario book when it beats it by min_gain, and is only useful with [risk]
+# per_market_gross_frac and the cluster caps raised for that leg (at 0.05 the trader stops at 5% of equity).
+mode = "report"
+threshold = "targets"
+max_ask = 0.10
+fracs = [0.9, 1.0]
+min_gain = 0.005
+
 [needle]
 # Liveness: no healthy needle message (heartbeat or posterior) for this long = unhealthy. The watchdog then
 # cancels every needle-derived order and clears the posteriors; it trusts the needle again after this many
