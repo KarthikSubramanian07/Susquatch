@@ -75,7 +75,7 @@ fn known_races(rt: &Runtime) -> HashSet<String> {
 }
 
 /// The realtime feed: tournament-scope channels plus up to `live.realtime_market_channels`
-/// per-market channels, which the engine picks and rebuilds as its markets of interest change.
+/// per-market channels on each of `live.realtime_connections` connections, which the engine picks and rebuilds as its markets of interest change.
 /// Nothing connects until the engine's first market selection.
 async fn start_realtime(
     rt: &Runtime,
@@ -107,6 +107,7 @@ async fn start_realtime(
         tid.clone(),
         base,
         rt.cfg.live.realtime_market_channels,
+        rt.cfg.live.realtime_connections,
         spawn,
     ))
 }

@@ -87,6 +87,9 @@ mapping_error_pts = 25.0           # |cup_mid - fair| beyond this = assume mis-m
 [live]
 # Per-market realtime topics rust-live joins (Supabase caps channels per connection); the rest is polled.
 realtime_market_channels = 80
+# Connections of up to 80 market channels each: the needle's 71 races span 145 markets, so one
+# connection left each race's second market on REST polling.
+realtime_connections = 2
 # /healthz calls the loop stuck after this many seconds without a completed step; a step's serial REST reads
 # at ~1 req/s can take tens of seconds.
 max_step_age_s = 120
