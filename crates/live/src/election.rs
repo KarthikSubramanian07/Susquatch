@@ -121,7 +121,7 @@ mod tests {
         async fn publish(&self, results: Vec<CountyResult>) -> Result<u64, String> {
             let mut got = self.got.lock();
             got.push(results.len());
-            if self.fail_every_other && got.len() % 2 == 0 {
+            if self.fail_every_other && got.len().is_multiple_of(2) {
                 Err("nats down".into())
             } else {
                 Ok(got.len() as u64)

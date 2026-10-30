@@ -716,10 +716,10 @@ impl Engine {
             Err(e) => self.platform_error("pnl", &e, now),
         }
         // `myBalance` only until the first portfolio read (or while equity is still unknown).
-        if !self.world.cash_from_portfolio || self.world.equity <= 0.0 {
-            if let Ok(t) = account.tournament(&self.world.slug).await {
-                cash::observe_balance(&mut self.world, t.my_balance);
-            }
+        if (!self.world.cash_from_portfolio || self.world.equity <= 0.0)
+            && let Ok(t) = account.tournament(&self.world.slug).await
+        {
+            cash::observe_balance(&mut self.world, t.my_balance);
         }
     }
 

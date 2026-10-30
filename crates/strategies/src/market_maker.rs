@@ -207,10 +207,10 @@ impl MarketMaker {
             (price, qty)
         });
         let resting: Vec<&&IntentView> = ours.iter().filter(|i| QuoteSide::of(i) == Some(side)).collect();
-        if let ([only], Some((price, _))) = (resting.as_slice(), target) {
-            if only.price == price {
-                return;
-            }
+        if let ([only], Some((price, _))) = (resting.as_slice(), target)
+            && only.price == price
+        {
+            return;
         }
         let reason = if target.is_some() {
             "requote"
