@@ -1001,7 +1001,7 @@ impl Engine {
             let oms = self.d.gateway.oms().lock();
             let intents = intent_views(&oms);
             let live = live_orders(&oms);
-            let needle_used = needle_budget_used(&oms);
+            let needle_used = needle_budget_used(&oms, &self.world.positions);
             drop(oms);
             let violations = self.world.violation_list();
             let marks = self.world.marks();
@@ -1137,7 +1137,7 @@ impl Engine {
         // Rebuild the live-order view per bundle so several bundles in one step share the caps.
         let (live, needle_used) = {
             let oms = self.d.gateway.oms().lock();
-            (live_orders(&oms), needle_budget_used(&oms))
+            (live_orders(&oms), needle_budget_used(&oms, &self.world.positions))
         };
         let marks = self.world.marks();
         let locked = self.locked();

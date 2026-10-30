@@ -181,19 +181,38 @@ fn live_terms(t: &Tracked) -> Option<(susq_core::Side, susq_core::Action, susq_c
 /// SUSQies the election-night executor has deployed, for the risk night budget: every
 /// needle-derived buy at its limit for the shares bought or still resting, less the proceeds of
 /// needle-derived sells (rolls). An intent recovered from a previous run carries no fill count
-/// and no `needle_derived` flag, so it is recognised by its strategy name and a closed one is
-/// counted as fully bought (a sell as returning nothing): after a restart the budget can only
-/// look more used than it is, never less.
-pub fn needle_budget_used(oms: &Oms) -> f64 {
-    let used: f64 = oms
+/// and no `needle_derived` flag, so it is recognised by its strategy name. A closed recovered buy
+/// counts the shares it could have bought, capped by what the account still holds on that side
+/// of that exchange (shared among the recovered buys there, oldest first), and a closed recovered
+/// sell counts as returning nothing. Without the cap every restart counted each expired, unfilled
+/// buy as fully bought, so a restart on the night (or after a rehearsal) used the whole budget up.
+pub fn needle_budget_used(oms: &Oms, positions: &PositionTracker) -> f64 {
+    let mut held: HashMap<(ExchangeId, susq_core::Side), i64> = HashMap::new();
+    let mut needle: Vec<&Tracked> = oms
         .all()
         .filter(|t| t.meta.needle_derived || t.intent.strategy == susq_strategies::en_executor::NAME)
+        .collect();
+    needle.sort_by_key(|t| t.intent.created_at_ns);
+    let used: f64 = needle
+        .into_iter()
         .filter_map(|t| {
-            let (_, action, price) = t.order_terms()?;
+            let (side, action, price) = t.order_terms()?;
             let per_share = price.prob();
             let shares = if t.meta.restored && t.state.is_terminal() {
                 match action {
-                    susq_core::Action::Buy => t.intent.quantity,
+                    susq_core::Action::Buy => {
+                        let ex = t.exchange_id();
+                        let left = held.entry((ex.clone(), side)).or_insert_with(|| {
+                            let pos = positions.get(&ex);
+                            match side {
+                                susq_core::Side::Yes => pos.max(0),
+                                susq_core::Side::No => (-pos).max(0),
+                            }
+                        });
+                        let take = t.intent.quantity.min(*left).max(0);
+                        *left -= take;
+                        take
+                    }
                     susq_core::Action::Sell => 0,
                 }
             } else {
@@ -254,7 +273,7 @@ mod tests {
 
     use chrono::{DateTime, Utc};
     use susq_core::{Action, Calendar, ExchangeId, OrderBundle, OrderSpec, Pips, Qty, Side, TournamentId};
-    use susq_oms::{Oms, OmsConfig};
+    use susq_oms::{FillDelta, Oms, OmsConfig, PositionTracker};
     use susq_platform::OrderAck;
 
     use super::{needle_budget_used, needle_exchanges};
@@ -334,40 +353,49 @@ mod tests {
         let path = dir.path().join("intents.jsonl");
         {
             let mut oms = Oms::open(cfg(), &path, 0).expect("open");
-            assert_eq!(needle_budget_used(&oms), 0.0);
+            assert_eq!(needle_budget_used(&oms, &PositionTracker::new()), 0.0);
             // 100 bought at 0.60, the order closed: 60.
             send(
                 &mut oms,
                 spec("en:1:yes:1", "en", Action::Buy, 100, 6000, true),
                 &ack(false, 100.0),
             );
-            assert!((needle_budget_used(&oms) - 60.0).abs() < 1e-9);
+            assert!((needle_budget_used(&oms, &PositionTracker::new()) - 60.0).abs() < 1e-9);
             // 50 resting at 0.70, 0 filled yet: +35.
             send(
                 &mut oms,
                 spec("en:1:yes:2", "en", Action::Buy, 50, 7000, true),
                 &ack(true, 0.0),
             );
-            assert!((needle_budget_used(&oms) - 95.0).abs() < 1e-9);
+            assert!((needle_budget_used(&oms, &PositionTracker::new()) - 95.0).abs() < 1e-9);
             // A roll sold 100 at 0.90: frees 90.
             send(
                 &mut oms,
                 spec("en:1:roll:3", "en", Action::Sell, 100, 9000, true),
                 &ack(false, 100.0),
             );
-            assert!((needle_budget_used(&oms) - 5.0).abs() < 1e-9);
+            assert!((needle_budget_used(&oms, &PositionTracker::new()) - 5.0).abs() < 1e-9);
             // The sniper is not the needle's budget.
             send(
                 &mut oms,
                 spec("sniper:1:1", "sniper", Action::Buy, 1_000, 9500, false),
                 &ack(false, 1_000.0),
             );
-            assert!((needle_budget_used(&oms) - 5.0).abs() < 1e-9);
+            assert!((needle_budget_used(&oms, &PositionTracker::new()) - 5.0).abs() < 1e-9);
         }
-        // Restart: fills are not in the intent log, so closed needle buys count in full, sells as
-        // nothing, and the resting buy (restored, unresolved) still counts at its limit.
+        // Restart: fills are not in the intent log. A closed needle buy counts up to what the
+        // account still holds on that side (here 100 YES on exchange 1: in full), sells as nothing,
+        // and the resting buy (restored, unresolved) still counts at its limit.
         let reopened = Oms::open(cfg(), &path, 1).expect("reopen");
-        assert!((needle_budget_used(&reopened) - (60.0 + 35.0)).abs() < 1e-9);
+        let mut holding = PositionTracker::new();
+        holding.apply(&FillDelta {
+            exchange_id: ExchangeId::new("1"),
+            yes_delta: 100,
+        });
+        assert!((needle_budget_used(&reopened, &holding) - (60.0 + 35.0)).abs() < 1e-9);
+        // Nothing held (the buys expired unfilled, or the shares were rolled): only the resting
+        // order counts, so a restart cannot use the night budget up.
+        assert!((needle_budget_used(&reopened, &PositionTracker::new()) - 35.0).abs() < 1e-9);
     }
 
     #[test]
