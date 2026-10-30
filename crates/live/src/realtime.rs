@@ -158,6 +158,14 @@ impl RealtimeFeed {
         self.cap * self.sessions.len()
     }
 
+    /// Lift the rebuild limit once: the next [`RealtimeFeed::ensure`] calls rebuild every
+    /// connection whose market set changed (still one per call).
+    pub fn expedite(&mut self) {
+        for s in self.sessions.iter_mut().flatten() {
+            s.spawned_ns = i64::MIN;
+        }
+    }
+
     /// Make the sessions cover `wanted` (candidates in priority order; see
     /// [`prioritised_markets`]): connection `k` carries the `k`-th run of `cap` markets. Builds
     /// at most one connection per call: a missing one at once, a changed one no sooner than
@@ -339,6 +347,21 @@ mod tests {
         assert_eq!(f.try_recv(), Some(lost), "any connection dropping is reported");
         assert_eq!(live(&f), vec![m("a")]);
         assert_eq!(f.try_recv(), None);
+    }
+
+    #[test]
+    fn expedite_lifts_the_rebuild_limit_once() {
+        let seen = Arc::new(parking_lot::Mutex::new(Vec::new()));
+        let mut f = two_connections(1, seen.clone(), Arc::default());
+        f.ensure([m("a"), m("b")], 0);
+        f.ensure([m("a"), m("b")], 1);
+        assert_eq!(f.ensure([m("c"), m("d")], 2), None, "rate-limited");
+        f.expedite();
+        assert_eq!(f.ensure([m("c"), m("d")], 3), Some(2));
+        assert_eq!(f.ensure([m("c"), m("d")], 4), Some(1), "one connection per call");
+        assert_eq!(f.markets(), &[m("c"), m("d")]);
+        assert_eq!(f.ensure([m("e"), m("f")], 5), None, "the limit is back");
+        assert_eq!(seen.lock().len(), 4);
     }
 
     #[test]

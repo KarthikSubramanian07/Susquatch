@@ -124,6 +124,9 @@ pub struct Engine {
     collateral_sizing: bool,
     /// Latest realtime book version applied per exchange (older `books` items are stale).
     book_versions: HashMap<ExchangeId, u64>,
+    /// The needle's markets in realtime-slot order, as of the last healthy needle with races. It
+    /// outlives a needle outage so the slots don't churn away from the races and back.
+    needle_slots: Vec<ExchangeId>,
 }
 
 /// How the gateway received one decision's bundles.
@@ -253,6 +256,7 @@ impl Engine {
             collateral: CollateralCost::default(),
             collateral_sizing,
             book_versions: HashMap::new(),
+            needle_slots: Vec::new(),
             world,
             d,
         }
@@ -405,13 +409,14 @@ impl Engine {
         }
     }
 
-    /// Markets that deserve a per-market channel, most important first: the healthy needle's races
-    /// (the election-night executor trades only on fresh books, and there are more markets than
-    /// slots), then the targets file, then everything else the strategies read books for
+    /// Markets that deserve a per-market channel, most important first: the needle's races (as of
+    /// its last healthy view; the election-night executor trades only on fresh books, and there
+    /// are more markets than slots), then the targets file, then everything else the strategies read books for
     /// (positions, violations, fresh fair values), then the books that moved most recently.
     fn realtime_market_candidates(&self, now: i64) -> Vec<MarketId> {
         let markets = &self.world.markets;
-        let mut out: Vec<MarketId> = crate::world::needle_exchanges(self.world.needle.as_ref(), markets)
+        let mut out: Vec<MarketId> = self
+            .needle_slots
             .iter()
             .filter_map(|ex| markets.market_of(ex))
             .collect();
@@ -466,10 +471,20 @@ impl Engine {
         let Some(cap) = self.d.realtime.as_ref().map(RealtimeFeed::cap) else {
             return;
         };
+        let fresh = crate::world::needle_exchanges(self.world.needle.as_ref(), &self.world.markets);
+        let needle_arrived = !fresh.is_empty() && self.needle_slots.is_empty();
+        if !fresh.is_empty() {
+            self.needle_slots = fresh;
+        }
         let wanted = self.realtime_market_candidates(now);
         let Some(feed) = self.d.realtime.as_mut() else {
             return;
         };
+        if needle_arrived {
+            // Sessions built before the needle's races were known (at start, or after a restart on
+            // the night) would otherwise wait out the rebuild limit with the races on REST.
+            feed.expedite();
+        }
         if let Some(channels) = feed.ensure(wanted, now) {
             let markets = feed.markets().len();
             self.world.event(format!(
