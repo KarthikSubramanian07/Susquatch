@@ -603,6 +603,9 @@ pub struct LiveCfg {
     /// hold, are violated on, have fair values for, or saw book activity on most recently; every
     /// other market stays on REST polling.
     pub realtime_market_channels: usize,
+    /// Realtime connections, each carrying up to `realtime_market_channels` market channels
+    /// (the needle's races span more markets than one connection may join).
+    pub realtime_connections: usize,
     /// `/healthz` reports the loop stuck once no step completed for this long. A step issues its
     /// REST reads serially under the per-account rate budget (about 1 req/s), so it must allow
     /// for far more than one tick.
@@ -628,6 +631,7 @@ impl Default for LiveCfg {
             book_max_age_s: 10,
             tick_ms: 500,
             realtime_market_channels: 80,
+            realtime_connections: 1,
             max_step_age_s: 120,
             book_refresh_budget_ms: 3000,
             realtime_book_max_age_s: 120,
@@ -955,6 +959,7 @@ mod tests {
         assert_eq!(cfg.paths.fair_live, PathBuf::from("state/fair_live.json"));
         assert!(cfg.live.metrics_addr.starts_with("127.0.0.1:"));
         assert_eq!(cfg.live.realtime_market_channels, 80);
+        assert_eq!(cfg.live.realtime_connections, 2);
     }
 
     #[test]

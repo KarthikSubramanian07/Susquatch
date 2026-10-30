@@ -449,8 +449,7 @@ impl Engine {
         let connected = self.world.health.get("realtime").is_some_and(|h| h.state == "ok");
         let live: Vec<ExchangeId> = match self.d.realtime.as_ref() {
             Some(feed) if connected && max_age_s > 0 => feed
-                .markets()
-                .iter()
+                .live_markets()
                 .flat_map(|m| self.world.markets.exchanges_for_market(m).iter().cloned())
                 .collect(),
             _ => Vec::new(),
