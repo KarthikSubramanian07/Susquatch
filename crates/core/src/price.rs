@@ -47,7 +47,7 @@ impl Pips {
         if !(MIN_PIPS..=MAX_PIPS).contains(&raw) {
             return Err(PriceError::OutOfRange(raw));
         }
-        if raw % TICK != 0 {
+        if !raw.is_multiple_of(TICK) {
             return Err(PriceError::OffTick(raw));
         }
         Ok(Pips(raw))

@@ -464,10 +464,10 @@ fn implication_ends(rel: &Relationship) -> Result<(ExchangeId, ExchangeId), Stri
             .find(|n| n.role == role)
             .map(|n| n.exchange_id.clone())
     };
-    if let (Some(a), Some(b)) = (by_role(NodeRole::Antecedent), by_role(NodeRole::Consequent)) {
-        if a != b {
-            return Ok((a, b));
-        }
+    if let (Some(a), Some(b)) = (by_role(NodeRole::Antecedent), by_role(NodeRole::Consequent))
+        && a != b
+    {
+        return Ok((a, b));
     }
     let dir = rel
         .direction
