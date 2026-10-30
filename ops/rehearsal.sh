@@ -366,9 +366,14 @@ if not skip:
     print(f"election-night intents placed:  {len(intents)}")
     print(f"  while the needle was down:    {len(down)}   (must be 0)")
     print(f"  while killed:                 {len(killed)}   (must be 0)")
-    print(f"paper fills (en):               {len(trades)}")
-    for t in list(trades.values())[:20]:
-        print(f"    {t.get('title')}: {t.get('action')} {t.get('side')} x{t.get('quantity')} @ {t.get('price')}")
+    # The intent journal is the source of truth: an intent whose last line closed it with FILLED
+    # filled in full. (The status snapshots' recentTrades only carry the last few trades.)
+    filled = [i for _, i in intents.values() if i.get("lastErrorCode", i.get("last_error_code")) == "FILLED"]
+    print(f"paper fills (en):               {len(filled)} intents filled in full "
+          f"({len(trades)} also in the status snapshots)")
+    for i in filled[:20]:
+        print(f"    {i.get('exchangeId')}: {i.get('action')} {i.get('side')} x{i.get('quantity')} "
+              f"@ {int(i.get('pricePips', 0)) / 10000:.4f}")
     print(f"429s (rust-live):               {n429}")
     print(f"needle-down / kill events:      {len(events)}")
     for e in events[:10]:
