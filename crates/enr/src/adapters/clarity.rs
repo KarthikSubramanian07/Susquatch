@@ -155,7 +155,12 @@ pub fn unzip_detail(zip_bytes: &[u8]) -> Result<String, ParseError> {
         zip::ZipArchive::new(Cursor::new(zip_bytes)).map_err(|e| ParseError(format!("zip: {e}")))?;
     for i in 0..archive.len() {
         let mut f = archive.by_index(i).map_err(|e| ParseError(format!("zip: {e}")))?;
-        if f.name().to_ascii_lowercase().ends_with(".xml") {
+        let is_xml = f
+            .name()
+            .map_err(|e| ParseError(format!("zip entry name: {e}")))?
+            .to_ascii_lowercase()
+            .ends_with(".xml");
+        if is_xml {
             let mut s = String::new();
             f.read_to_string(&mut s)
                 .map_err(|e| ParseError(format!("zip entry: {e}")))?;

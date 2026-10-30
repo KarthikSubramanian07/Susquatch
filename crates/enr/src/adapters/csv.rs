@@ -455,15 +455,19 @@ pub fn unzip_entry(zip_bytes: &[u8], suffix: Option<&str>) -> Result<Vec<u8>, Pa
         if f.is_dir() {
             continue;
         }
+        let name = f
+            .name()
+            .map_err(|e| ParseError(format!("zip entry name: {e}")))?
+            .into_owned();
         if suffix
             .as_deref()
-            .is_some_and(|s| !f.name().to_ascii_lowercase().ends_with(s))
+            .is_some_and(|s| !name.to_ascii_lowercase().ends_with(s))
         {
             continue;
         }
         let mut buf = Vec::new();
         f.read_to_end(&mut buf)
-            .map_err(|e| ParseError(format!("zip entry {}: {e}", f.name())))?;
+            .map_err(|e| ParseError(format!("zip entry {name}: {e}")))?;
         return Ok(buf);
     }
     Err(ParseError(match suffix {
