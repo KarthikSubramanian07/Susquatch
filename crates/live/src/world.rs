@@ -153,25 +153,43 @@ impl World {
     }
 }
 
-/// The healthy needle's race exchanges, races with a live posterior first and then the quiet ones
-/// (each group by race id), so on the night the realtime slots go to the books the election-night
-/// executor trades before anything else. Empty while the needle is unhealthy.
+/// The healthy needle's race exchanges for the realtime slots, so on the night the slots go to the
+/// books the election-night executor trades. A race's DEM and REP markets mirror each other and
+/// there are about twice as many of them as slots, so every race gets one exchange first (races
+/// with a live posterior first, most uncertain, `p_dem` nearest 0.5, first; then the quiet ones by
+/// race id) and the second exchanges fill whatever is left, by race id. That keeps the slot set
+/// stable as posteriors move: every rebuild of the realtime session marks all books dirty. Empty
+/// while the needle is unhealthy.
 pub fn needle_exchanges(needle: Option<&NeedleView>, markets: &MarketIndex) -> Vec<ExchangeId> {
     let Some(n) = needle.filter(|n| n.healthy) else {
         return Vec::new();
     };
-    let mut live: Vec<&String> = n.posteriors.keys().collect();
-    live.sort();
+    let mut live: Vec<(&String, f64)> = n
+        .posteriors
+        .iter()
+        .map(|(race, p)| {
+            let d = (p.p_dem - 0.5).abs();
+            (race, if d.is_finite() { d } else { 0.5 })
+        })
+        .collect();
+    live.sort_by(|a, b| a.1.total_cmp(&b.1).then_with(|| a.0.cmp(b.0)));
     let mut quiet: Vec<&String> = n
         .quiet_posteriors
         .keys()
         .filter(|race| !n.posteriors.contains_key(race.as_str()))
         .collect();
     quiet.sort();
-    live.into_iter()
+    let races: Vec<(&String, &[ExchangeId])> = live
+        .into_iter()
+        .map(|(race, _)| race)
         .chain(quiet)
-        .flat_map(|race| markets.exchanges_for_race(race).iter().cloned())
-        .collect()
+        .map(|race| (race, markets.exchanges_for_race(race)))
+        .collect();
+    let first = races.iter().filter_map(|(_, exs)| exs.first().cloned());
+    let mut by_id: Vec<&(&String, &[ExchangeId])> = races.iter().collect();
+    by_id.sort_by_key(|(race, _)| *race);
+    let rest = by_id.into_iter().flat_map(|(_, exs)| exs.iter().skip(1).cloned());
+    first.chain(rest).collect()
 }
 
 fn live_terms(t: &Tracked) -> Option<(susq_core::Side, susq_core::Action, susq_core::Pips)> {
@@ -399,16 +417,16 @@ mod tests {
     }
 
     #[test]
-    fn needle_exchanges_put_live_races_first_then_quiet_and_nothing_when_unhealthy() {
+    fn needle_exchanges_give_every_race_a_slot_first_most_uncertain_first() {
         use std::collections::HashMap;
 
         use susq_contracts::v1::{MarketMap, MarketRule, RacePosterior};
         use susq_core::MarketIndex;
         use susq_strategies::{NeedleView, QuietPosterior};
 
-        let rule = |ex: &str, race: &str| MarketRule {
+        let rule = |ex: &str, market: &str, race: &str| MarketRule {
             exchange_id: ex.into(),
-            market_id: format!("m-{race}"),
+            market_id: market.into(),
             race_id: race.into(),
             verified: true,
             ..Default::default()
@@ -416,23 +434,26 @@ mod tests {
         let markets = MarketIndex::new(&MarketMap {
             header: None,
             markets: vec![
-                rule("1", "GA"),
-                rule("2", "GA"),
-                rule("3", "AZ"),
-                rule("4", "NC"),
-                rule("5", ""),
+                rule("1", "ga-d", "GA"),
+                rule("2", "ga-r", "GA"),
+                rule("3", "az-d", "AZ"),
+                rule("4", "az-r", "AZ"),
+                rule("5", "nc-d", "NC"),
+                rule("6", "", ""),
             ],
         });
+        let post = |p_dem: f64| RacePosterior {
+            p_dem,
+            ..RacePosterior::default()
+        };
         let quiet = QuietPosterior {
             posterior: RacePosterior::default(),
             produced_at_ns: 0,
         };
         let mut n = NeedleView {
             healthy: true,
-            posteriors: HashMap::from([
-                ("GA".to_owned(), RacePosterior::default()),
-                ("AZ".to_owned(), RacePosterior::default()),
-            ]),
+            // GA is the tighter race, so it outranks AZ although AZ sorts first by id.
+            posteriors: HashMap::from([("GA".to_owned(), post(0.52)), ("AZ".to_owned(), post(0.95))]),
             quiet_posteriors: HashMap::from([("NC".to_owned(), quiet.clone()), ("AZ".to_owned(), quiet)]),
             ..Default::default()
         };
@@ -442,8 +463,8 @@ mod tests {
             .collect();
         assert_eq!(
             got,
-            ["3", "1", "2", "4"],
-            "AZ, GA live (by race id), then NC quiet; AZ once"
+            ["1", "3", "5", "4", "2"],
+            "one exchange per race (GA, AZ, then quiet NC), then the second exchanges by race id; AZ once"
         );
         n.healthy = false;
         assert!(needle_exchanges(Some(&n), &markets).is_empty());
