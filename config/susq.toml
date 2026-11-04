@@ -13,7 +13,7 @@ request_timeout_ms = 10000
 # max_rps to 2.0 once only one trader runs. The limiter still adapts down on 429 / Retry-After.
 initial_rps = 1.0
 min_rps = 0.25
-max_rps = 1.0
+max_rps = 2.0
 # Share of the request budget reserved for order placement/cancel (never starved by reads): 30/130.
 order_budget_frac = 0.23
 
@@ -79,8 +79,8 @@ file = "ops/KILL"
 go_live_file = "ops/GO_LIVE"
 
 [fair]
-kalshi_weight = 0.8
-sim_weight = 0.2
+kalshi_weight = 1.0
+sim_weight = 0.0
 stale_after_s = 60                 # orders built on older fair values are cancelled
 mapping_error_pts = 25.0           # |cup_mid - fair| beyond this = assume mis-mapping, block + flag
 
@@ -115,7 +115,7 @@ max_relationship_notional_frac = 0.03  # cap on notional already held across a r
 enabled = true
 min_edge_pts = 3.5                 # through fair, after ticks
 max_mistake_frac = 0.01            # size so a wrong fill costs < 1% of bankroll
-max_total_gross_frac = 0.35        # stop adding once positions + resting orders reach 35% of equity
+max_total_gross_frac = 0.85        # stop adding once positions + resting orders reach 35% of equity
 order_ttl_s = 30
 # EXP-003 (approved 2026-10-07): from unwind_from_utc the sniper stops buying and sells what it holds to free
 # cash for the 60% scenario book and the election-night budget. The unwind set is every held side whose fair
@@ -124,7 +124,7 @@ order_ttl_s = 30
 # the tick (never below that floor), is at most the holding and max_mistake_frac of equity, and the unwind
 # stops once cash reaches unwind_target_cash_frac of equity or this hour's sells reach unwind_max_hourly_frac.
 # These values equal the defaults in both traders (bridge SniperConfig, Rust SniperCfg).
-unwind_from_utc = "2026-10-24T16:00:00Z"   # Oct 24 12:00 EDT
+unwind_from_utc = "2026-11-05T00:00:00Z"   # Oct 24 12:00 EDT
 unwind_max_haircut_pts = 2.0
 unwind_target_cash_frac = 0.60
 unwind_max_hourly_frac = 0.10      # proceeds of unwind sells sent in any trailing hour, as a share of equity
@@ -140,7 +140,7 @@ levels = [0.01, 0.03, 0.05, 0.10]
 reserve_frac = 0.08                # EXP-002: 0.15 left ~13.5k free cash against a 31k early scenario book
 max_market_frac = 0.02
 order_ttl_s = 86400               # capped at last_order_utc by the gateway
-interval_s = 600                  # top-up cadence: 30 writes/min is the whole account's budget
+interval_s = 3600                 # top-up cadence: 30 writes/min is the whole account's budget
 
 [strategies.mm]
 enabled = false                    # decided by the decision table after measure_day1
@@ -207,7 +207,7 @@ lock_min_drift_pts = 1.5
 lock_posterior_max_age_s = 10800
 # Leader/contender switch: at equity / 100,000 >= this multiple, open no new positions and only roll.
 # 0 = off: the field maximum on the night is not observed, so there is no honest multiple to switch at.
-contender_hedge_multiple = 0.0
+contender_hedge_multiple = 0.01
 # ── Contender mode: the concentrated night profile (EXP-014, experiments/EXP-014-concentrated-night.md) ─────
 # OFF. Arming it is a separate, explicit decision at the Nov 3 pre-flight, after rehearsal #2. While false, every
 # contender_* key below is inert and the executor behaves exactly as above. While true:
@@ -220,7 +220,7 @@ contender_hedge_multiple = 0.0
 #   contender_depth_window_pts of the touch on the side taken, measured at order time (5% everywhere else);
 # - the loss-per-hour breaker trips at contender_loss_per_hour_frac instead of [risk] loss_per_hour_frac.
 # Kill switch, needle watchdog, stale-feed and dispute gates, glitch cap, corroboration and max_order_frac stay.
-contender_mode = false
+contender_mode = true
 contender_budget_frac = 0.80
 contender_exit_bid = 0.93
 contender_call_se = 0.005
