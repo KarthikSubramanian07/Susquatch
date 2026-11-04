@@ -682,6 +682,11 @@ impl Engine {
 
     /// Repair local state from the account's open orders and portfolio.
     async fn reconcile(&mut self, now: i64) {
+        // An ack can already be in OMS while its position delta is still in a send task.
+        // Never replace positions with REST and then apply that same fill a second time.
+        if !self.sends.is_empty() {
+            return;
+        }
         let every = i64::try_from(self.d.cfg.oms.reconcile_interval_s)
             .unwrap_or(15)
             .saturating_mul(S);
@@ -697,9 +702,6 @@ impl Engine {
                 self.world.event(format!("cancelled untracked order {id}"));
             }
         }
-        for p in report.resend {
-            self.sends.push(tokio::spawn(Arc::clone(&self.d.gateway).send(p)));
-        }
         match account.positions(&self.world.slug).await {
             Ok(p) => self.world.positions.set_from_rest(&p, now),
             Err(e) => self.platform_error("positions", &e, now),
@@ -714,6 +716,10 @@ impl Engine {
                 cash::observe_pnl(&mut self.world, &p);
             }
             Err(e) => self.platform_error("pnl", &e, now),
+        }
+        // Start retries only after the REST position baseline has been installed.
+        for p in report.resend {
+            self.sends.push(tokio::spawn(Arc::clone(&self.d.gateway).send(p)));
         }
         // `myBalance` only until the first portfolio read (or while equity is still unknown).
         if (!self.world.cash_from_portfolio || self.world.equity <= 0.0)
@@ -1010,6 +1016,12 @@ impl Engine {
     }
 
     async fn decide_and_act(&mut self, now: i64) {
+        // Includes finished-but-uncollected tasks: OMS may already say FILLED while
+        // positions still contain the pre-fill holding. Wait for collect_sends next tick.
+        // This also prevents buys from using stale exposure/budget after an immediate fill.
+        if !self.sends.is_empty() {
+            return;
+        }
         let farquote_due = self.farquote_due(now);
         let decisions = {
             let oms = self.d.gateway.oms().lock();
@@ -1290,3 +1302,7 @@ mod tests {
         assert_eq!(body["blocked"], json!({"stale": 2, "risk": 2}));
     }
 }
+
+#[cfg(test)]
+#[path = "send_barrier_tests.rs"]
+mod send_barrier_tests;
