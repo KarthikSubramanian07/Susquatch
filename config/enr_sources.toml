@@ -148,8 +148,11 @@ precinct_flag = "Real Precinct"
 # MIXED. Precincts count only Election Day locations (the site's own caveat), so early ballots
 # are not "reporting". eid 69 = "2026 General Election" (site_header_69_0_en.json, 200);
 # election_69_0.json is 404 until the first upload, so the source would fail every poll until
-# then. Enable once https://cdn1.arizona.vote/data/69/0/election_69_0.json returns 200 (the
-# first test upload). Fixture: the 2024 general (eid 47, uploadId 12036).
+# then. Armed 2026-11-04 ~00:10Z: VM curl confirms the general header (200), but the version
+# document remains 404 BlobNotFound. Header says results begin at 8pm Arizona time (03:00Z).
+# Polling retries indefinitely (120s backoff cap before jitter); the first successful poll
+# resets failures and last_ok_ns, automatically clearing stale health without a restart.
+# Fixture: the 2024 general (eid 47, uploadId 12036); 2026 county payload not yet available.
 # Contest names: the 2024 general printed "U.S. Senator" (no party); the 2026 primary printed
 # "Governor (REP)" etc., so the general's "Governor" is assumed. Arizona has no 2026 Senate race.
 [[sources]]
@@ -157,7 +160,7 @@ id = "az_sos"
 state = "AZ"
 kind = "static_json"
 tz = "America/Phoenix"
-enabled = false
+enabled = true
 poll_interval_s = 20.0
 version_url = "https://cdn1.arizona.vote/data/69/0/election_69_0.json"
 version_path = "uploadId"
