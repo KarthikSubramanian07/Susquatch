@@ -115,8 +115,8 @@ needs a card: the server runs on Azure for Students credit, backups sit in Backb
 
 One account. No coordination, and no trading against friends. No wash trades. No MNPI. The Sponsor owns all Competition Data,
 so **raw platform logs never leave the private server**: `journal/`, `data/`, `reports/`, and `state/` are gitignored and
-blocked by a pre-commit hook. The repo stays private until the lock. After that it publishes code, methodology, the simulator,
-external-data backtests, and aggregate results only.
+blocked by a pre-commit hook. The repo was private until the Nov 4 lock and is public from then on. It publishes code,
+methodology, the simulator, external-data backtests, and aggregate results only.
 
 ## Repo map
 
