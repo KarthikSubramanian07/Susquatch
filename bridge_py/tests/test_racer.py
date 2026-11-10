@@ -11,7 +11,7 @@ import httpx
 from hypothesis import given
 from hypothesis import strategies as st
 from susq.mock import MockConfig
-from susq.mock.testing import KEY, serve_mock
+from susq.mock.testing import KEY, T0, serve_mock
 from susq.platform.models import BookLevel, ConstraintEvaluation, OrderBook
 from susq_bridge.config import load_config
 from susq_bridge.runtime import Bridge, Loops
@@ -281,9 +281,11 @@ async def test_realtime_violation_is_raced(home: Path) -> None:
     """Mock on a real socket: the bridge joins realtime and races the pushed violation."""
     (home / "ops").mkdir()
     (home / "ops" / "GO_LIVE").write_text("go live")
-    async with serve_mock(MockConfig(seed=7)) as live:
+    # Pin both clocks inside the trading window: on the wall clock the time gate shut at
+    # calendar.last_order_utc (2026-11-04) and every bundle came back blocked.
+    async with serve_mock(MockConfig(seed=7, frozen_now=T0)) as live:
         config = load_config(home, env={"SUSQ_API_KEY": KEY, "SUSQ_MODE": "live", "SUSQ_BASE_URL": live.api})
-        bridge = await Bridge.open(config)
+        bridge = await Bridge.open(config, clock=live.mx.clock.now)
         await bridge.start()
         runner = asyncio.create_task(bridge.run(Loops(sniper=False, recorder=False, status_interval_s=3600)))
         try:
