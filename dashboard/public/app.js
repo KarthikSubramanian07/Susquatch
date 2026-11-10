@@ -218,11 +218,25 @@ function renderBar(snap) {
   btn.className = `kill-btn${snap.killed ? " is-killed" : pending ? " is-pending" : ""}`;
   btn.disabled = Boolean(snap.killed || pending);
   btn.textContent = snap.killed ? "Killed" : pending ? "Kill sent" : "Kill";
+  btn.setAttribute("aria-expanded", "false");
   btn.title = snap.killed
     ? "Un-kill over SSH: make unkill"
     : pending
       ? `Requested ${state.kill.at ?? ""}; waiting for the server (~10 s poll + KV propagation)`
       : "Cancel all orders and freeze";
+
+  const live = $("live");
+  if (live) {
+    const note = snap.killed
+      ? `Susquatch killed${snap.killReason ? `: ${snap.killReason}` : ""}`
+      : state.stale
+        ? "Server silent. Numbers below are the last known state."
+        : "";
+    if (note && live.dataset.last !== note) {
+      live.textContent = note;
+      live.dataset.last = note;
+    }
+  }
 }
 
 function tickHeartbeat(fresh = false) {
@@ -422,22 +436,22 @@ function placeSpot(node, cx, cy) {
 
 function wireScrub() {
   const svg = $("spark");
+  const chart = $("chart");
   const box = $("scrub");
   const dot = $("spark-cursor");
   let cursor = null;
+  let idx = -1;
   const hide = () => {
     box.hidden = true;
     dot.hidden = true;
     cursor?.remove();
     cursor = null;
+    idx = -1;
   };
-  svg.addEventListener("pointermove", (ev) => {
-    if (spark.pts.length < 2) return;
+  const showAt = (best) => {
+    if (!best || spark.pts.length < 2) return;
+    idx = spark.pts.indexOf(best);
     const r = svg.getBoundingClientRect();
-    const fx = Math.min(1, Math.max(0, (ev.clientX - r.left) / r.width));
-    const t = spark.pts[0].t + fx * (spark.pts.at(-1).t - spark.pts[0].t);
-    let best = spark.pts[0];
-    for (const p of spark.pts) if (Math.abs(p.t - t) < Math.abs(best.t - t)) best = p;
     const cx = spark.x(best.t);
     if (!cursor) {
       cursor = mk("line", { class: "cursor", x1: cx, x2: cx, y1: 0, y2: 76 });
@@ -453,9 +467,36 @@ function wireScrub() {
     $("scrub-v").textContent = money(best.e);
     const delta = best.e - START_EQUITY;
     $("scrub-t").textContent = `${signed(delta)} · ${dayTime(best.t)}`;
+    chart.setAttribute("aria-valuetext", `${money(best.e)}, ${signed(delta)}, ${dayTime(best.t)}`);
+  };
+  svg.addEventListener("pointermove", (ev) => {
+    if (spark.pts.length < 2) return;
+    const r = svg.getBoundingClientRect();
+    const fx = Math.min(1, Math.max(0, (ev.clientX - r.left) / r.width));
+    const t = spark.pts[0].t + fx * (spark.pts.at(-1).t - spark.pts[0].t);
+    let best = spark.pts[0];
+    for (const p of spark.pts) if (Math.abs(p.t - t) < Math.abs(best.t - t)) best = p;
+    showAt(best);
   });
   svg.addEventListener("pointerleave", hide);
   svg.addEventListener("pointercancel", hide);
+  chart.addEventListener("keydown", (ev) => {
+    if (spark.pts.length < 2) return;
+    if (ev.key === "ArrowRight" || ev.key === "ArrowLeft") {
+      ev.preventDefault();
+      const next = ev.key === "ArrowRight"
+        ? Math.min(spark.pts.length - 1, Math.max(0, idx) + 1)
+        : Math.max(0, (idx < 0 ? spark.pts.length : idx) - 1);
+      showAt(spark.pts[next]);
+    } else if (ev.key === "Home") {
+      ev.preventDefault();
+      showAt(spark.pts[0]);
+    } else if (ev.key === "End") {
+      ev.preventDefault();
+      showAt(spark.pts.at(-1));
+    } else if (ev.key === "Escape") hide();
+  });
+  chart.addEventListener("blur", hide);
 }
 
 // ── health ───────────────────────────────────────────────────────────────
@@ -473,13 +514,14 @@ function renderHealth(items) {
     .sort((a, b) => (order[a.state] ?? 0) - (order[b.state] ?? 0) || a.name.localeCompare(b.name))
     .map((h) => {
       const last = nsToMs(h.lastOkNs);
+      const detail = h.detail && h.detail !== h.state ? `${h.state} · ${h.detail}` : h.state;
       return el(
         "div",
-        { class: `hi ${h.state}`, title: h.detail || h.state },
-        el("span", { class: `hdot dot ${h.state === "ok" ? "ok" : ""}` }),
+        { class: `hi ${h.state}`, title: detail },
+        el("span", { class: `hdot dot ${h.state === "ok" ? "ok" : ""}`, "aria-hidden": "true" }),
         el("span", { class: "hname" }, h.name),
         el("span", { class: "hwhen" }, last ? ago(state.serverNow - last).replace(" ago", "") : ""),
-        el("span", { class: "hdetail", style: "grid-column: 2 / span 2" }, h.detail || h.state),
+        el("span", { class: "hdetail", style: "grid-column: 2 / span 2" }, detail),
       );
     });
   box.append(...stagger(rows));
@@ -712,11 +754,16 @@ function wireKill() {
     reason.value = "";
     confirm.disabled = true;
     err.hidden = true;
+    $("kill-open").setAttribute("aria-expanded", "true");
     dialog.showModal();
     reason.focus();
   });
   $("kill-cancel").addEventListener("click", () => dialog.close());
-  dialog.addEventListener("close", cancelHold);
+  dialog.addEventListener("close", () => {
+    cancelHold();
+    $("kill-open").setAttribute("aria-expanded", "false");
+    if (!$("kill-open").disabled) $("kill-open").focus();
+  });
   reason.addEventListener("input", () => {
     confirm.disabled = reason.value.trim().length === 0;
   });

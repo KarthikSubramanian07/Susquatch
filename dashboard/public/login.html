@@ -32,8 +32,9 @@
   <script type="module" src="/login.js"></script>
 </head>
 <body>
-  <main class="gate">
-    <svg class="curve" viewBox="0 0 400 120" preserveAspectRatio="none" aria-hidden="true">
+  <a class="skip" href="#password">Skip to password</a>
+  <main class="gate" id="main">
+    <svg class="curve" viewBox="0 0 400 120" preserveAspectRatio="none" aria-hidden="true" focusable="false">
       <path d="M0 118 C 120 118, 150 12, 200 12 S 280 118, 400 118" />
     </svg>
 
@@ -48,7 +49,7 @@
 
       <label class="field" for="password">
         <span>password</span>
-        <input id="password" name="password" type="password" required autofocus autocomplete="current-password" spellcheck="false" placeholder="DASHBOARD_PASSWORD from .env">
+        <input id="password" name="password" type="password" required autofocus autocomplete="current-password" spellcheck="false" placeholder="DASHBOARD_PASSWORD from .env" aria-describedby="err">
       </label>
       <input type="hidden" name="next" id="next" value="/">
 

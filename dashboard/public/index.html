@@ -16,15 +16,17 @@
   <script type="module" src="/app.js"></script>
 </head>
 <body data-state="loading">
+  <a class="skip" href="#main">Skip to content</a>
+  <div class="sr-only" id="live" aria-live="polite" aria-atomic="true"></div>
   <header class="bar">
     <div class="bar-inner">
       <a class="brand" href="/" aria-label="Susquatch dashboard"><img src="/favicon.svg" alt=""><span>susquatch</span></a>
-      <span class="pill" id="mode">paper</span>
+      <span class="pill" id="mode" role="status">paper</span>
       <div class="meta">
         <span class="meta-item lease"><span class="k">lease</span><span id="lease">none</span></span>
-        <span class="meta-item beat" title="Time since the server last pushed status"><span class="dot" id="beat-dot"></span><span id="beat">no heartbeat</span></span>
+        <span class="meta-item beat" title="Time since the server last pushed status"><span class="dot" id="beat-dot" aria-hidden="true"></span><span id="beat">no heartbeat</span></span>
         <span class="killstate" id="killstate">kill off</span>
-        <button class="kill-btn" id="kill-open" type="button">Kill</button>
+        <button class="kill-btn" id="kill-open" type="button" aria-haspopup="dialog" aria-controls="kill-dialog">Kill</button>
       </div>
     </div>
     <div class="poll" id="poll" aria-hidden="true"></div>
@@ -58,12 +60,12 @@
     </div>
   </div>
 
-  <main>
+  <main id="main">
     <section class="hero" aria-label="Money">
       <div class="hero-top">
         <div class="equity">
-          <span class="label">equity <span class="asof num" id="asof" hidden></span></span>
-          <div class="big num skel" id="equity">—</div>
+          <span class="label" id="equity-label">equity <span class="asof num" id="asof" hidden></span></span>
+          <div class="big num skel" id="equity" aria-labelledby="equity-label">—</div>
           <div class="sub num" id="equity-sub">cash —</div>
         </div>
         <dl class="stats">
@@ -72,14 +74,15 @@
           <div class="stat"><dt class="label">rank</dt><dd class="v num skel" id="rank">—</dd><dd class="s num" id="rank-s"></dd></div>
         </dl>
       </div>
-      <div class="chart" id="chart">
+      <div class="chart" id="chart" role="img" tabindex="0" aria-labelledby="spark-desc">
+        <p class="sr-only" id="spark-desc">Equity over the recent window. Exact values are in the equity figure above. Focus this chart and use the left and right arrow keys to read points.</p>
         <div class="spark-wrap">
-          <svg class="spark" id="spark" viewBox="0 0 400 76" preserveAspectRatio="none" aria-hidden="true"></svg>
-          <i class="spot end" id="spark-end" hidden></i>
-          <i class="spot cursor" id="spark-cursor" hidden></i>
+          <svg class="spark" id="spark" viewBox="0 0 400 76" preserveAspectRatio="none" aria-hidden="true" focusable="false"></svg>
+          <i class="spot end" id="spark-end" hidden aria-hidden="true"></i>
+          <i class="spot cursor" id="spark-cursor" hidden aria-hidden="true"></i>
         </div>
         <div class="scrub num" id="scrub" hidden><b id="scrub-v"></b><span id="scrub-t"></span></div>
-        <div class="spark-axis num"><span id="spark-from"></span><span id="spark-range"></span><span id="spark-now">now</span></div>
+        <div class="spark-axis num" aria-hidden="true"><span id="spark-from"></span><span id="spark-range"></span><span id="spark-now">now</span></div>
       </div>
     </section>
 
@@ -127,10 +130,9 @@
       <p>Every gateway cancels all open orders and freezes, typically within a minute
         (poll ~10 s + KV propagation). Instant alternative over SSH: <code>touch ops/KILL</code>.</p>
       <p>Un-killing is not possible from here. It takes SSH: <code>make unkill</code>.</p>
-      <label>reason <span class="opt">goes into ops/KILL and the daily summary</span>
-        <textarea id="kill-reason" required maxlength="300" placeholder="What did you see?"></textarea>
-      </label>
-      <div class="err" id="kill-err" hidden></div>
+      <label for="kill-reason">reason <span class="opt">goes into ops/KILL and the daily summary</span></label>
+      <textarea id="kill-reason" name="reason" required maxlength="300" placeholder="What did you see?" aria-describedby="kill-err"></textarea>
+      <div class="err" id="kill-err" role="alert" hidden></div>
       <div class="actions">
         <button class="btn" type="button" id="kill-cancel">Cancel</button>
         <button class="btn danger hold" type="submit" id="kill-confirm" disabled><span>Hold to kill</span></button>
