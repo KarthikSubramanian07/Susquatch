@@ -6,8 +6,9 @@
   --line-strong: rgba(255, 255, 255, 0.12);
   --text: #fafafa;
   --text-2: #b4b4bc;
-  --muted: #7d7d87;
-  --faint: #55555e;
+  /* muted/faint sized for ≥4.5:1 on --bg/--surface (WCAG 1.4.3). */
+  --muted: #85858f;
+  --faint: #8a8a94;
   --clay: #d97757;
   --clay-ink: #140b08;
   --clay-soft: rgba(217, 119, 87, 0.1);
@@ -18,7 +19,7 @@
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
-html, body { height: 100%; }
+html, body { height: 100%; overflow-x: clip; max-width: 100%; }
 body {
   margin: 0; background: var(--bg); color: var(--text);
   font: 400 15px/1.5 var(--sans); font-optical-sizing: auto;
@@ -27,6 +28,15 @@ body {
 .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 code { font: 400 0.92em/1 var(--mono); color: var(--text-2); }
 :focus-visible { outline: 2px solid var(--clay); outline-offset: 3px; border-radius: 4px; }
+
+.skip {
+  position: absolute; left: 24px; top: 0; z-index: 2;
+  transform: translateY(-120%);
+  padding: 10px 14px; border-radius: 8px;
+  background: var(--text); color: var(--clay-ink); font: 500 14px/1 var(--sans);
+  text-decoration: none;
+}
+.skip:focus { transform: translateY(8px); outline: 2px solid var(--clay); outline-offset: 3px; }
 
 .gate { min-height: 100dvh; display: grid; place-items: center; padding: 24px; position: relative; overflow: hidden; }
 
