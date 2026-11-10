@@ -514,13 +514,14 @@ function renderHealth(items) {
     .sort((a, b) => (order[a.state] ?? 0) - (order[b.state] ?? 0) || a.name.localeCompare(b.name))
     .map((h) => {
       const last = nsToMs(h.lastOkNs);
+      const detail = h.detail && h.detail !== h.state ? `${h.state} · ${h.detail}` : h.state;
       return el(
         "div",
-        { class: `hi ${h.state}`, title: h.detail || h.state },
+        { class: `hi ${h.state}`, title: detail },
         el("span", { class: `hdot dot ${h.state === "ok" ? "ok" : ""}`, "aria-hidden": "true" }),
         el("span", { class: "hname" }, h.name),
         el("span", { class: "hwhen" }, last ? ago(state.serverNow - last).replace(" ago", "") : ""),
-        el("span", { class: "hdetail", style: "grid-column: 2 / span 2" }, `${h.state}${h.detail ? ` · ${h.detail}` : ""}`),
+        el("span", { class: "hdetail", style: "grid-column: 2 / span 2" }, detail),
       );
     });
   box.append(...stagger(rows));
