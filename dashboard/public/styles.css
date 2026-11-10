@@ -332,8 +332,9 @@ td.dim { color: var(--muted); }
 .events li.day span { font: 500 11px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint); }
 
 /* ── stale / killed ────────────────────────────────────────────────────── */
-body[data-state="stale"] .hero, body[data-state="stale"] .health, body[data-state="stale"] #positions, body[data-state="stale"] #trades { opacity: 0.55; filter: saturate(0.3); }
-.hero, .health, #positions, #trades { transition: opacity var(--slow), filter var(--slow); }
+/* Do not dim numbers with opacity/filter when silent: that breaks 1.4.3.
+   The alert banner + clay "as of" stamp carry the stale state instead. */
+body[data-state="stale"] .hero .label .asof { display: inline; }
 .asof { font-size: 11px; color: var(--clay); margin-left: 8px; }
 
 /* ── kill dialog ───────────────────────────────────────────────────────── */
